@@ -173,7 +173,6 @@ def guess_symbol_column(path: str | Path, line: int, preferred: str | None = Non
 
 
 _TARGET_RE = re.compile(r"^(?P<path>.+?\.(?:pyi?|tsx?|jsx?|mjs|cjs)):(?P<line>\d+)(?::(?P<col>\d+))?$")
-_PATH_LINE_RE = re.compile(r"^(?P<path>.+):(?P<line>\d+)(?::(?P<col>\d+))?$")
 _PATH_LIKE_SUFFIXES = set(SOURCE_LANG) | {
     ".sh", ".bash", ".zsh", ".fish", ".sql", ".ps1", ".psm1",
     ".go", ".rs", ".java", ".c", ".h", ".cc", ".cpp", ".hpp",
@@ -182,20 +181,28 @@ _PATH_LIKE_SUFFIXES = set(SOURCE_LANG) | {
 }
 
 
+def _split_path_position(target: str) -> tuple[str, int | None, int | None]:
+    """Split a trailing :LINE[:COLUMN] position from a path-like target.
+
+    Parsing from the right avoids ambiguity with colons that are part of the path
+    itself (for example Windows drive prefixes) and with the two numeric suffixes.
+    """
+    three = target.rsplit(":", 2)
+    if len(three) == 3 and three[1].isdigit() and three[2].isdigit():
+        return three[0], int(three[1]), int(three[2])
+    two = target.rsplit(":", 1)
+    if len(two) == 2 and two[1].isdigit():
+        return two[0], int(two[1]), 1
+    return target, None, None
+
+
 def path_target_intent(target: str, root: str | Path) -> dict[str, Any] | None:
     """Classify explicit path-like input without requiring the target to exist.
 
     This is deliberately conservative around dotted symbols: `Class.method` is not
     treated as a path unless it contains a path separator or a known file suffix.
     """
-    raw_path = target
-    line: int | None = None
-    column: int | None = None
-    match = _PATH_LINE_RE.match(target)
-    if match:
-        raw_path = match.group("path")
-        line = int(match.group("line"))
-        column = int(match.group("col") or 1)
+    raw_path, line, column = _split_path_position(target)
 
     candidate = Path(raw_path).expanduser()
     suffix = candidate.suffix.lower()

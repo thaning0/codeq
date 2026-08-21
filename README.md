@@ -101,9 +101,10 @@ Symbol/location examples remain:
 ```bash
 codeq context BacktestService.stream_backtest_logs
 codeq context backend/src/app/services/backtest_service.py:684
+codeq context backend/src/app/api/backtest.py:175:17
 ```
 
-A `file:line[:column]` target is promoted to its enclosing function/method/type when possible.
+A `file:line[:column]` target is promoted to its enclosing function/method/type when possible. Line/column suffixes are parsed from the right, so `PATH:LINE:COLUMN` remains unambiguous even when the path itself contains a colon.
 
 Arguments:
 
