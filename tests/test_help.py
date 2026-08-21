@@ -58,7 +58,7 @@ class HelpTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as raised, redirect_stdout(stdout):
             build_parser().parse_args(["--version"])
         self.assertEqual(raised.exception.code, 0)
-        self.assertRegex(stdout.getvalue().strip(), r"^codeq \d+\.\d+\.\d+$")
+        self.assertRegex(stdout.getvalue().strip(), r"^codeq \d+\.\d+\.\d+(?:rc\d+)?$")
 
 
 if __name__ == "__main__":

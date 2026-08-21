@@ -1,5 +1,5 @@
 """codeq: small CLI-first code intelligence for coding agents."""
 
-__version__ = "0.5.3"
+__version__ = "1.0.0rc1"
 
 DAEMON_PROTOCOL_VERSION = 2

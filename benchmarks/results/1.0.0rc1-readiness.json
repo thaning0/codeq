@@ -1,0 +1,68 @@
+{
+  "status": "PASS",
+  "gate_version": "1.0.0rc1",
+  "checks": [
+    {
+      "name": "warm_context_p95",
+      "passed": true,
+      "actual": 172.3,
+      "requirement": "<= 3000 ms"
+    },
+    {
+      "name": "warm_trace_p95",
+      "passed": true,
+      "actual": 329.8,
+      "requirement": "<= 3000 ms"
+    },
+    {
+      "name": "cold_context_p95",
+      "passed": true,
+      "actual": 3825.9,
+      "requirement": "<= 5000 ms"
+    },
+    {
+      "name": "cold_trace_p95",
+      "passed": true,
+      "actual": 3872.3,
+      "requirement": "<= 5000 ms"
+    },
+    {
+      "name": "no_10s_semantic_outlier",
+      "passed": true,
+      "actual": 3958.1,
+      "requirement": "< 10000 ms"
+    },
+    {
+      "name": "historical_sample_size",
+      "passed": true,
+      "actual": 100,
+      "requirement": ">= 100 workflows"
+    },
+    {
+      "name": "historical_mapping_coverage",
+      "passed": true,
+      "actual": 93.3,
+      "requirement": ">= 90%"
+    },
+    {
+      "name": "navigation_fallback_free",
+      "passed": true,
+      "actual": {
+        "workflows": 50,
+        "fallback": 0
+      },
+      "requirement": ">= 50 navigation workflows and 0 unsupported fallback"
+    },
+    {
+      "name": "extracted_query_validation",
+      "passed": true,
+      "actual": {
+        "queries": 30,
+        "ok_rate_pct": 100.0
+      },
+      "requirement": ">= 30 queries and >= 95% ok"
+    }
+  ],
+  "performance_version": "0.5.1",
+  "workflow_version": "0.5.2"
+}

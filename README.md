@@ -15,7 +15,7 @@ codeq trace TARGET --in|--out [--depth N]
 codeq review [--base REF]
 ```
 
-The feature surface is frozen on the path to 1.0. The compatibility/readiness policy is documented in [`docs/codeq-1.0-readiness.md`](docs/codeq-1.0-readiness.md); new top-level commands or graph-platform features require repeated real-workflow evidence rather than speculative completeness.
+`1.0.0rc1` is the active release candidate. The feature surface is frozen for 1.0. The compatibility/readiness policy is documented in [`docs/codeq-1.0-readiness.md`](docs/codeq-1.0-readiness.md); during RC, only release blockers should change analysis/runtime behavior, and new top-level commands or graph-platform features require repeated real-workflow evidence.
 
 ## Agent integration
 

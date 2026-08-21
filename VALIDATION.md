@@ -1,6 +1,6 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.5.3` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc1` CLI.
 
 ## Release gates
 
@@ -9,8 +9,8 @@ Validated on 2026-08-21 against the real `~/Quant` repository using the installe
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.5.3**
-- installed distribution metadata: **0.5.3**
+- installed module version: **1.0.0rc1**
+- installed distribution metadata: **1.0.0rc1**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 0.5.3 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 1.0.0rc1 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -353,10 +353,38 @@ review HEAD~1                 -> ok; 15 changed / 5 deleted / 0 untracked
 
 All four results carried `schema_version=1`, and `~/Quant` remained clean after the run.
 
+## 1.0.0rc1 release cut
+
+The RC cut changes release metadata and release-contract tests only; it does not add or change analysis capabilities. Python package metadata uses the PEP 440 version `1.0.0rc1`; the Git release tag is `v1.0.0-rc1`.
+
+The RC1 release gate passed:
+
+```text
+81 / 81 tests
+basedpyright: 0 errors, 0 warnings
+uv build: codeq-1.0.0rc1 sdist + wheel
+readiness gate: 9 / 9 PASS
+global module version: 1.0.0rc1
+global distribution metadata: 1.0.0rc1
+```
+
+The globally installed RC1 then passed the normal Quant smoke:
+
+```text
+find 'SSE backtest logs'      -> ok; frontend streamBacktestLogs ranked first
+context backtest.py:175:17    -> ok; cursor definition stream_backtest_logs; 3 filtered frontend lexical lines / 0 tests
+trace incoming depth 2        -> ok; 8 nodes; not truncated
+review HEAD~1                 -> ok; 15 changed / 5 deleted / 0 untracked
+```
+
+All four responses retained `schema_version=1`; the Quant working tree was unchanged before/after. The release-candidate readiness artifacts are `benchmarks/1.0.0rc1-readiness.md` and `benchmarks/results/1.0.0rc1-readiness.json`.
+
+RC policy is now active: only silent correctness blockers, compatibility-contract regressions, or repeated severe performance/lifecycle failures should change runtime/analysis behavior before stable 1.0. New capabilities remain deferred.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 0.5.3
+version                 codeq 1.0.0rc1
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language
