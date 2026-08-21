@@ -5,7 +5,7 @@ Validated on 2026-08-21 against the real `~/Quant` repository using the globally
 ## Static / package checks
 
 - `python3 -m py_compile src/codeq/*.py`: pass
-- `uv run python -m unittest discover -s tests -v`: 7/7 pass
+- focused committed suite (`test_core.py` + `test_dynamic.py`): 16/16 pass; full current working-tree discovery: 19/19 pass
 - `basedpyright --level error src/codeq tests`: 0 errors, 0 warnings
 - `uv build`: source distribution and wheel build successfully
 
@@ -65,6 +65,43 @@ fetchBenchmarkData
 
 External `node_modules` call edges were filtered from agent-facing output.
 
+### Dynamic-reference fallback assertions
+
+The fallback classifies **exact LSP references** by their local source context; it does not perform repository-wide heuristic graph construction.
+
+Real Python validation used FastAPI dependency injection:
+
+```text
+backend/src/app/api/backtest.py:38  _get_backtest_service
+```
+
+LSP call hierarchy returned no callers, while `codeq context` identified 8 references such as:
+
+```text
+Depends(_get_backtest_service)
+```
+
+as `callback_argument` with `confidence=possible`.
+
+Real TypeScript validation targeted the local callback precisely by source position:
+
+```text
+frontend/src/hooks/use-mobile.ts:11:11  onChange
+```
+
+`codeq context` classified these as possible callback references:
+
+```text
+mql.addEventListener('change', onChange)
+mql.removeEventListener('change', onChange)
+```
+
+while excluding the direct call `onChange()` from the dynamic-reference set.
+
+False-positive guards were validated for Python direct method calls, `typing.cast(...)`, TypeScript direct calls, and TypeScript type annotations.
+
+A temporary Git repository verified positive `review` integration: modifying a function registered as `HANDLERS = {"x": handler}` produced one `mapping_value` dynamic reference in `codeq review --base HEAD`.
+
 ### Worktree assertion
 
 The existing linked worktree:
@@ -95,4 +132,4 @@ The MVP demonstrates the intended architectural tradeoff:
 - subsequent agent queries reuse the same language-server process;
 - the four CLI primitives cover symbol discovery, local context, multi-hop call tracing, and diff-oriented review context.
 
-The validation does not claim static completeness for dynamic Python/JavaScript dispatch. Missing dynamic edges remain an explicit limitation rather than being filled with heuristic graph edges.
+The validation does not claim static completeness for dynamic Python/JavaScript dispatch. `possible_dynamic_references` are deliberately separated from exact call edges and marked `confidence=possible`; runtime-only dispatch can still remain unknowable to static analysis.

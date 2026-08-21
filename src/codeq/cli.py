@@ -104,6 +104,18 @@ def _render_resolution(data: dict[str, Any]) -> bool:
     return False
 
 
+def _print_dynamic_references(items: list[dict[str, Any]], indent: str = "  ") -> None:
+    print(f"Possible dynamic references ({len(items)})")
+    if not items:
+        print(f"{indent}-")
+        return
+    for item in items:
+        reason = item.get("reason") or "possible"
+        text = str(item.get("text") or "").strip()
+        suffix = f"  {text}" if text else ""
+        print(f"{indent}[{reason}] {compact_location(item)}{suffix}")
+
+
 def _render_context(data: dict[str, Any]) -> None:
     if not _render_resolution(data):
         return
@@ -124,6 +136,7 @@ def _render_context(data: dict[str, Any]) -> None:
     _print_locations("Implementations", data.get("implementations", []))
     _print_locations("Tests", data.get("tests", []))
     _print_locations("References", data.get("references", []))
+    _print_dynamic_references(data.get("possible_dynamic_references", []))
     meta = data.get("_meta", {})
     print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
 
@@ -164,11 +177,17 @@ def _render_review(data: dict[str, Any]) -> None:
         print(f"  {symbol.get('kind')} {container}{symbol.get('name')}  {symbol['path']}:{symbol['line']}")
         for caller in detail.get("callers", [])[:5]:
             print(f"    <- {caller.get('name')}  {caller['path']}:{caller['line']}")
+        for dynamic in detail.get("possible_dynamic_references", [])[:5]:
+            print(
+                f"    ? {dynamic.get('reason','possible')}  "
+                f"{dynamic['path']}:{dynamic['line']}"
+            )
         for test in detail.get("tests", [])[:5]:
             print(f"    test {test['path']}:{test['line']}")
     print(f"\nAffected files: {data.get('impacted_file_count', 0)}")
     for path in data.get("impacted_files", [])[:30]:
         print(f"  {path}")
+    print(f"\nPossible dynamic references: {data.get('possible_dynamic_reference_count', 0)}")
     print(f"\nLikely tests: {data.get('test_count', 0)}")
     for test in data.get("tests", [])[:30]:
         print(f"  {test.get('name','')}  {test['path']}:{test['line']}")

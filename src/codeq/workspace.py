@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .dynamic import classify_dynamic_references
 from .gitdiff import git_changed_ranges, merge_ranges
 from .lsp import LspError, LspProcess
 from .util import (
@@ -445,6 +447,8 @@ class Workspace:
                 except (LspError, OSError):
                     symbols = []
                 line = int(parsed["line"])
+                column = int(parsed["column"])
+                explicit_column = bool(re.search(r":\d+:\d+$", target))
 
                 def contains(symbol: dict[str, Any]) -> bool:
                     rng = symbol.get("range") or {}
@@ -452,13 +456,43 @@ class Workspace:
                     end = int((rng.get("end") or {}).get("line", start - 1)) + 1
                     return start <= line <= end
 
-                def span_size(symbol: dict[str, Any]) -> int:
+                def contains_point(symbol: dict[str, Any]) -> bool:
+                    if not contains(symbol):
+                        return False
                     rng = symbol.get("range") or {}
-                    start = int((rng.get("start") or {}).get("line", symbol["line"] - 1))
-                    end = int((rng.get("end") or {}).get("line", start))
-                    return max(0, end - start)
+                    start = rng.get("start") or {}
+                    end = rng.get("end") or {}
+                    start_line = int(start.get("line", symbol["line"] - 1)) + 1
+                    end_line = int(end.get("line", start_line - 1)) + 1
+                    column0 = max(0, column - 1)
+                    if line == start_line and column0 < int(start.get("character", 0)):
+                        return False
+                    if line == end_line and column0 > int(end.get("character", column0)):
+                        return False
+                    return True
+
+                def span_size(symbol: dict[str, Any]) -> tuple[int, int]:
+                    rng = symbol.get("range") or {}
+                    start = rng.get("start") or {}
+                    end = rng.get("end") or {}
+                    line_span = int(end.get("line", symbol["line"] - 1)) - int(start.get("line", symbol["line"] - 1))
+                    char_span = int(end.get("character", 0)) - int(start.get("character", 0)) if line_span == 0 else 0
+                    return max(0, line_span), max(0, char_span)
 
                 containing = [symbol for symbol in symbols if contains(symbol)]
+                if explicit_column:
+                    point_matches = [symbol for symbol in containing if contains_point(symbol)]
+                    if point_matches:
+                        chosen = min(
+                            point_matches,
+                            key=lambda symbol: (span_size(symbol), -_definition_priority(symbol)),
+                        )
+                        return {
+                            "status": "ok",
+                            "target": target,
+                            "symbol": {**chosen, "source": "lsp", "origin": "document"},
+                            "candidates": [],
+                        }
                 semantic = [
                     symbol
                     for symbol in containing
@@ -604,6 +638,11 @@ class Workspace:
 
         tests = [r for r in refs if is_test_path(r["path"])]
         source_refs = [r for r in refs if not is_test_path(r["path"])]
+        possible_dynamic = classify_dynamic_references(
+            source_refs,
+            str(symbol.get("name") or ""),
+            limit=limit,
+        )
         hover_text = ""
         if isinstance(hover, dict):
             contents = hover.get("contents")
@@ -625,6 +664,7 @@ class Workspace:
             "callees": callees[:limit],
             "implementations": impls[:limit],
             "references": source_refs[:limit],
+            "possible_dynamic_references": possible_dynamic,
             "tests": tests[:limit],
             "file_symbols": [
                 {k: s[k] for k in ("name", "kind", "container", "path", "line", "column")}
@@ -781,6 +821,11 @@ class Workspace:
             except LspError:
                 refs = []
             direct_tests = [r for r in refs if is_test_path(r["path"])]
+            possible_dynamic = classify_dynamic_references(
+                [r for r in refs if not is_test_path(r["path"])],
+                str(symbol.get("name") or ""),
+                limit=10,
+            )
             for caller in callers:
                 impacted_files.add(caller["path"])
                 if is_test_path(caller["path"]):
@@ -792,12 +837,16 @@ class Workspace:
             details.append({
                 "symbol": {k: symbol.get(k) for k in ("name", "kind", "container", "path", "line", "column")},
                 "callers": callers[:10],
+                "possible_dynamic_references": possible_dynamic,
                 "tests": direct_tests[:10],
                 "reference_count": len(refs),
             })
 
         changed_files = [item["path"] for item in merged]
         impacted_files.difference_update(changed_files)
+        dynamic_reference_count = sum(
+            len(detail.get("possible_dynamic_references", [])) for detail in details
+        )
         return {
             "status": "ok",
             "base": base,
@@ -809,10 +858,12 @@ class Workspace:
             "impacted_file_count": len(impacted_files),
             "tests": sorted(tests.values(), key=lambda x: (x["path"], x["line"]))[:100],
             "test_count": len(tests),
+            "possible_dynamic_reference_count": dynamic_reference_count,
             "unsupported_changed_files": unsupported,
             "truncated": len(changed_symbols) > limit,
             "limitations": [
-                "call edges are language-server-resolved and may omit dynamic dispatch",
+                "exact call edges are language-server-resolved and may omit runtime-only dispatch",
+                "possible_dynamic_references classify exact LSP references heuristically; they are not runtime-proof call edges",
                 "test discovery uses semantic references/callers plus test-path classification",
             ],
         }
