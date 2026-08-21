@@ -48,6 +48,40 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(payload["status"], "not_found")
         self.assertEqual(payload["target"], "scripts/missing.py:12")
 
+    def test_trace_depth_zero_reaches_service_payload_unchanged(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {
+                "status": "ok",
+                "target": "Foo.run",
+                "direction": "in",
+                "depth": 0,
+                "node_count": 1,
+                "node_limit": 20,
+                "truncated": False,
+                "root": {"name": "run", "path": "/repo/foo.py", "line": 1, "column": 1},
+                "tree": {"node": {"name": "run", "path": "/repo/foo.py", "line": 1, "column": 1}, "children": []},
+            }
+
+        stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(stdout),
+        ):
+            main(["trace", "Foo.run", "--in", "--depth", "0", "--node-limit", "20", "--json"])
+        self.assertEqual(captured["depth"], 0)
+        self.assertEqual(json.loads(stdout.getvalue())["depth"], 0)
+
+    def test_negative_trace_depth_is_rejected(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            main(["trace", "Foo.run", "--in", "--depth", "-1"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("must be >= 0", stderr.getvalue())
+
     def test_success_still_exits_normally(self) -> None:
         result = {
             "status": "ok",

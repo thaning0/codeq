@@ -59,6 +59,31 @@ class ServiceLifecycleTests(unittest.TestCase):
             })
             self.assertEqual(result["node_limit"], 2)
 
+    def test_trace_depth_zero_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            result = service.handle({
+                "command": "trace",
+                "root": tmp,
+                "target": "Foo.run",
+                "direction": "in",
+                "depth": 0,
+                "node_limit": 20,
+            })
+            self.assertEqual(result["depth"], 0)
+
+    def test_negative_trace_depth_is_rejected_by_service(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            with self.assertRaisesRegex(ValueError, "must be >= 0"):
+                service.handle({
+                    "command": "trace",
+                    "root": tmp,
+                    "target": "Foo.run",
+                    "direction": "in",
+                    "depth": -1,
+                })
+
     def test_review_merge_base_flag_reaches_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
             service = CodeqService()

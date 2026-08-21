@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.3.4` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.3.5` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **46/46 pass**
+- `uv run python -W error -m unittest discover -s tests`: **50/50 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.3.4**
-- installed distribution metadata: **0.3.4**
+- installed module version: **0.3.5**
+- installed distribution metadata: **0.3.5**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 0.3.4 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 0.3.5 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -159,6 +159,19 @@ The queried base location is excluded when LSP reports it alongside implementati
 
 Plain-text and JSON output both reported the same bounded node count.
 
+## Issue #5: trace depth zero
+
+An explicit `--depth 0` now survives the CLI/service round trip and means root-only traversal as documented. Real `~/Quant` validation returned:
+
+```text
+depth=0
+node_count=1
+children=0
+truncated=false
+```
+
+Plain-text output contained only the root node and reported `depth=0`. `--depth 1` still returned the four direct incoming callers. Negative depth is rejected by argparse with exit status `2` and `argument --depth: must be >= 0`; the service also rejects negative values defensively.
+
 ## Issues #3 and #4: working-tree and PR review semantics
 
 Working-tree review now includes untracked files from `git ls-files --others --exclude-standard`, so Git-ignored files remain excluded. The untracked `tests/test_review_worktree.py` was reported as `U/analyzed`, and four of its functions appeared in `changed_symbols`.
@@ -212,7 +225,7 @@ Full counts remain present together with truncation flags; increase `--limit` on
 Final acceptance summary:
 
 ```text
-version                 codeq 0.3.4
+version                 codeq 0.3.5
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language
@@ -223,7 +236,7 @@ TS topology             52 symbols, 2 imports, 13 importers
 TS project              /home/thn/Quant/quant-cli
 concept top             streamBacktestLogs
 inheritance             MomentumFactor
-trace                    node-limit 1/2/5 enforced exactly
+trace                    node-limit enforced; depth 0=root only
 review                   untracked files included; merge-base mode validated
 worktree                 pass
 repository mutation      none

@@ -20,6 +20,16 @@ from .util import compact_location, git_root
 _ARGPARSE_PARAMS = inspect.signature(argparse.ArgumentParser).parameters
 
 
+def _nonnegative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected an integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be >= 0")
+    return parsed
+
+
 class PlainArgumentParser(argparse.ArgumentParser):
     """ArgumentParser with stable, plain-text help across Python versions."""
 
@@ -587,10 +597,10 @@ happens after this entry point?".
     )
     trace.add_argument(
         "--depth",
-        type=int,
+        type=_nonnegative_int,
         default=3,
         metavar="N",
-        help="Maximum call-edge depth; 0=root only, 1=direct neighbors (default: 3).",
+        help="Maximum call-edge depth; 0=root only, 1=direct neighbors (default: 3; must be >= 0).",
     )
     trace.add_argument(
         "--node-limit",
@@ -702,7 +712,7 @@ def main(argv: list[str] | None = None) -> None:
         payload.update(
             target=args.target,
             direction=args.direction,
-            depth=max(0, args.depth),
+            depth=args.depth,
             node_limit=max(1, args.node_limit),
         )
     elif args.command == "review":

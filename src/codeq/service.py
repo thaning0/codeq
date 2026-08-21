@@ -122,10 +122,14 @@ class CodeqService:
                     include_topology=bool(request.get("include_topology")),
                 )
             elif command == "trace":
+                raw_depth = request.get("depth")
+                depth = 3 if raw_depth is None else int(raw_depth)
+                if depth < 0:
+                    raise ValueError("trace depth must be >= 0")
                 data = ws.trace(
                     str(request.get("target") or ""),
                     direction=str(request.get("direction") or "in"),
-                    depth=int(request.get("depth") or 3),
+                    depth=depth,
                     limit=max(1, int(request.get("node_limit") or 100)),
                 )
             elif command == "review":

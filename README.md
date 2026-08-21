@@ -135,7 +135,7 @@ Arguments:
 | `TARGET` | Qualified symbol, bare symbol, or `PATH:LINE[:COLUMN]`. |
 | `--in` | Walk incoming calls toward callers/entry points; use for impact radius. |
 | `--out` | Walk outgoing calls toward callees/implementation; use for execution flow. |
-| `--depth N` | Maximum number of call edges. `0` = root only, `1` = direct neighbors; default `3`. |
+| `--depth N` | Maximum number of call edges. `0` = root only, `1` = direct neighbors; default `3`. Must be non-negative. |
 | `--node-limit N` | Hard cap on emitted call-tree nodes; default `100`. This cap is independent of global `--limit`. |
 
 ### `review`
