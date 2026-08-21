@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.5.0` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.5.1` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **70/70 pass**
+- `uv run python -W error -m unittest discover -s tests`: **74/74 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.5.0**
-- installed distribution metadata: **0.5.0**
+- installed module version: **0.5.1**
+- installed distribution metadata: **0.5.1**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 0.5.0 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 0.5.1 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -283,10 +283,31 @@ text /logs/stream --path quant-cli:  full counts preserved with bounded payload
 
 Invariant/contract tests now cover schema attachment, evidence enum shape, monotone query budgets, hard snippet/text payload limits, and count-preserving truncation.
 
+## 0.5.1 performance hardening
+
+Document symbols now use a safe per-Workspace LRU cache keyed by `(path, mtime_ns, size)` and capped at 256 entries. Unit tests cover cache hits, edit invalidation, and LRU eviction. Cross-file references/definitions remain uncached to avoid stale semantic results.
+
+Prewarm is budget-adaptive: it probes every two opened candidate files and stops early only after the current requested result budget is already satisfied. Synthetic tests verify both early-stop and no-premature-stop behavior.
+
+JSON `_meta` now exposes per-request LSP/cache/prewarm deltas. The fixed Quant benchmark (`benchmarks/quant_benchmark.py`, final 0.5.1 run with 2 reps) produced:
+
+```text
+                         cold P50   cold P95   warm P50   warm P95
+context symbol            3753.7     3825.9      157.2      172.3 ms
+context cursor            3845.9     3958.1      125.8      127.5 ms
+context + lexical         3844.8     3938.6      302.6      311.0 ms
+trace incoming depth 2    3858.2     3872.3      325.0      329.8 ms
+find concept              1168.3     1179.0      936.2     1021.7 ms
+```
+
+There were no 10 s+ semantic outliers. Warm context samples showed document-symbol cache hits with zero misses. The fully warmed representative Workspace reached about **1.36 GB combined LSP RSS**; this is dominated by basedpyright/typescript-language-server, so memory remains governed by existing workspace idle eviction rather than by an unbounded Python cache.
+
+Full samples are stored in `benchmarks/results/0.5.1-quant.json`; the human-readable baseline is `benchmarks/0.5.1-quant.md`.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 0.5.0
+version                 codeq 0.5.1
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language

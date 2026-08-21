@@ -245,6 +245,14 @@ current_semantic
 
 `--limit` is the single public disclosure knob. Internally codeq derives a bounded query budget: top-level items follow `--limit`, per-symbol nested details are capped at five, hover/source/text-line payloads have hard character budgets, and any bounded list keeps its complete count plus truncation metadata when available. Exact-text matching counts are computed before payload truncation.
 
+### Performance model
+
+The daemon keeps language servers warm and maintains a per-Workspace 256-entry LRU cache for file-local document symbols. Cache keys include file `mtime_ns` and size, so edits invalidate the entry without a persistent repository index. Cross-file references/definitions are deliberately not cached because their validity depends on other files.
+
+Caller/reference prewarming is budget-adaptive: likely reference files are opened incrementally and probing may stop early only when the current disclosure budget is already satisfied. codeq does not infer completeness merely from a temporarily stable result set.
+
+JSON `_meta` exposes per-request performance deltas (`lsp_started`, `lsp_request_count`, prewarm counters, and document-symbol cache hit/miss/eviction counts). Default plain text remains unchanged. The fixed Quant cold/warm benchmark lives under `benchmarks/` and is not an agent-facing command.
+
 For agent ergonomics, global options work before or after the subcommand:
 
 ```bash

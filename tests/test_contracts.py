@@ -33,6 +33,18 @@ class _ContractWorkspace:
     def session_stats(self):
         return []
 
+    def metrics_snapshot(self):
+        return {
+            "sessions_started": 0,
+            "lsp_request_count": 0,
+            "document_symbols_hit": 0,
+            "document_symbols_miss": 0,
+            "document_symbol_cache_entries": 0,
+            "prewarm_files": 0,
+            "prewarm_probes": 0,
+            "prewarm_early_stops": 0,
+        }
+
     def find(self, query: str, limit: int = 20, kind: str | None = None, **kwargs):
         return {"status": "ok", "query": query, "results": []}
 

@@ -37,6 +37,7 @@ class LspProcess:
             raise LspError(f"failed to create stdio pipes for {name}")
         self._write_lock = threading.Lock()
         self._next_id = 1
+        self.request_count = 0
         self._pending: dict[int, queue.Queue[dict[str, Any]]] = {}
         self._pending_lock = threading.Lock()
         self._open_docs: dict[str, tuple[int, int]] = {}
@@ -155,6 +156,7 @@ class LspProcess:
             self._proc.stdin.flush()
 
     def request(self, method: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        self.request_count += 1
         with self._pending_lock:
             request_id = self._next_id
             self._next_id += 1

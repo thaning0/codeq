@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+from typing import Any, cast
+from unittest.mock import patch
+
+from codeq.workspace import Project, Workspace
+
+
+class _SymbolSession:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def document_symbols(self, path: Path, timeout: float | None = None):
+        self.calls += 1
+        return [
+            {
+                "name": "value",
+                "kind": 13,
+                "range": {
+                    "start": {"line": 0, "character": 0},
+                    "end": {"line": 0, "character": 9},
+                },
+                "selectionRange": {
+                    "start": {"line": 0, "character": 0},
+                    "end": {"line": 0, "character": 5},
+                },
+            }
+        ]
+
+
+class PerformanceHardeningTests(unittest.TestCase):
+    def test_document_symbol_cache_hits_and_invalidates_on_file_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "module.py"
+            path.write_text("value = 1\n", encoding="utf-8")
+            project = Project(root, "python")
+            session = _SymbolSession()
+            workspace = Workspace(root)
+            try:
+                with patch.object(workspace, "_session", return_value=session):
+                    first = workspace._document_symbols(path, project=project)
+                    second = workspace._document_symbols(path, project=project)
+                    self.assertEqual(first[0]["name"], "value")
+                    self.assertEqual(second[0]["name"], "value")
+                    self.assertEqual(session.calls, 1)
+                    metrics = workspace.metrics_snapshot()
+                    self.assertEqual(metrics["document_symbols_miss"], 1)
+                    self.assertEqual(metrics["document_symbols_hit"], 1)
+
+                    path.write_text("value = 1000\n", encoding="utf-8")
+                    workspace._document_symbols(path, project=project)
+                    self.assertEqual(session.calls, 2)
+                    metrics = workspace.metrics_snapshot()
+                    self.assertEqual(metrics["document_symbols_miss"], 2)
+            finally:
+                workspace.close()
+
+    def test_document_symbol_cache_is_bounded_lru(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = Project(root, "python")
+            session = _SymbolSession()
+            workspace = Workspace(root)
+            try:
+                with patch.object(workspace, "_session", return_value=session):
+                    for index in range(260):
+                        path = root / f"m{index}.py"
+                        path.write_text(f"value = {index}\n", encoding="utf-8")
+                        workspace._document_symbols(path, project=project)
+                metrics = workspace.metrics_snapshot()
+                self.assertEqual(metrics["document_symbol_cache_entries"], 256)
+                self.assertEqual(metrics["document_symbols_evicted"], 4)
+            finally:
+                workspace.close()
+
+    def test_adaptive_prewarm_stops_only_after_budget_is_satisfied(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = []
+            for index in range(6):
+                path = root / f"f{index}.py"
+                path.write_text("HotSymbol\n", encoding="utf-8")
+                files.append(path)
+            project = Project(root, "python")
+            workspace = Workspace(root)
+            opened: list[Path] = []
+            probe_calls = 0
+
+            def probe():
+                nonlocal probe_calls
+                probe_calls += 1
+                size = 1 if probe_calls == 1 else 3
+                return {(f"/r/{index}", 1, 1) for index in range(size)}
+
+            lexical = [
+                {"path": str(path), "line": 1, "column": 1, "text": "HotSymbol"}
+                for path in files
+            ]
+            try:
+                with (
+                    patch("codeq.workspace.lexical_hits", return_value=lexical),
+                    patch.object(workspace, "project_for_path", return_value=project),
+                    patch.object(workspace, "_document_symbols", side_effect=lambda path, **kwargs: opened.append(path) or []),
+                ):
+                    workspace._prewarm_symbol(
+                        project,
+                        cast(Any, object()),
+                        {"name": "HotSymbol", "source": "lsp"},
+                        max_files=6,
+                        desired_results=3,
+                        probe=probe,
+                    )
+                self.assertEqual(len(opened), 4)
+                metrics = workspace.metrics_snapshot()
+                self.assertEqual(metrics["prewarm_files"], 4)
+                self.assertEqual(metrics["prewarm_probes"], 2)
+                self.assertEqual(metrics["prewarm_early_stops"], 1)
+            finally:
+                workspace.close()
+
+    def test_prewarm_does_not_early_stop_below_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = []
+            for index in range(5):
+                path = root / f"f{index}.py"
+                path.write_text("HotSymbol\n", encoding="utf-8")
+                files.append(path)
+            project = Project(root, "python")
+            workspace = Workspace(root)
+            opened: list[Path] = []
+            lexical = [{"path": str(path), "line": 1, "column": 1} for path in files]
+            try:
+                with (
+                    patch("codeq.workspace.lexical_hits", return_value=lexical),
+                    patch.object(workspace, "project_for_path", return_value=project),
+                    patch.object(workspace, "_document_symbols", side_effect=lambda path, **kwargs: opened.append(path) or []),
+                ):
+                    workspace._prewarm_symbol(
+                        project,
+                        cast(Any, object()),
+                        {"name": "HotSymbol", "source": "lsp"},
+                        max_files=5,
+                        desired_results=10,
+                        probe=lambda: {("/one", 1, 1)},
+                    )
+                self.assertEqual(len(opened), 5)
+                self.assertEqual(workspace.metrics_snapshot()["prewarm_early_stops"], 0)
+            finally:
+                workspace.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

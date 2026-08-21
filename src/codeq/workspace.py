@@ -4,10 +4,11 @@ import os
 import re
 import shutil
 import threading
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .baseanalysis import extract_base_declarations
 from .contracts import (
@@ -214,13 +215,24 @@ class Workspace:
         self.timeout = timeout
         self.projects = discover_projects(self.root)
         self._sessions: dict[Project, LspProcess] = {}
-        self._prewarmed: set[tuple[str, str]] = set()
+        self._prewarmed: set[tuple[str, str, int]] = set()
+        self._document_symbol_cache: OrderedDict[Path, tuple[tuple[int, int], list[dict[str, Any]]]] = OrderedDict()
+        self._metrics: dict[str, int] = {
+            "sessions_started": 0,
+            "document_symbols_hit": 0,
+            "document_symbols_miss": 0,
+            "document_symbols_evicted": 0,
+            "prewarm_files": 0,
+            "prewarm_probes": 0,
+            "prewarm_early_stops": 0,
+        }
         self._lock = threading.RLock()
 
     def close(self) -> None:
         with self._lock:
             sessions = list(self._sessions.values())
             self._sessions.clear()
+            self._document_symbol_cache.clear()
         for session in sessions:
             session.close()
 
@@ -233,9 +245,54 @@ class Workspace:
                     "pid": session.pid,
                     "alive": session.alive(),
                     "server": session.name,
+                    "request_count": session.request_count,
                 }
                 for project, session in self._sessions.items()
             ]
+
+    def metrics_snapshot(self) -> dict[str, int]:
+        with self._lock:
+            metrics = dict(self._metrics)
+            metrics["lsp_request_count"] = sum(session.request_count for session in self._sessions.values())
+            metrics["document_symbol_cache_entries"] = len(self._document_symbol_cache)
+            return metrics
+
+    @staticmethod
+    def _file_marker(path: Path) -> tuple[int, int]:
+        try:
+            stat = path.stat()
+        except OSError:
+            return (0, 0)
+        return (int(stat.st_mtime_ns), int(stat.st_size))
+
+    def _document_symbols(
+        self,
+        path: Path,
+        *,
+        project: Project | None = None,
+        timeout: float | None = None,
+    ) -> list[dict[str, Any]]:
+        resolved = path.resolve()
+        marker = self._file_marker(resolved)
+        with self._lock:
+            cached = self._document_symbol_cache.get(resolved)
+            if cached is not None and cached[0] == marker:
+                self._document_symbol_cache.move_to_end(resolved)
+                self._metrics["document_symbols_hit"] += 1
+                return [dict(item) for item in cached[1]]
+            self._metrics["document_symbols_miss"] += 1
+        selected = project or self.project_for_path(resolved)
+        if selected is None:
+            return []
+        raw = self._session(selected).document_symbols(resolved, timeout=timeout)
+        flattened = _flatten_document_symbols(raw, resolved)
+        with self._lock:
+            self._document_symbol_cache[resolved] = (marker, flattened)
+            self._document_symbol_cache.move_to_end(resolved)
+            while len(self._document_symbol_cache) > 256:
+                self._document_symbol_cache.popitem(last=False)
+                self._metrics["document_symbols_evicted"] += 1
+        return [dict(item) for item in flattened]
 
     def _server_command(self, project: Project) -> tuple[list[str], str] | None:
         if project.family == "python":
@@ -266,6 +323,7 @@ class Workspace:
             command, name = server
             session = LspProcess(command, project.root, name=name, timeout=self.timeout)
             self._sessions[project] = session
+            self._metrics["sessions_started"] += 1
             return session
 
     def project_for_path(self, path: Path) -> Project | None:
@@ -322,7 +380,7 @@ class Workspace:
             if project is None:
                 continue
             try:
-                symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
+                symbols = self._document_symbols(path, project=project)
             except (LspError, OSError):
                 continue
             exact = [symbol for symbol in symbols if symbol.get("name") == name]
@@ -431,7 +489,7 @@ class Workspace:
                         if self.project_for_path(path) != project:
                             continue
                         try:
-                            session.document_symbols(path, timeout=min(self.timeout, 5.0))
+                            self._document_symbols(path, project=project, timeout=min(self.timeout, 5.0))
                         except (LspError, OSError):
                             continue
                         primed += 1
@@ -479,7 +537,7 @@ class Workspace:
             if not project:
                 continue
             try:
-                symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
+                symbols = self._document_symbols(path, project=project)
             except (LspError, OSError):
                 continue
             hit_line = hit["line"]
@@ -634,7 +692,7 @@ class Workspace:
             if project is None:
                 continue
             try:
-                symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
+                symbols = self._document_symbols(path, project=project)
             except (LspError, OSError):
                 continue
             for symbol in symbols:
@@ -715,7 +773,7 @@ class Workspace:
             project = self.project_for_path(path)
             if project is not None:
                 try:
-                    symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
+                    symbols = self._document_symbols(path, project=project)
                 except (LspError, OSError):
                     symbols = []
                 line = parsed_line
@@ -886,11 +944,21 @@ class Workspace:
         others = [c for c in candidates if c is not chosen]
         return {"status": "ok", "target": target, "symbol": chosen, "candidates": others[:4]}
 
-    def _prewarm_symbol(self, project: Project, session: LspProcess, symbol: dict[str, Any], max_files: int = 12) -> None:
+    def _prewarm_symbol(
+        self,
+        project: Project,
+        session: LspProcess,
+        symbol: dict[str, Any],
+        max_files: int = 12,
+        *,
+        desired_results: int = 5,
+        probe: Callable[[], set[tuple[str, int, int]]] | None = None,
+    ) -> None:
         name = str(symbol.get("name") or "").strip()
         if not name or symbol.get("source") == "explicit":
             return
-        key = (str(project.root), name)
+        desired = max(1, desired_results)
+        key = (str(project.root), name, desired)
         if key in self._prewarmed:
             return
         hits = lexical_hits(project.root, name, limit=max(40, max_files * 3))
@@ -904,12 +972,24 @@ class Workspace:
             files.append(path)
             if len(files) >= max_files:
                 break
-        for path in files:
+
+        exhausted = True
+        for index, path in enumerate(files, start=1):
             try:
-                session.document_symbols(path, timeout=min(self.timeout, 6.0))
+                self._document_symbols(path, project=project, timeout=min(self.timeout, 6.0))
+                self._metrics["prewarm_files"] += 1
             except (LspError, OSError):
                 continue
-        self._prewarmed.add(key)
+            if probe is None or index % 2 != 0:
+                continue
+            self._metrics["prewarm_probes"] += 1
+            current = probe()
+            if len(current) >= desired:
+                self._metrics["prewarm_early_stops"] += 1
+                exhausted = False
+                break
+        if exhausted:
+            self._prewarmed.add(key)
 
     def _session_and_position(self, symbol: dict[str, Any]) -> tuple[LspProcess, Project, Path, int, int]:
         path = Path(symbol["path"]).resolve()
@@ -922,6 +1002,32 @@ class Workspace:
         if column <= 1:
             column = guess_symbol_column(path, line, symbol.get("name")) + 1
         return session, project, path, line, column
+
+    def _reference_probe(self, session: LspProcess, path: Path, line: int, column: int) -> set[tuple[str, int, int]]:
+        try:
+            refs = session.references(path, line, column)
+        except LspError:
+            return set()
+        out: set[tuple[str, int, int]] = set()
+        for raw in refs:
+            location = lsp_location(raw)
+            if not location or not self._is_repo_path(location["path"]):
+                continue
+            out.add((str(location["path"]), int(location["line"]), int(location.get("column") or 1)))
+        return out
+
+    def _call_probe(
+        self,
+        session: LspProcess,
+        path: Path,
+        line: int,
+        column: int,
+        direction: str,
+    ) -> set[tuple[str, int, int]]:
+        return {
+            (str(item["path"]), int(item["line"]), int(item.get("column") or 1))
+            for item in self._call_neighbors(session, path, line, column, direction)
+        }
 
     def _call_neighbors(self, session: LspProcess, path: Path, line: int, column: int, direction: str) -> list[dict[str, Any]]:
         roots = session.prepare_call_hierarchy(path, line, column)
@@ -970,7 +1076,7 @@ class Workspace:
         if project is None:
             return location
         try:
-            symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
+            symbols = self._document_symbols(path, project=project)
         except (LspError, OSError):
             return location
         line = int(location.get("line") or 1)
@@ -1059,7 +1165,7 @@ class Workspace:
             }
         try:
             session = self._session(project)
-            symbols = _flatten_document_symbols(session.document_symbols(path), path)
+            symbols = self._document_symbols(path, project=project)
         except (LspError, OSError) as exc:
             return {"status": "error", "target": str(path), "error": str(exc)}
 
@@ -1248,9 +1354,16 @@ class Workspace:
         if resolved["status"] != "ok":
             return resolved
         symbol = resolved["symbol"]
+        budget = QueryBudget.from_limit(limit)
         try:
             session, project, path, line, column = self._session_and_position(symbol)
-            self._prewarm_symbol(project, session, symbol)
+            self._prewarm_symbol(
+                project,
+                session,
+                symbol,
+                desired_results=budget.items,
+                probe=lambda: self._reference_probe(session, path, line, column),
+            )
         except LspError as exc:
             return {"status": "error", "target": target, "error": str(exc), "symbol": symbol}
 
@@ -1292,7 +1405,6 @@ class Workspace:
 
         tests = [r for r in refs if is_test_path(r["path"])]
         source_refs = [r for r in refs if not is_test_path(r["path"])]
-        budget = QueryBudget.from_limit(limit)
         possible_dynamic = classify_dynamic_references(
             source_refs,
             str(symbol.get("name") or ""),
@@ -1369,7 +1481,14 @@ class Workspace:
         symbol = resolved["symbol"]
         try:
             session, project, path, line, column = self._session_and_position(symbol)
-            self._prewarm_symbol(project, session, symbol)
+            if direction == "in":
+                self._prewarm_symbol(
+                    project,
+                    session,
+                    symbol,
+                    desired_results=max(1, limit),
+                    probe=lambda: self._call_probe(session, path, line, column, "in"),
+                )
         except LspError as exc:
             return {"status": "error", "target": target, "error": str(exc), "symbol": symbol}
         roots = session.prepare_call_hierarchy(path, line, column)
@@ -1438,7 +1557,7 @@ class Workspace:
         if project is None or not path.exists():
             return []
         try:
-            symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
+            symbols = self._document_symbols(path, project=project)
         except (LspError, OSError):
             return []
         def span(symbol: dict[str, Any]) -> tuple[int, int]:

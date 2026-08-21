@@ -20,6 +20,18 @@ class _FakeWorkspace:
     def session_stats(self):
         return []
 
+    def metrics_snapshot(self):
+        return {
+            "sessions_started": 0,
+            "lsp_request_count": 0,
+            "document_symbols_hit": 0,
+            "document_symbols_miss": 0,
+            "document_symbol_cache_entries": 0,
+            "prewarm_files": 0,
+            "prewarm_probes": 0,
+            "prewarm_early_stops": 0,
+        }
+
     def find(
         self,
         query: str,
@@ -56,6 +68,10 @@ class ServiceLifecycleTests(unittest.TestCase):
             service = CodeqService()
             result = service.handle({"command": "find", "root": tmp, "query": "Foo", "timeout": 1, "limit": 5})
             self.assertEqual(result["result_count"], 0)
+            self.assertEqual(result["_meta"]["lsp_request_count"], 0)
+            self.assertFalse(result["_meta"]["lsp_started"])
+            self.assertIn("cache", result["_meta"])
+            self.assertEqual(result["_meta"]["cache"]["document_symbols_hit"], 0)
             self.assertEqual(service.workspace_count(), 1)
             entry = next(iter(service._workspaces.values()))
             workspace = entry.workspace

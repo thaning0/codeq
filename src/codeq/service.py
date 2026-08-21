@@ -105,6 +105,7 @@ class CodeqService:
         _, entry = self._acquire_workspace(root, timeout)
         ws = entry.workspace
         before = ws.session_stats()
+        metrics_before = ws.metrics_snapshot()
         try:
             data: dict[str, Any]
             if command == "find":
@@ -151,12 +152,41 @@ class CodeqService:
             else:
                 raise ValueError(f"unknown command: {command}")
             after = ws.session_stats()
+            metrics_after = ws.metrics_snapshot()
+
+            def delta(name: str) -> int:
+                return max(0, int(metrics_after.get(name, 0)) - int(metrics_before.get(name, 0)))
+
             data["_meta"] = {
                 "root": str(ws.root),
                 "duration_ms": round((time.perf_counter() - started) * 1000, 1),
                 "lsp_sessions_before": before,
                 "lsp_sessions": after,
+                "lsp_started": delta("sessions_started") > 0,
+                "lsp_request_count": delta("lsp_request_count"),
+                "prewarm_files": delta("prewarm_files"),
+                "prewarm_probes": delta("prewarm_probes"),
+                "prewarm_early_stops": delta("prewarm_early_stops"),
+                "cache": {
+                    "document_symbols_hit": delta("document_symbols_hit"),
+                    "document_symbols_miss": delta("document_symbols_miss"),
+                    "document_symbols_evicted": delta("document_symbols_evicted"),
+                    "document_symbol_entries": int(metrics_after.get("document_symbol_cache_entries", 0)),
+                },
             }
+            if data.get("mode") == "text":
+                data["_meta"]["text"] = {
+                    "matching_file_count": int(data.get("matching_file_count", 0)),
+                    "tracked_matching_lines": int(data.get("tracked_line_count", 0)),
+                    "untracked_matching_lines": int(data.get("untracked_line_count", 0)),
+                }
+            elif isinstance(data.get("lexical_references"), dict):
+                lexical = data["lexical_references"]
+                data["_meta"]["text"] = {
+                    "matching_file_count": int(lexical.get("matching_file_count", 0)),
+                    "tracked_matching_lines": int(lexical.get("tracked_line_count", 0)),
+                    "untracked_matching_lines": int(lexical.get("untracked_line_count", 0)),
+                }
             return attach_schema(data)
         finally:
             self._release_workspace(entry)
