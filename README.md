@@ -15,6 +15,8 @@ codeq trace TARGET --in|--out [--depth N]
 codeq review [--base REF]
 ```
 
+The feature surface is frozen on the path to 1.0. The compatibility/readiness policy is documented in [`docs/codeq-1.0-readiness.md`](docs/codeq-1.0-readiness.md); new top-level commands or graph-platform features require repeated real-workflow evidence rather than speculative completeness.
+
 ## Agent integration
 
 `codeq` is intentionally self-describing. An agent should not need a codeq skill file, copied prompt, or repository-specific wrapper.

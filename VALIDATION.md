@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.5.2` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.5.3` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **78/78 pass**
+- `uv run python -W error -m unittest discover -s tests`: **81/81 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.5.2**
-- installed distribution metadata: **0.5.2**
+- installed module version: **0.5.3**
+- installed distribution metadata: **0.5.3**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 0.5.2 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 0.5.3 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -318,10 +318,45 @@ Parser regression tests cover Codex `exec -> mcporter`, Pi direct/wrapped CRG ca
 
 Full anonymized data: `benchmarks/results/0.5.2-workflows.json`. Human report: `benchmarks/0.5.2-workflows.md`.
 
+## 0.5.3 1.0 readiness / feature freeze
+
+0.5.2 exposed no repeated capability blocker that justified another analysis feature. 0.5.3 therefore freezes the four-command surface and turns the accumulated evidence into executable release gates rather than expanding codeq.
+
+Compatibility tests now assert that the only top-level commands are exactly `find`, `context`, `trace`, and `review`. Existing schema/status/evidence/exit-code/fail-closed tests remain part of the release gate.
+
+`benchmarks/readiness_gate.py` consumes the committed 0.5.1 performance artifact and 0.5.2 historical replay artifact. The final 0.5.3 run passed **9/9** readiness checks:
+
+```text
+warm context P95          172.3 ms   <= 3000
+warm trace P95            329.8 ms   <= 3000
+cold context P95         3825.9 ms   <= 5000
+cold trace P95           3872.3 ms   <= 5000
+max semantic sample      3958.1 ms   < 10000
+historical workflows         100     >= 100
+mapping coverage             93.3%   >= 90%
+navigation fallback           0/50   required 0
+extracted query validation   30/30   >= 95% ok
+```
+
+The compatibility/readiness policy is now documented in `docs/codeq-1.0-readiness.md`. It explicitly keeps `rg`, Git, and direct source inspection as expected partners, freezes the four-command surface for the path to 1.0, and rejects speculative graph/community/embedding expansion without repeated real-workflow evidence.
+
+Machine readiness artifact: `benchmarks/results/0.5.3-readiness.json`; human gate report: `benchmarks/0.5.3-readiness.md`.
+
+The final globally installed 0.5.3 CLI was then exercised through the normal Quant sequence:
+
+```text
+find 'SSE backtest logs'      -> ok; frontend streamBacktestLogs ranked first
+context backtest.py:175:17    -> ok; cursor definition stream_backtest_logs; 3 filtered frontend lexical lines / 0 tests
+trace incoming depth 2        -> ok; 8 nodes; not truncated
+review HEAD~1                 -> ok; 15 changed / 5 deleted / 0 untracked
+```
+
+All four results carried `schema_version=1`, and `~/Quant` remained clean after the run.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 0.5.2
+version                 codeq 0.5.3
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language

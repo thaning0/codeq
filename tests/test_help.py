@@ -18,6 +18,15 @@ class HelpTests(unittest.TestCase):
         )
         return action.choices[name]
 
+    def test_feature_surface_is_frozen_to_four_commands(self):
+        parser = build_parser()
+        action = next(
+            item
+            for item in parser._actions
+            if isinstance(item, argparse._SubParsersAction)
+        )
+        self.assertEqual(set(action.choices), {"find", "context", "trace", "review"})
+
     def test_top_level_help_is_agent_self_describing(self):
         help_text = build_parser().format_help()
         self.assertIn("Choose a command:", help_text)
