@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from .dynamic import classify_dynamic_references
-from .gitdiff import git_changed_ranges, merge_ranges
+from .gitdiff import git_changed_files, git_changed_ranges, merge_ranges
 from .lsp import LspError, LspProcess
+from .topology import extract_imports, importer_candidate_hits, resolve_import_specifier
 from .util import (
     fuzzy_score,
     guess_symbol_column,
@@ -144,6 +145,32 @@ def _definition_priority(item: dict[str, Any]) -> int:
     if item.get("origin") == "document":
         base += 2
     return base
+
+
+def _query_seeks_tests(query: str, kind: str | None) -> bool:
+    if (kind or "").strip().lower() == "test":
+        return True
+    lowered = query.lower()
+    return any(
+        cue in lowered
+        for cue in ("test", "tests", "pytest", "fixture", "mock", "spec", "测试")
+    )
+
+
+def _agent_ranking_adjustment(query: str, kind: str | None, item: dict[str, Any]) -> int:
+    """Prefer production definitions unless the query explicitly asks for tests."""
+    path = str(item.get("path") or "")
+    adjustment = 0
+    if is_test_path(path) and not _query_seeks_tests(query, kind):
+        adjustment -= 2500
+    lowered = path.lower()
+    if any(segment in lowered for segment in ("/generated/", "/fixtures/", "/snapshots/")):
+        adjustment -= 700
+    if "/examples/" in lowered:
+        adjustment -= 500
+    if item.get("origin") == "document":
+        adjustment += 150
+    return adjustment
 
 
 def _call_item_entry(item: dict[str, Any]) -> dict[str, Any]:
@@ -308,12 +335,14 @@ class Workspace:
             except (LspError, OSError):
                 continue
             hit_line = hit["line"]
+            mapped_hit = False
             for symbol in symbols:
                 rng = symbol.get("range") or {}
                 start = int((rng.get("start") or {}).get("line", symbol["line"] - 1)) + 1
                 end = int((rng.get("end") or {}).get("line", start - 1)) + 1
                 score = fuzzy_score(query, symbol["name"], symbol.get("container", ""), symbol["path"])
                 if start <= hit_line <= end:
+                    mapped_hit = True
                     results.append(
                         {
                             **symbol,
@@ -326,6 +355,45 @@ class Workspace:
                     )
                 elif score > 0:
                     results.append(symbol)
+            if not mapped_hit and symbols:
+                # Documentation normally precedes its declaration. Prefer the
+                # closest following semantic symbol before falling back to a
+                # symmetric neighborhood; this maps comments like "SSE streaming"
+                # to streamBacktestLogs rather than to the previous function.
+                following = [
+                    symbol
+                    for symbol in symbols
+                    if 0 <= int(symbol["line"]) - int(hit_line) <= 12
+                ]
+                if following:
+                    nearest = min(
+                        following,
+                        key=lambda symbol: (
+                            int(symbol["line"]) - int(hit_line),
+                            -_definition_priority(symbol),
+                        ),
+                    )
+                    max_distance = 12
+                else:
+                    nearest = min(
+                        symbols,
+                        key=lambda symbol: (
+                            abs(int(symbol["line"]) - int(hit_line)),
+                            -_definition_priority(symbol),
+                        ),
+                    )
+                    max_distance = 8
+                if abs(int(nearest["line"]) - int(hit_line)) <= max_distance:
+                    results.append(
+                        {
+                            **nearest,
+                            "lexical_match_score": max(
+                                int(nearest.get("lexical_match_score", 0)),
+                                int(hit.get("match_score", 1)),
+                            ),
+                            "match_text": hit.get("text", ""),
+                        }
+                    )
 
         if not results:
             for hit in hits:
@@ -344,7 +412,7 @@ class Workspace:
             key = (item["path"], int(item["line"]), item.get("name", ""))
             semantic_score = fuzzy_score(query, item.get("name", ""), item.get("container", ""), item["path"])
             lexical_boost = min(3500, int(item.get("lexical_match_score", 0)) * 700)
-            score = semantic_score + lexical_boost
+            score = semantic_score + lexical_boost + _agent_ranking_adjustment(query, kind, item)
             enriched = {**item, "score": score}
             current = dedup.get(key)
             if (
@@ -597,7 +665,145 @@ class Workspace:
                 out.append(entry)
         return out
 
+    def _file_target(self, target: str) -> Path | None:
+        path = Path(target).expanduser()
+        if not path.is_absolute():
+            path = self.root / path
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return None
+        if resolved.is_file() and language_for(resolved) is not None and self._is_repo_path(resolved):
+            return resolved
+        return None
+
+    def _definition_paths(
+        self,
+        session: LspProcess,
+        path: Path,
+        line: int,
+        column: int,
+    ) -> list[Path]:
+        out: list[Path] = []
+        seen: set[Path] = set()
+        for raw in session.definitions(path, line, column):
+            location = lsp_location(raw)
+            if not location:
+                continue
+            candidate = Path(location["path"]).resolve()
+            if candidate in seen or not self._is_repo_path(candidate):
+                continue
+            seen.add(candidate)
+            out.append(candidate)
+        return out
+
+    def _file_context(self, path: Path, limit: int) -> dict[str, Any]:
+        project = self.project_for_path(path)
+        if project is None:
+            return {
+                "status": "error",
+                "target": str(path),
+                "error": f"no language project found for {path}",
+            }
+        try:
+            session = self._session(project)
+            symbols = _flatten_document_symbols(session.document_symbols(path), path)
+        except (LspError, OSError) as exc:
+            return {"status": "error", "target": str(path), "error": str(exc)}
+
+        imports = extract_imports(path)
+        resolved_imports: list[dict[str, Any]] = []
+        for item in imports:
+            definitions = resolve_import_specifier(path, str(item.get("specifier") or ""), project.root)
+            if not definitions:
+                definitions = self._definition_paths(
+                    session,
+                    path,
+                    int(item.get("line") or 1),
+                    int(item.get("column") or 1),
+                )
+            resolved_imports.append(
+                {
+                    **item,
+                    "resolved_paths": [str(candidate) for candidate in definitions if candidate != path],
+                }
+            )
+
+        importers: list[dict[str, Any]] = []
+        seen_importers: set[tuple[str, int]] = set()
+        for hit in importer_candidate_hits(project.root, path, limit=max(400, limit * 20)):
+            importer_path = Path(hit["path"]).resolve()
+            importer_project = self.project_for_path(importer_path)
+            if importer_project is None:
+                continue
+            matched = False
+            resolved_any_local = False
+            for imported in extract_imports(importer_path):
+                if int(imported.get("line") or 0) != int(hit["line"]):
+                    continue
+                resolved_paths = resolve_import_specifier(
+                    importer_path,
+                    str(imported.get("specifier") or ""),
+                    importer_project.root,
+                )
+                resolved_any_local = resolved_any_local or bool(resolved_paths)
+                if path in resolved_paths:
+                    matched = True
+                    break
+            if not matched and not resolved_any_local:
+                try:
+                    importer_session = self._session(importer_project)
+                    matched = path in self._definition_paths(
+                        importer_session,
+                        importer_path,
+                        int(hit["line"]),
+                        int(hit.get("column") or 1),
+                    )
+                except (LspError, OSError):
+                    matched = False
+            if not matched:
+                continue
+            key = (str(importer_path), int(hit["line"]))
+            if key in seen_importers:
+                continue
+            seen_importers.add(key)
+            importers.append(
+                {
+                    "path": str(importer_path),
+                    "line": int(hit["line"]),
+                    "column": int(hit.get("column") or 1),
+                    "text": str(hit.get("text") or "").strip(),
+                }
+            )
+            if len(importers) >= limit:
+                break
+
+        outline = [
+            {k: symbol[k] for k in ("name", "kind", "container", "path", "line", "column")}
+            for symbol in symbols
+        ]
+        return {
+            "status": "ok",
+            "target": str(path),
+            "kind": "file",
+            "file": {
+                "path": str(path),
+                "language": language_for(path),
+                "project_root": str(project.root),
+            },
+            "outline": outline,
+            "symbol_count": len(outline),
+            "imports": resolved_imports,
+            "import_count": len(resolved_imports),
+            "importers": importers,
+            "importer_count": len(importers),
+        }
+
     def context(self, target: str, limit: int = 20) -> dict[str, Any]:
+        file_target = self._file_target(target)
+        if file_target is not None:
+            return self._file_context(file_target, limit)
+
         resolved = self.resolve(target)
         if resolved["status"] != "ok":
             return resolved
@@ -783,15 +989,39 @@ class Workspace:
         return list(dedup.values())
 
     def review(self, base: str, limit: int = 20) -> dict[str, Any]:
+        file_changes = git_changed_files(self.root, base)
         merged = merge_ranges(git_changed_ranges(self.root, base))
+        ranges_by_path = {item["path"]: item["ranges"] for item in merged}
+
         changed_symbols: list[dict[str, Any]] = []
         unsupported: list[str] = []
-        for file_change in merged:
-            path = Path(file_change["path"])
-            if language_for(path) is None:
-                unsupported.append(str(path))
+        analyzed_changes: list[dict[str, Any]] = []
+        for change in file_changes:
+            path = Path(change["path"])
+            annotated = dict(change)
+            status = str(change.get("status") or "")
+            if status == "D":
+                annotated["semantic_status"] = "deleted_not_analyzed"
+                analyzed_changes.append(annotated)
                 continue
-            changed_symbols.extend(self._changed_symbols_for_file(path, file_change["ranges"]))
+            if language_for(path) is None:
+                annotated["semantic_status"] = "unsupported_language"
+                unsupported.append(str(path))
+                analyzed_changes.append(annotated)
+                continue
+            if not path.exists():
+                annotated["semantic_status"] = "missing_from_worktree"
+                analyzed_changes.append(annotated)
+                continue
+            ranges = ranges_by_path.get(str(path), [])
+            if not ranges:
+                annotated["semantic_status"] = "rename_or_copy_without_content_changes"
+                analyzed_changes.append(annotated)
+                continue
+            symbols = self._changed_symbols_for_file(path, ranges)
+            changed_symbols.extend(symbols)
+            annotated["semantic_status"] = "analyzed" if symbols else "no_enclosing_symbol"
+            analyzed_changes.append(annotated)
 
         seen_symbols: set[tuple[str, int, str]] = set()
         distinct: list[dict[str, Any]] = []
@@ -842,16 +1072,21 @@ class Workspace:
                 "reference_count": len(refs),
             })
 
-        changed_files = [item["path"] for item in merged]
+        changed_files = [item["path"] for item in analyzed_changes]
         impacted_files.difference_update(changed_files)
         dynamic_reference_count = sum(
             len(detail.get("possible_dynamic_references", [])) for detail in details
         )
+        deleted_count = sum(1 for item in analyzed_changes if item.get("status") == "D")
+        renamed_count = sum(1 for item in analyzed_changes if item.get("status") == "R")
         return {
             "status": "ok",
             "base": base,
+            "file_changes": analyzed_changes,
             "changed_files": changed_files,
-            "changed_file_count": len(changed_files),
+            "changed_file_count": len(analyzed_changes),
+            "deleted_file_count": deleted_count,
+            "renamed_file_count": renamed_count,
             "changed_symbols": details,
             "changed_symbol_count": len(details),
             "impacted_files": sorted(impacted_files)[:100],
@@ -862,6 +1097,7 @@ class Workspace:
             "unsupported_changed_files": unsupported,
             "truncated": len(changed_symbols) > limit,
             "limitations": [
+                "deleted files are reported by Git but are not semantically analyzed against the current worktree",
                 "exact call edges are language-server-resolved and may omit runtime-only dispatch",
                 "possible_dynamic_references classify exact LSP references heuristically; they are not runtime-proof call edges",
                 "test discovery uses semantic references/callers plus test-path classification",

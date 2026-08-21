@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .util import language_for, path_to_uri
 
 
@@ -194,7 +195,7 @@ class LspProcess:
             "initialize",
             {
                 "processId": os.getpid(),
-                "clientInfo": {"name": "codeq", "version": "0.1.0"},
+                "clientInfo": {"name": "codeq", "version": __version__},
                 "rootUri": path_to_uri(self.root),
                 "rootPath": str(self.root),
                 "workspaceFolders": [{"uri": path_to_uri(self.root), "name": self.root.name}],
@@ -271,6 +272,19 @@ class LspProcess:
 
     def hover(self, path: Path, line: int, column: int) -> Any:
         return self.request("textDocument/hover", self.position_params(path, line, column))
+
+    def definitions(self, path: Path, line: int, column: int) -> list[dict[str, Any]]:
+        try:
+            result = self.request("textDocument/definition", self.position_params(path, line, column))
+        except LspError:
+            return []
+        if not result:
+            return []
+        if isinstance(result, dict):
+            return [result]
+        if isinstance(result, list):
+            return [item for item in result if isinstance(item, dict)]
+        return []
 
     def references(self, path: Path, line: int, column: int) -> list[dict[str, Any]]:
         params = self.position_params(path, line, column)

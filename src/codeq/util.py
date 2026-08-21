@@ -82,8 +82,8 @@ def loc(path: str | Path, line: int, column: int = 1, **extra: Any) -> dict[str,
 def lsp_location(raw: dict[str, Any] | None) -> dict[str, Any] | None:
     if not raw:
         return None
-    uri = raw.get("uri")
-    rng = raw.get("range")
+    uri = raw.get("uri") or raw.get("targetUri")
+    rng = raw.get("range") or raw.get("targetSelectionRange") or raw.get("targetRange")
     if not uri and isinstance(raw.get("location"), dict):
         return lsp_location(raw["location"])
     if not uri:
@@ -104,7 +104,10 @@ def symbol_kind(value: Any) -> str:
 
 
 def identifier_tokens(query: str) -> list[str]:
-    tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", query)
+    # Python's Unicode-aware \w keeps short natural-language queries useful when
+    # source comments/docstrings contain non-ASCII terms, while preserving normal
+    # identifier behavior for Python/TypeScript names.
+    tokens = re.findall(r"[^\W\d_]\w*|_[A-Za-z0-9_]+", query, flags=re.UNICODE)
     seen: set[str] = set()
     out: list[str] = []
     for token in sorted(tokens, key=len, reverse=True):
@@ -207,7 +210,7 @@ def lexical_hits(root: str | Path, query: str, limit: int = 40) -> list[dict[str
         return []
     patterns = tokens[:3]
     cmd = [
-        "rg", "--json", "-n", "--hidden", "--max-count", "5",
+        "rg", "--json", "-n", "--hidden", "--max-count", "20",
         "-g", "*.py", "-g", "*.pyi", "-g", "*.ts", "-g", "*.tsx",
         "-g", "*.js", "-g", "*.jsx", "-g", "!node_modules/**",
         "-g", "!.git/**", "-g", "!.next/**", "-g", "!dist/**", "-g", "!build/**",

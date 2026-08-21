@@ -5,12 +5,67 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-_HUNK = re.compile(r"^@@ -\d+(?:\d+,?\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
+
+
+def git_changed_files(root: Path, base: str) -> list[dict[str, Any]]:
+    """Return Git's authoritative A/M/D/R/C file status for a diff base."""
+    proc = subprocess.run(
+        ["git", "-C", str(root), "diff", "--no-ext-diff", "--name-status", "-z", "-M", base, "--"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or f"git diff failed for base {base}")
+
+    fields = proc.stdout.split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+    out: list[dict[str, Any]] = []
+    index = 0
+    while index < len(fields):
+        raw_status = fields[index]
+        index += 1
+        if not raw_status:
+            continue
+        status = raw_status[0]
+        if status in {"R", "C"}:
+            if index + 1 >= len(fields):
+                break
+            old_rel = fields[index]
+            new_rel = fields[index + 1]
+            index += 2
+            out.append(
+                {
+                    "status": status,
+                    "similarity": raw_status[1:] or None,
+                    "old_path": str((root / old_rel).resolve()),
+                    "path": str((root / new_rel).resolve()),
+                }
+            )
+            continue
+        if index >= len(fields):
+            break
+        rel = fields[index]
+        index += 1
+        out.append(
+            {
+                "status": status,
+                "similarity": None,
+                "old_path": None,
+                "path": str((root / rel).resolve()),
+            }
+        )
+    return out
 
 
 def git_changed_ranges(root: Path, base: str) -> list[dict[str, Any]]:
     proc = subprocess.run(
-        ["git", "-C", str(root), "diff", "--no-ext-diff", "--unified=0", "--find-renames", base, "--"],
+        [
+            "git", "-C", str(root), "diff", "--no-ext-diff", "--unified=0",
+            "--find-renames", "--diff-filter=AMRC", base, "--",
+        ],
         text=True, capture_output=True, check=False,
     )
     if proc.returncode != 0:

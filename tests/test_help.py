@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+import argparse
+import unittest
+
+from codeq.cli import PlainArgumentParser, build_parser
+
+
+class HelpTests(unittest.TestCase):
+    def _subparser(self, name: str) -> argparse.ArgumentParser:
+        parser = build_parser()
+        action = next(
+            item
+            for item in parser._actions
+            if isinstance(item, argparse._SubParsersAction)
+        )
+        return action.choices[name]
+
+    def test_top_level_help_is_agent_self_describing(self):
+        help_text = build_parser().format_help()
+        self.assertIn("Choose a command:", help_text)
+        self.assertIn("codeq find 'backtest log streaming'", help_text)
+        self.assertIn("codeq COMMAND --help", help_text)
+        self.assertNotIn("\x1b[", help_text)
+
+    def test_subcommand_help_explains_arguments_and_examples(self):
+        expected = {
+            "find": ["QUERY", "--kind KIND", "translate queries", "Examples:", "Typical next step:"],
+            "context": ["TARGET", "PATH:LINE[:COLUMN]", "complete file outline", "Callers", "Examples:"],
+            "trace": ["--in", "--out", "--depth N", "--node-limit N", "Examples:"],
+            "review": ["--base REF", "added, modified, deleted, and renamed", "Untracked files", "Examples:"],
+        }
+        for name, phrases in expected.items():
+            with self.subTest(command=name):
+                help_text = self._subparser(name).format_help()
+                for phrase in phrases:
+                    self.assertIn(phrase, help_text)
+                self.assertNotIn("\x1b[", help_text)
+
+    def test_plain_parser_disables_python_314_color_when_supported(self):
+        parser = PlainArgumentParser(prog="codeq-test")
+        if hasattr(parser, "color"):
+            self.assertFalse(parser.color)
+
+
+if __name__ == "__main__":
+    unittest.main()

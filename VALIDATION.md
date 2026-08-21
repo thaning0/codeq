@@ -1,182 +1,147 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the globally installed editable `codeq` executable (`/home/thn/.local/bin/codeq`).
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq` executable (`/home/thn/.local/bin/codeq`), version `0.2.1`.
 
-## Static / package checks
+## Static and package checks
 
-- `python3 -m py_compile src/codeq/*.py`: pass
-- focused core/dynamic suite (`test_core.py` + `test_dynamic.py`): 18/18 pass; full current working-tree discovery: 21/21 pass
-- `basedpyright --level error src/codeq tests`: 0 errors, 0 warnings
-- `uv build`: source distribution and wheel build successfully
+- full unit/integration suite: **30/30 pass** with `ResourceWarning` promoted to error;
+- `basedpyright --level error src tests`: **0 errors, 0 warnings**;
+- stale-daemon Unix-socket integration: pass; client detects version mismatch, replaces the stale same-UID daemon, and retries successfully;
+- workspace lifecycle tests: idle eviction and least-recently-used cap eviction pass;
+- `uv build`: `codeq-0.2.1.tar.gz` and `codeq-0.2.1-py3-none-any.whl` build successfully;
+- all CLI help output checked during the suite remains plain text with no ANSI escape sequences.
 
 ## Real `~/Quant` acceptance
 
-All commands below were invoked from `/home/thn/Quant` through the installed `codeq` command, not by importing implementation classes directly.
+All checks were invoked through the installed `codeq` CLI, not implementation classes. `git status --short` was captured before and after the run and remained byte-for-byte unchanged.
 
 | Check | Result |
 |---|---:|
-| Python `find BacktestService --kind class` | 852.0 ms |
-| Python `context BacktestService.stream_backtest_logs` cold | 3608.7 ms |
-| Same Python `context` warm | 705.7 ms |
-| Python cold/warm language-server process | same PID, reused |
-| `context backend/src/app/services/backtest_service.py:684` | 159.5 ms; promoted to `BacktestService.stream_backtest_logs` |
-| Python incoming trace depth 2 | 1055.6 ms; 8 semantic nodes |
-| Natural-language `find` | 704.4 ms; 8 bounded results |
-| TypeScript `context fetchBars` | 2974.0 ms; 3 direct repository callers |
-| TypeScript incoming trace depth 2 | 194.5 ms; 7 semantic nodes |
-| `review --base HEAD~1 --limit 5` after warmup | 667.9 ms |
-| Review scope | 23 changed files, 5 returned changed symbols, 9 impacted files, 77 likely test references |
-| Existing independent worktree cold `find` | 679.1 ms |
+| `find 'SSE backtest logs' --limit 8` | top result `streamBacktestLogs` at `frontend/src/features/backtests/api.ts:95`; 1466.1 ms |
+| `context backend/src/app/services/backtest_service.py` | 194 symbols, 23 imports, 8 verified importer edges; 2635.6 ms |
+| `context frontend/src/features/market/api.ts` | 52 symbols, 2 imports, 13 verified importer edges; 195.2 ms |
+| `context quant-cli/src/domain/time.ts` | correctly assigned to `/home/thn/Quant/quant-cli`; 1602.7 ms |
+| `context BacktestService.stream_backtest_logs` | deterministic source definition, 4 direct callers; 1962.4 ms |
+| incoming `trace` depth 2 | 8 semantic nodes; 770.0 ms |
+| `review --base HEAD~1 --limit 8` | 32 changed files = 23 modified + 9 deleted; 4997.9 ms |
+| existing independent worktree `find` | success in `/home/thn/Quant-worktrees/591-decision-spike`; 1252.0 ms |
 
-### Python semantic assertions
+## Review file-status completeness
 
-`BacktestService.stream_backtest_logs` resolved deterministically to:
+Git truth for the validation diff was:
 
 ```text
-/home/thn/Quant/backend/src/app/services/backtest_service.py:673
+32 changed files
+23 modified
+9 deleted
 ```
 
-Direct callers included:
+`codeq review --base HEAD~1` returned exactly the same counts and status classes. All 9 deleted files were retained in `file_changes` with:
 
 ```text
-backend/src/app/api/backtest.py::stream_backtest_logs
-backend/tests/api/test_backtest_api.py::_collect
+semantic_status = deleted_not_analyzed
 ```
 
-Three direct test references were returned, and a depth-2 incoming trace produced 8 nodes.
-
-The same qualified target was queried repeatedly during development after fixing resolver drift; it remained pinned to the same class/method definition.
-
-### TypeScript semantic assertions
-
-`fetchBars` resolved to:
+A temporary Git-repository regression test separately covers all four status classes:
 
 ```text
-/home/thn/Quant/frontend/src/features/market/api.ts:38
+A  added
+M  modified
+D  deleted
+R  renamed
 ```
 
-Direct callers included:
+A second regression verifies a pure rename with no content hunk remains visible as `rename_or_copy_without_content_changes`, while a deletion remains visible without trying to analyze nonexistent current source.
+
+## File context and import topology
+
+`context` accepts a source file directly and returns its complete LSP document outline instead of a short prefix list.
+
+Python validation:
 
 ```text
-useMarketChart
-load (useAlpha101Diagnostics)
-fetchBenchmarkData
+backend/src/app/services/backtest_service.py
+194 document symbols
+23 direct imports
+8 verified importer edges
 ```
 
-External `node_modules` call edges were filtered from agent-facing output.
-
-### Dynamic-reference fallback assertions
-
-The fallback classifies **exact LSP references** by their local source context; it does not perform repository-wide heuristic graph construction.
-
-Real Python validation used FastAPI dependency injection:
+TypeScript validation:
 
 ```text
-backend/src/app/api/backtest.py:38  _get_backtest_service
+frontend/src/features/market/api.ts
+52 document symbols
+2 direct imports
+13 verified importer edges
 ```
 
-LSP call hierarchy returned no callers, while `codeq context` identified 8 references such as:
+Verified TypeScript importers included alias, relative, re-export, test, and dynamic-import cases, including:
 
 ```text
-Depends(_get_backtest_service)
+frontend/src/features/backtests/utils/benchmark.ts
+frontend/src/features/market/index.ts
+frontend/src/features/market/hooks/useMarketChart.ts
+frontend/src/features/alpha101/hooks/useAlpha101PostAnchorCloseMetrics.ts
 ```
 
-as `callback_argument` with `confidence=possible`.
+Local module resolution is covered by unit tests for Python `src/` layouts and TypeScript `tsconfig.json` path aliases such as `@/* -> ./src/*`. Language-server definition lookup remains a fallback when deterministic source resolution cannot resolve a candidate.
 
-Real TypeScript validation targeted the local callback precisely by source position:
+## Search ranking
+
+The earlier diagnostic query `SSE backtest logs` now ranks the intended implementation first:
 
 ```text
-frontend/src/hooks/use-mobile.ts:11:11  onChange
+1  streamBacktestLogs  frontend/src/features/backtests/api.ts:95
 ```
 
-`codeq context` classified these as possible callback references:
+The improvement comes from:
+
+- ranking production definitions ahead of tests/examples unless tests are explicitly requested;
+- retaining token-coverage scoring across source hits;
+- mapping documentation/comments immediately preceding a declaration to that following semantic definition.
+
+`find` intentionally does not translate between natural languages. Concept queries should use terms likely to occur in source code or comments. Exact/qualified symbol queries remain the preferred follow-up once a target is discovered.
+
+## TypeScript project roots
+
+The reported `No Project` problem was not reproducible after current project discovery was exercised on real files. Both TypeScript roots resolve independently:
 
 ```text
-mql.addEventListener('change', onChange)
-mql.removeEventListener('change', onChange)
+frontend/src/features/market/api.ts -> /home/thn/Quant/frontend
+quant-cli/src/domain/time.ts        -> /home/thn/Quant/quant-cli
 ```
 
-while excluding the direct call `onChange()` from the dynamic-reference set.
+Each uses its own `typescript-language-server` workspace.
 
-False-positive guards were validated for Python direct method calls, `typing.cast(...)`, TypeScript direct calls, and TypeScript type annotations.
+## Daemon lifecycle
 
-A temporary Git repository verified positive `review` integration: modifying a function registered as `HANDLERS = {"x": handler}` produced one `mapping_value` dynamic reference in `codeq review --base HEAD`.
+The daemon protocol now carries an explicit codeq version and protocol version. An integration test starts a deliberately stale Unix-socket daemon and verifies that the client:
 
-### Expanded real-repository query matrix
+1. detects the incompatible response;
+2. identifies the peer process using same-UID Unix `SO_PEERCRED`;
+3. terminates only that stale daemon;
+4. starts the current daemon and retries successfully.
 
-A second acceptance matrix deliberately varied query wording, symbol kind, class, language, and dispatch style. The run used one freshly started daemon, so the first Python/TypeScript requests include each language server's cold-start cost while later rows are warm queries.
+Language workspaces are released after 5 minutes idle by default. The service also keeps at most 4 cached inactive workspaces using least-recently-used eviction; active concurrent workspaces are never evicted. The daemon itself exits after 15 minutes with no workspaces by default. These thresholds can be overridden with internal environment variables for diagnostics.
 
-#### Different `find` queries
+## Dynamic-reference fallback
 
-| Query | Filter | Top result / observation | Time |
-|---|---|---|---:|
-| `BacktestService` | `class` | `BacktestService` at `backend/src/app/services/backtest_service.py:70` | 880.1 ms |
-| `verify_factor_price_semantics` | `function` | exact implementation at `semantic_verification.py:565` | 114.7 ms |
-| `factor price semantic verification` | `function` | test functions ranked above implementation | 280.8 ms |
-| `industry classification data handler` | `class` | `ClassificationDomainDataHandler` at `backtest_classification_domain.py:585` | 262.3 ms |
-| `map bar candle` | `function` | `mapBarToCandle` at `frontend/src/features/market/mappers.ts:36` | 4721.1 ms (TS cold start) |
-| `market bars fetch` | `function` | several backend `MarketDataQueryService._fetch_*bars*` methods ranked above frontend `fetchBars` | 2799.6 ms |
+Exact language-server references can be classified as explicitly possible callback/registry evidence without promoting them to exact call edges. Regression coverage includes:
 
-This confirms two distinct behaviors rather than treating them as equivalent:
+- Python callback arguments and mapping/registry values;
+- FastAPI-style dependency callback references;
+- TypeScript event callbacks and mapping values;
+- guards against Python direct calls, method calls, `typing.cast`, TypeScript direct calls, type annotations, and generic type positions.
 
-- exact/near-exact symbol queries are deterministic and high precision;
-- natural-language `find` is bounded lexical ranking, not embedding-based semantic search. Broad wording can legitimately rank tests or another subsystem first, so agents should prefer exact symbols once discovered.
+## Worktree assertion
 
-#### Different classes and symbol kinds
+The linked worktree `/home/thn/Quant-worktrees/591-decision-spike` was queried using a class that actually exists in that historical commit. The query succeeded and the worktree's `.codeq*` state before and after the query was identical.
 
-| Target | Element kind | Result highlights | Time |
-|---|---|---|---:|
-| `FactorStreamRunner` | Python class | callers include `from_factors`, benchmark/test runtime constructors; callees include `CanonicalFactorStreamEngine` | 922.2 ms |
-| `ClassificationDomainDataHandler` | Python class | caller `build_compatibility_domain_registry` resolved | 320.4 ms |
-| `DividendFactorLoadCoordinator._cleanup_flush_task` | Python method | exact caller/callee plus `add_done_callback(self._cleanup_flush_task)` classified `callback_argument` | 340.0 ms |
-| `StStatusStateActor.on_data` | Python bound method | msgbus registration `handler=self.on_data` classified `callback_argument` | 531.7 ms |
-| `_get_backtest_service` | Python bare function | correctly returned `ambiguous`: definitions exist in both `backtest.py` and `uploaded_strategies.py` | 253.5 ms |
-| `backend/src/app/api/backtest.py:38:5` | Python function by location | disambiguated `_get_backtest_service`; 8 FastAPI `Depends(...)` references classified `callback_argument` | 147.8 ms |
-| `require_admin_role` | Python function | exact unit-test callers plus admin/log API `Depends(require_admin_role)` dynamic references | 286.1 ms |
-| `mapBarToCandle` | TypeScript function | `bars.map(mapBarToCandle)` classified `callback_argument` | 287.7 ms |
-| `frontend/src/hooks/use-mobile.ts:11:11` | TypeScript local constant callback | selected local `onChange`; add/remove event listeners classified dynamic, direct `onChange()` excluded | 207.1 ms |
-| `frontend/src/components/ui/sidebar.tsx:93:11` | TSX local constant callback | selected `handleKeyDown`; both event-listener references classified dynamic | 56.1 ms |
-| `frontend/src/features/market/types.ts:11:13` | TypeScript type alias | selected `BarData`; no call edges and **0 dynamic references** | 104.6 ms |
+## Current limits
 
-The `BarData` row caught a real false positive during the first matrix run: generic/type usages such as `Map<string, BarData[]>` were initially misclassified as `collection_member`. The classifier was tightened and two regression tests were added for generic parameter and generic return-type positions; the repeated real-repo query now returns zero dynamic references.
-
-#### Multi-hop traces on different languages
-
-| Target | Direction/depth | Result | Time |
-|---|---|---:|---:|
-| `BacktestService.stream_backtest_logs` | incoming, depth 2 | 8 semantic nodes | 1385.8 ms |
-| `fetchBars` | incoming, depth 2 | 7 semantic nodes | 209.1 ms |
-
-The matrix therefore covers classes, methods, top-level functions, local callbacks, a type alias, exact and ambiguous symbols, file/line/column targets, callback-based dispatch, and ordinary multi-hop call hierarchy in both Python and TypeScript.
-
-### Worktree assertion
-
-The existing linked worktree:
-
-```text
-/home/thn/Quant/Quant-worktrees/issue-624-agent-verification
-```
-
-was queried directly with `codeq --root <worktree> find ...`.
-
-- no `codeq init` was run;
-- no `codeq build` was run;
-- no `.codeq*` state existed before the query;
-- no `.codeq*` state existed after the query;
-- the worktree got its own lazy Python LSP process and returned the expected symbol.
-
-### Repository mutation assertion
-
-`git status --short` for `~/Quant` was captured before and after the full final acceptance run and compared byte-for-byte. It was unchanged.
-
-## Interpretation
-
-The MVP demonstrates the intended architectural tradeoff:
-
-- no persistent source graph is required;
-- no per-worktree graph rebuild is required;
-- cold semantic queries pay only bounded language-server startup/prewarm cost;
-- subsequent agent queries reuse the same language-server process;
-- the four CLI primitives cover symbol discovery, local context, multi-hop call tracing, and diff-oriented review context.
-
-The validation does not claim static completeness for dynamic Python/JavaScript dispatch. `possible_dynamic_references` are deliberately separated from exact call edges and marked `confidence=possible`; runtime-only dispatch can still remain unknowable to static analysis.
+- runtime-only Python/JavaScript dispatch can still be unknowable to static analysis;
+- possible dynamic references are labeled evidence, not proof of a runtime call edge;
+- `review` reports deleted files but cannot derive current-worktree semantic edges from source that no longer exists;
+- test discovery is based on semantic references/callers plus test-path classification, not coverage data;
+- natural-language `find` is source-language lexical/semantic ranking, not multilingual translation or embedding search;
+- each Git worktree is a separate language-server workspace and has its own first-query startup cost.

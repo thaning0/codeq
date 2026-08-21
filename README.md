@@ -2,7 +2,7 @@
 
 `codeq` is a deliberately small CLI-first code-intelligence tool for coding agents.
 
-Its job is not to build another code graph. Its job is to collapse common agent exploration/review loops into a few deterministic shell commands by composing mature language-server semantics with `rg` and `git`.
+Its job is to collapse common agent exploration/review loops into a few deterministic shell commands by composing mature language-server semantics with `rg` and `git`.
 
 ## Scope
 
@@ -15,7 +15,35 @@ codeq trace TARGET --in|--out [--depth N]
 codeq review [--base REF]
 ```
 
-There is no MCP server, skill package, graph database, embedding model, visualization layer, or per-worktree `build`/`init` step.
+## Agent integration
+
+`codeq` is intentionally self-describing. An agent should not need a codeq skill file, copied prompt, or repository-specific wrapper.
+
+The only repository instruction needed is one line in `AGENTS.md`:
+
+```text
+When exploring, understanding, tracing, or reviewing code, use the `codeq` CLI first; run `codeq --help` for usage.
+```
+
+From that point the intended discovery path is:
+
+```text
+AGENTS.md says "use codeq"
+  -> codeq --help
+  -> choose find / context / trace / review
+  -> codeq COMMAND --help when an argument is unclear
+```
+
+Command selection is deliberately simple:
+
+| Question | Command |
+| --- | --- |
+| Where is this code / what is it called? | `codeq find QUERY` |
+| What is this symbol and what directly surrounds it? | `codeq context TARGET` |
+| Who calls this / what does it call across multiple hops? | `codeq trace TARGET --in/--out` |
+| What does this branch/diff affect and which tests are relevant? | `codeq review --base REF` |
+
+All human-readable CLI output and help are plain text without ANSI colors. Use `--json` only when structured machine consumption is useful.
 
 ## What each command replaces
 
@@ -28,40 +56,55 @@ codeq find BacktestService --kind class
 codeq find 'report summary freshness policy evidence' --limit 8
 ```
 
-`--kind` is optional. Useful values include `function`, `method`, `class`, and `test`.
+Arguments:
+
+| Argument | Meaning |
+| --- | --- |
+| `QUERY` | Exact symbol, qualified-name fragment, or short source-code description. For concepts, use vocabulary likely to appear in source/comments; queries are not automatically translated between natural languages. |
+| `--kind KIND` | Optional result filter such as `function`, `method`, `class`, `interface`, or `test`. |
+| `--limit N` | Maximum number of matches returned; global option, default `20`. |
 
 The implementation combines:
 
 - LSP workspace/document symbols for semantic entities;
-- `rg` source hits for fast lexical discovery and cold-index fallback;
+- `rg` source hits for fast lexical discovery and cold-start fallback;
 - deterministic ranking that prefers real definitions over imports/aliases.
 
 ### `context`
 
-Return the local semantic neighborhood of one symbol in one call:
+Return context for a symbol, source location, or whole source file.
+
+For a symbol or `file:line[:column]` target it returns:
 
 - exact definition/location;
 - hover/signature;
 - bounded source snippet;
-- direct callers;
-- direct callees;
-- implementations;
-- source references;
+- direct callers and callees;
+- implementations and source references;
 - references from test files;
-- symbols in the containing file.
+- possible dynamic callback/registry references when detected.
 
-Targets can be a symbol or a file location:
+For a source-file target it returns the complete document outline plus direct imports and verified importers.
 
 ```bash
 codeq context BacktestService.stream_backtest_logs
 codeq context backend/src/app/services/backtest_service.py:684
+codeq context backend/src/app/services/backtest_service.py
 ```
 
 A `file:line[:column]` target is promoted to its enclosing function/method/type when possible.
 
+Arguments:
+
+| Argument | Meaning |
+| --- | --- |
+| `TARGET` | Qualified symbol, bare symbol, source file, or `PATH:LINE[:COLUMN]`. Qualified symbols are preferred when known. |
+| `--limit N` | Bounds returned callers/callees/references/tests; global option, default `20`. |
+| `--json` | Return the same context as one JSON document. |
+
 ### `trace`
 
-Trace the LSP call hierarchy without constructing a persistent graph:
+Trace a semantic call hierarchy:
 
 ```bash
 codeq trace BacktestService.stream_backtest_logs --in --depth 2
@@ -69,6 +112,16 @@ codeq trace fetchBars --out --depth 3
 ```
 
 Traversal is depth-bounded, cycle-protected, result-bounded, and restricted to repository source (for example, `node_modules` is not emitted).
+
+Arguments:
+
+| Argument | Meaning |
+| --- | --- |
+| `TARGET` | Qualified symbol, bare symbol, or `PATH:LINE[:COLUMN]`. |
+| `--in` | Walk incoming calls toward callers/entry points; use for impact radius. |
+| `--out` | Walk outgoing calls toward callees/implementation; use for execution flow. |
+| `--depth N` | Maximum number of call edges. `0` = root only, `1` = direct neighbors; default `3`. |
+| `--node-limit N` | Hard cap on emitted call-tree nodes; default `100`. |
 
 ### `review`
 
@@ -79,27 +132,38 @@ codeq review --base HEAD~1
 codeq review --base master --limit 15 --json
 ```
 
-It performs:
+It first reports Git's added/modified/deleted/renamed file set, then analyzes current changed source:
 
 ```text
 git diff
-  -> changed line ranges
+  -> A/M/D/R file status
+  -> current changed line ranges
   -> enclosing semantic symbols
   -> callers / references
+  -> possible dynamic callback / registry references
   -> likely tests
   -> affected source files
 ```
 
-Changed-symbol selection prefers the innermost function/method/type instead of flooding the result with local variables and containing classes.
+Deleted files remain visible but cannot be semantically analyzed against the current worktree. Changed-symbol selection prefers the innermost function/method/type instead of flooding the result with local variables and containing classes.
+
+Arguments:
+
+| Argument | Meaning |
+| --- | --- |
+| `--base REF` | Left side of `git diff REF --`; default `HEAD~1`. For PR review, use the same base ref as the review diff. |
+| `--limit N` | Bounds changed symbols analyzed/emitted; global option, default `20`. |
+
+`review` does not include untracked files because they are not part of `git diff REF --`.
 
 ## Global options
 
-```text
---root PATH       repository or worktree root; defaults to cwd
---json            emit one JSON document
---limit N         bound returned symbols/results
---timeout SEC     language-server request timeout
-```
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `--root PATH` | `.` | Repository or worktree path. codeq resolves the containing Git root. |
+| `--json` | off | Emit one machine-readable JSON document instead of compact plain text. |
+| `--limit N` | `20` | Bound matches/symbols where the selected command uses a result limit. |
+| `--timeout SEC` | `20` | Language-server request timeout in seconds. |
 
 For agent ergonomics, global options work before or after the subcommand:
 
@@ -130,15 +194,13 @@ small persistent daemon
   +-- git -----------------> changed ranges for review
 ```
 
-The daemon exists for one reason: keep language servers warm between short CLI invocations. It does not own a second code index.
+The daemon keeps language servers warm between short CLI invocations, automatically restarts across incompatible codeq upgrades, and releases inactive language workspaces after an idle period.
 
 For a monorepo, `codeq` discovers language subprojects and starts only the relevant server. For example, in `~/Quant`, Python analysis runs with `backend/` as its project root and TypeScript analysis runs with `frontend/` as its project root rather than treating the entire Git checkout as one language workspace.
 
 ## Worktrees
 
-A Git worktree needs no `codeq init` or `codeq build`.
-
-On first query in a worktree, `codeq` lazily starts the relevant language server for that worktree/project. Subsequent CLI calls reuse it. No `.codeq` directory or semantic database is written into the repository/worktree.
+Run `codeq` directly from any Git worktree. Worktrees are treated as separate language workspaces, and inactive workspaces are released automatically.
 
 Runtime socket location:
 
@@ -200,12 +262,12 @@ After editable installation, `codeq` can be called directly from any repository.
 - code visualization;
 - MCP or agent-specific skills.
 
-The language server remains the semantic authority. `codeq` only composes and bounds queries for agent consumption.
+Language servers remain the semantic authority for symbols, references, and call edges. File import topology uses deterministic source/module resolution with language-server fallback. `codeq` composes and bounds these queries for agent consumption.
 
 ## Known limitations
 
-- Python/JavaScript dynamic dispatch cannot always be resolved statically. Missing edges are preferable to invented edges.
-- `find` natural-language behavior is lightweight lexical + semantic ranking, not embedding search.
+- Python/JavaScript dynamic dispatch cannot always be resolved statically. `codeq` may surface bounded callback/registry references as explicitly labeled "possible" evidence, but it does not promote heuristic matches to exact call edges.
+- `find` natural-language behavior is lightweight lexical + semantic ranking, not translation or embedding search; use terms likely to occur in the repository source/comments.
 - `review` test discovery uses language-server references/callers plus test-path classification; it is useful context, not a formal coverage proof.
-- The first query for a symbol can take a few seconds because `codeq` deliberately prewarms only a bounded set of likely reference files instead of indexing/building a separate whole-repository graph.
-- Different Git worktrees are different language-server workspaces. `codeq` avoids a second graph build, but the underlying language server still has its own workspace startup cost.
+- The first query for a symbol can take a few seconds while the relevant language workspace warms and a bounded set of likely reference files is opened.
+- Different Git worktrees are different language-server workspaces and therefore have independent first-query startup costs.
