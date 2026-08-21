@@ -228,6 +228,6 @@ Run:
 uv run python benchmarks/readiness_gate.py
 ```
 
-The gate consumes the committed 0.5.1 performance artifact and 0.5.2 historical replay artifact. At 0.5.3 all readiness checks passed, and `1.0.0rc1` is now the active release candidate.
+The gate consumes the committed 0.5.1 performance artifact and 0.5.2 historical replay artifact. At 0.5.3 all readiness checks passed, and `1.0.0rc2` is now the active release candidate after a CLI stream-contract fix.
 
 During the RC period, only release blockers should change analysis/runtime behavior: silent correctness bugs, compatibility-contract regressions, or repeated severe performance/lifecycle failures. New analysis capabilities stay deferred. If the RC workload remains clean, the next stable release is `1.0.0`.

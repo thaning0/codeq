@@ -152,15 +152,99 @@ class CliFailureContractTests(unittest.TestCase):
             "result_count": 0,
             "total_candidates": 0,
             "errors": [],
+            "_meta": {"duration_ms": 12.3},
         }
         stdout = io.StringIO()
+        stderr = io.StringIO()
         with (
             patch("codeq.cli.git_root", return_value="/repo"),
             patch("codeq.cli._request", return_value=result),
             redirect_stdout(stdout),
+            redirect_stderr(stderr),
         ):
             main(["find", "Foo"])
         self.assertIn("No matches.", stdout.getvalue())
+        self.assertIn("[0 results; 12.3 ms]", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_all_success_renderers_keep_stderr_empty(self) -> None:
+        cases = [
+            (
+                ["find", "Foo"],
+                {
+                    "status": "ok",
+                    "query": "Foo",
+                    "results": [{"name": "Foo", "kind": "Class", "path": "/repo/foo.py", "line": 1, "column": 1, "source": "lsp"}],
+                    "result_count": 1,
+                    "_meta": {"duration_ms": 1.0},
+                },
+                "[1 results; 1.0 ms]",
+            ),
+            (
+                ["context", "Foo.run"],
+                {
+                    "status": "ok",
+                    "symbol": {"name": "run", "kind": "Method", "container": "Foo", "path": "/repo/foo.py", "line": 2, "column": 5},
+                    "hover": "",
+                    "source": {"text": ""},
+                    "callers": [],
+                    "callees": [],
+                    "implementations": [],
+                    "tests": [],
+                    "references": [],
+                    "possible_dynamic_references": [],
+                    "_meta": {"duration_ms": 2.0},
+                },
+                "[2.0 ms]",
+            ),
+            (
+                ["trace", "Foo.run", "--in", "--depth", "0"],
+                {
+                    "status": "ok",
+                    "target": "Foo.run",
+                    "direction": "in",
+                    "depth": 0,
+                    "node_count": 1,
+                    "tree": {"node": {"name": "run", "path": "/repo/foo.py", "line": 2}, "children": []},
+                    "_meta": {"duration_ms": 3.0},
+                },
+                "[1 nodes; depth=0; 3.0 ms]",
+            ),
+            (
+                ["review", "--base", "HEAD~1"],
+                {
+                    "status": "ok",
+                    "base": "HEAD~1",
+                    "requested_base": "HEAD~1",
+                    "base_mode": "direct",
+                    "file_changes": [],
+                    "changed_files": [],
+                    "changed_file_count": 0,
+                    "changed_symbols": [],
+                    "changed_symbol_count": 0,
+                    "impacted_files": [],
+                    "impacted_file_count": 0,
+                    "possible_dynamic_reference_count": 0,
+                    "tests": [],
+                    "test_count": 0,
+                    "_meta": {"duration_ms": 4.0},
+                },
+                "[4.0 ms]",
+            ),
+        ]
+        for argv, result, summary in cases:
+            with self.subTest(argv=argv):
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with (
+                    patch("codeq.cli.git_root", return_value="/repo"),
+                    patch("codeq.cli._request", return_value=result),
+                    redirect_stdout(stdout),
+                    redirect_stderr(stderr),
+                ):
+                    main(argv)
+                self.assertIn(summary, stdout.getvalue())
+                self.assertEqual(stderr.getvalue(), "")
 
 
 if __name__ == "__main__":

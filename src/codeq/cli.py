@@ -195,15 +195,14 @@ def _render_find(data: dict[str, Any]) -> None:
         if not data.get("results"):
             print("No matches.")
         if data.get("truncated"):
-            print("... more matching lines available; increase --limit", file=sys.stderr)
+            print("... more matching lines available; increase --limit")
         meta = data.get("_meta", {})
         print(
             f"\n[{data.get('match_count',0)} exact matches across "
             f"{data.get('matching_line_count',0)} lines / {data.get('matching_file_count',0)} files; "
             f"tracked={data.get('tracked_line_count',0)} untracked={data.get('untracked_line_count',0)} "
             f"tests={data.get('test_line_count',0)}; showing {data.get('returned_line_count',0)} lines; "
-            f"{meta.get('duration_ms','?')} ms]",
-            file=sys.stderr,
+            f"{meta.get('duration_ms','?')} ms]"
         )
         return
     for item in data.get("results", []):
@@ -216,7 +215,7 @@ def _render_find(data: dict[str, Any]) -> None:
     if not data.get("results"):
         print("No matches.")
     meta = data.get("_meta", {})
-    print(f"\n[{data.get('result_count',0)} results; {meta.get('duration_ms','?')} ms]", file=sys.stderr)
+    print(f"\n[{data.get('result_count',0)} results; {meta.get('duration_ms','?')} ms]")
 
 
 def _render_resolution(data: dict[str, Any]) -> bool:
@@ -300,7 +299,7 @@ def _render_file_context(data: dict[str, Any]) -> None:
             print()
             _print_text_search("Lexical references", data.get("lexical_references"))
         meta = data.get("_meta", {})
-        print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
+        print(f"\n[{meta.get('duration_ms','?')} ms]")
         return
 
     imports = data.get("imports", [])
@@ -332,7 +331,7 @@ def _render_file_context(data: dict[str, Any]) -> None:
         _print_text_search("Lexical references", data.get("lexical_references"))
 
     meta = data.get("_meta", {})
-    print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
+    print(f"\n[{meta.get('duration_ms','?')} ms]")
 
 
 def _render_context(data: dict[str, Any]) -> None:
@@ -371,7 +370,7 @@ def _render_context(data: dict[str, Any]) -> None:
         print()
         _print_text_search("Lexical references", data.get("lexical_references"))
     meta = data.get("_meta", {})
-    print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
+    print(f"\n[{meta.get('duration_ms','?')} ms]")
 
 
 def _render_trace(data: dict[str, Any]) -> None:
@@ -390,11 +389,10 @@ def _render_trace(data: dict[str, Any]) -> None:
 
     visit(data["tree"], root=True)
     if data.get("note"):
-        print(f"\nNote: {data['note']}", file=sys.stderr)
+        print(f"\nNote: {data['note']}")
     meta = data.get("_meta", {})
     print(
-        f"\n[{data.get('node_count',1)} nodes; depth={data.get('depth')}; {meta.get('duration_ms','?')} ms]",
-        file=sys.stderr,
+        f"\n[{data.get('node_count',1)} nodes; depth={data.get('depth')}; {meta.get('duration_ms','?')} ms]"
     )
 
 
@@ -468,9 +466,9 @@ def _render_review(data: dict[str, Any]) -> None:
     if data.get("tests_truncated"):
         print("  ... more likely tests available; increase --limit")
     if data.get("truncated"):
-        print("\nResult truncated by --limit.", file=sys.stderr)
+        print("\nResult truncated by --limit.")
     meta = data.get("_meta", {})
-    print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
+    print(f"\n[{meta.get('duration_ms','?')} ms]")
 
 
 def build_parser() -> argparse.ArgumentParser:

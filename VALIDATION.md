@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc1` CLI.
+Validated on 2026-08-22 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc2` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **81/81 pass**
+- `uv run python -W error -m unittest discover -s tests`: **82/82 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **1.0.0rc1**
-- installed distribution metadata: **1.0.0rc1**
+- installed module version: **1.0.0rc2**
+- installed distribution metadata: **1.0.0rc2**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 1.0.0rc1 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 1.0.0rc2 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -381,10 +381,41 @@ All four responses retained `schema_version=1`; the Quant working tree was uncha
 
 RC policy is now active: only silent correctness blockers, compatibility-contract regressions, or repeated severe performance/lifecycle failures should change runtime/analysis behavior before stable 1.0. New capabilities remain deferred.
 
+## 1.0.0rc2 stream-contract fix
+
+RC2 fixes a CLI integration issue observed in an Agent shell wrapper: successful human-readable output mixed normal result lines on stdout with success summaries/notes on stderr. Some execution environments merge or replay the two streams in ways that can duplicate or reorder the visible command result.
+
+The plain-text stream contract is now explicit:
+
+```text
+success results / summaries / notes / truncation notices -> stdout
+query failures / ambiguity / runtime errors               -> stderr
+JSON mode                                                  -> stdout
+```
+
+Regression tests cover all four successful renderers (`find`, `context`, `trace`, `review`) and require `stderr == ""` on successful execution. Existing failure tests continue to require nonzero exit status and stderr diagnostics.
+
+The exact reported Quant command was re-run with the globally installed `1.0.0rc2` CLI:
+
+```text
+codeq find 'automatic factor submission slug auto-factor' --limit 20
+```
+
+Validation result:
+
+```text
+20 result lines
+20 unique result lines
+1 success summary
+stderr = 0 bytes
+```
+
+A missing explicit path still produced `rc=1`, zero stdout bytes, and the error only on stderr. RC2 passed **82/82 tests**, basedpyright with zero errors/warnings, build, and the **9/9** readiness gate. Artifacts: `benchmarks/1.0.0rc2-readiness.md` and `benchmarks/results/1.0.0rc2-readiness.json`.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 1.0.0rc1
+version                 codeq 1.0.0rc2
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language
