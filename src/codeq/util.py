@@ -144,16 +144,43 @@ def fuzzy_score(query: str, name: str, container: str = "", path: str = "") -> i
     return coverage * 1000 + min(len(n), 200)
 
 
-def source_snippet(path: str | Path, line: int, before: int = 2, after: int = 10) -> dict[str, Any]:
+def source_snippet(
+    path: str | Path,
+    line: int,
+    before: int = 2,
+    after: int = 10,
+    *,
+    max_chars: int | None = None,
+    max_line_chars: int | None = None,
+) -> dict[str, Any]:
     p = Path(path)
     try:
         lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return {"start_line": line, "text": ""}
+        return {"start_line": line, "text": "", "truncated": False}
     start = max(1, line - before)
     end = min(len(lines), line + after)
-    numbered = "\n".join(f"{idx:>5}  {lines[idx - 1]}" for idx in range(start, end + 1))
-    return {"start_line": start, "end_line": end, "text": numbered}
+    rendered: list[str] = []
+    line_truncated = False
+    for idx in range(start, end + 1):
+        content = lines[idx - 1]
+        if max_line_chars is not None and len(content) > max_line_chars:
+            keep = max(0, max_line_chars - 3)
+            content = content[:keep] + ("..." if max_line_chars >= 3 else "")
+            line_truncated = True
+        rendered.append(f"{idx:>5}  {content}")
+    numbered = "\n".join(rendered)
+    payload_truncated = False
+    if max_chars is not None and len(numbered) > max_chars:
+        keep = max(0, max_chars - 3)
+        numbered = numbered[:keep] + ("..." if max_chars >= 3 else "")
+        payload_truncated = True
+    return {
+        "start_line": start,
+        "end_line": end,
+        "text": numbered,
+        "truncated": line_truncated or payload_truncated,
+    }
 
 
 def guess_symbol_column(path: str | Path, line: int, preferred: str | None = None) -> int:

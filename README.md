@@ -217,6 +217,34 @@ Review JSON records `requested_base`, `base_mode`, and `resolved_base` for audit
 
 Query outcomes such as `not_found`, `ambiguous`, and `unsupported_language` exit with status `1`. Runtime/tool failures exit with status `2`. In `--json` mode the structured error document is still emitted before the nonzero exit.
 
+### JSON contract (schema version 1)
+
+All daemon-backed command results include `schema_version: 1`. The stable top-level status vocabulary is:
+
+```text
+ok
+not_found
+ambiguous
+unsupported_language
+unsupported_target
+invalid_query
+error
+```
+
+Nested review analysis may additionally use `unavailable` for evidence that cannot be produced from the selected base/current worktree.
+
+Machine-readable evidence values use underscore-separated enums rather than presentation strings:
+
+```text
+semantic
+lexical
+possible_dynamic
+base_side_lexical
+current_semantic
+```
+
+`--limit` is the single public disclosure knob. Internally codeq derives a bounded query budget: top-level items follow `--limit`, per-symbol nested details are capped at five, hover/source/text-line payloads have hard character budgets, and any bounded list keeps its complete count plus truncation metadata when available. Exact-text matching counts are computed before payload truncation.
+
 For agent ergonomics, global options work before or after the subcommand:
 
 ```bash

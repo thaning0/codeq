@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from codeq.contracts import EVIDENCE_BASE_SIDE_LEXICAL, EVIDENCE_CURRENT_SEMANTIC
 from codeq.gitdiff import git_changed_files
 from codeq.workspace import Workspace
 
@@ -61,7 +62,7 @@ class GitChangedFilesTests(unittest.TestCase):
                 with patch.object(
                     workspace,
                     "_pure_rename_analysis",
-                    return_value={"status": "ok", "evidence": "current semantic", "importers": [], "symbols": []},
+                    return_value={"status": "ok", "evidence": EVIDENCE_CURRENT_SEMANTIC, "importers": [], "symbols": []},
                 ):
                     review = workspace.review("HEAD")
             finally:
@@ -71,9 +72,9 @@ class GitChangedFilesTests(unittest.TestCase):
             self.assertEqual(review["renamed_file_count"], 1)
             by_status = {item["status"]: item for item in review["file_changes"]}
             self.assertEqual(by_status["D"]["semantic_status"], "deleted_base_analyzed")
-            self.assertEqual(by_status["D"]["base_analysis"]["evidence"], "base-side lexical")
+            self.assertEqual(by_status["D"]["base_analysis"]["evidence"], EVIDENCE_BASE_SIDE_LEXICAL)
             self.assertEqual(by_status["R"]["semantic_status"], "rename_analyzed")
-            self.assertEqual(by_status["R"]["rename_analysis"]["evidence"], "current semantic")
+            self.assertEqual(by_status["R"]["rename_analysis"]["evidence"], EVIDENCE_CURRENT_SEMANTIC)
 
     def test_deleted_file_reports_residual_references_and_tests_from_base_symbols(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

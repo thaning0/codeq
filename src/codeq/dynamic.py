@@ -6,6 +6,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from .contracts import EVIDENCE_POSSIBLE_DYNAMIC
+
 
 _DYNAMIC_CONFIDENCE = "possible"
 
@@ -217,6 +219,7 @@ def classify_dynamic_reference(reference: dict[str, Any], symbol_name: str) -> d
         **reference,
         "reason": reason,
         "confidence": _DYNAMIC_CONFIDENCE,
+        "evidence": EVIDENCE_POSSIBLE_DYNAMIC,
         "text": _line_text(path, line).strip(),
     }
 

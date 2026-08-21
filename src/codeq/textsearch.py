@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .contracts import EVIDENCE_LEXICAL, QueryBudget
 from .util import is_test_path
 
 
@@ -129,6 +130,7 @@ def _tracked_hits(
                 "tracked": True,
                 "git_status": "tracked",
                 "source": "git-grep",
+                "evidence": EVIDENCE_LEXICAL,
             }
         )
     return hits
@@ -193,11 +195,35 @@ def _untracked_hits(
                             "tracked": False,
                             "git_status": "untracked",
                             "source": "untracked-scan",
+                            "evidence": EVIDENCE_LEXICAL,
                         }
                     )
         except OSError:
             continue
     return hits
+
+
+def _bounded_hit(item: dict[str, Any], query: str, max_chars: int) -> dict[str, Any]:
+    text = str(item.get("text") or "")
+    if len(text) <= max_chars:
+        return {**item, "text_truncated": False, "text_start_column": 1}
+    match_index = max(0, int(item.get("column") or 1) - 1)
+    context = max(0, max_chars // 3)
+    start = max(0, match_index - context)
+    if start + max_chars > len(text):
+        start = max(0, len(text) - max_chars)
+    end = min(len(text), start + max_chars)
+    window = text[start:end]
+    if start > 0 and max_chars >= 3:
+        window = "..." + window[3:]
+    if end < len(text) and max_chars >= 3:
+        window = window[:-3] + "..."
+    return {
+        **item,
+        "text": window,
+        "text_truncated": True,
+        "text_start_column": start + 1,
+    }
 
 
 def git_text_search(
@@ -243,11 +269,13 @@ def git_text_search(
         )
     hits.sort(key=lambda item: (item["relative_path"], int(item["line"]), not bool(item["tracked"])))
 
-    bounded = hits[: max(1, limit)]
+    budget = QueryBudget.from_limit(limit)
+    bounded = [_bounded_hit(item, query, budget.text_line_chars) for item in hits[: budget.items]]
     matching_files = {str(item["path"]) for item in hits}
     return {
         "status": "ok",
         "mode": "text",
+        "evidence": EVIDENCE_LEXICAL,
         "query": query,
         "results": bounded,
         "match_count": sum(int(item["occurrences"]) for item in hits),

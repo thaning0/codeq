@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .contracts import attach_schema
 from .util import git_root
 from .workspace import Workspace
 
@@ -96,7 +97,7 @@ class CodeqService:
             with self._lock:
                 self._last_activity = time.monotonic()
                 roots = sorted(str(root) for root in self._workspaces)
-            return {"status": "ok", "workspaces": len(roots), "roots": roots}
+            return attach_schema({"status": "ok", "workspaces": len(roots), "roots": roots})
 
         root = str(request.get("root") or ".")
         timeout = float(request.get("timeout") or 15.0)
@@ -156,6 +157,6 @@ class CodeqService:
                 "lsp_sessions_before": before,
                 "lsp_sessions": after,
             }
-            return data
+            return attach_schema(data)
         finally:
             self._release_workspace(entry)

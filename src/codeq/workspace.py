@@ -10,6 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from .baseanalysis import extract_base_declarations
+from .contracts import (
+    EVIDENCE_BASE_SIDE_LEXICAL,
+    EVIDENCE_CURRENT_SEMANTIC,
+    EVIDENCE_LEXICAL,
+    EVIDENCE_SEMANTIC,
+    QueryBudget,
+    bounded_text,
+)
 from .dynamic import classify_dynamic_references
 from .gitdiff import (
     git_changed_files,
@@ -1284,10 +1292,11 @@ class Workspace:
 
         tests = [r for r in refs if is_test_path(r["path"])]
         source_refs = [r for r in refs if not is_test_path(r["path"])]
+        budget = QueryBudget.from_limit(limit)
         possible_dynamic = classify_dynamic_references(
             source_refs,
             str(symbol.get("name") or ""),
-            limit=limit,
+            limit=budget.items,
         )
         hover_text = ""
         if isinstance(hover, dict):
@@ -1308,6 +1317,8 @@ class Workspace:
                 int(requested_location["line"]),
                 before=2,
                 after=4,
+                max_chars=budget.snippet_chars,
+                max_line_chars=budget.text_line_chars,
             )
         lexical_data: dict[str, Any] | None = None
         if lexical_references:
@@ -1322,16 +1333,25 @@ class Workspace:
 
         data = {
             "status": "ok",
+            "evidence": EVIDENCE_SEMANTIC,
             "target": target,
             "symbol": symbol,
-            "hover": hover_text[:4000],
-            "source": source_snippet(path, line, before=2, after=12),
-            "callers": callers[:limit],
-            "callees": callees[:limit],
-            "implementations": impls[:limit],
-            "references": source_refs[:limit],
+            "hover": bounded_text(hover_text, budget.hover_chars)[0],
+            "hover_truncated": bounded_text(hover_text, budget.hover_chars)[1],
+            "source": source_snippet(
+                path,
+                line,
+                before=2,
+                after=12,
+                max_chars=budget.snippet_chars,
+                max_line_chars=budget.text_line_chars,
+            ),
+            "callers": callers[:budget.items],
+            "callees": callees[:budget.items],
+            "implementations": impls[:budget.items],
+            "references": source_refs[:budget.items],
             "possible_dynamic_references": possible_dynamic,
-            "tests": tests[:limit],
+            "tests": tests[:budget.items],
         }
         if requested_location is not None:
             data["requested_location"] = requested_location
@@ -1355,7 +1375,7 @@ class Workspace:
         roots = session.prepare_call_hierarchy(path, line, column)
         if not roots:
             return {
-                "status": "ok", "target": target, "direction": direction, "depth": depth,
+                "status": "ok", "evidence": EVIDENCE_SEMANTIC, "target": target, "direction": direction, "depth": depth,
                 "root": symbol, "tree": {"node": symbol, "children": []}, "node_count": 1,
                 "note": "language server returned no call hierarchy for this position",
             }
@@ -1402,6 +1422,7 @@ class Workspace:
         assert tree is not None
         return {
             "status": "ok",
+            "evidence": EVIDENCE_SEMANTIC,
             "target": target,
             "direction": direction,
             "depth": depth,
@@ -1472,16 +1493,16 @@ class Workspace:
         if text is None or language is None:
             return {
                 "status": "unavailable",
-                "evidence": "base-side lexical",
+                "evidence": EVIDENCE_BASE_SIDE_LEXICAL,
                 "base_symbol_count": 0,
                 "base_symbols": [],
                 "truncated": False,
             }
         declarations = extract_base_declarations(text, language)
-        detail_limit = min(5, max(1, limit))
+        budget = QueryBudget.from_limit(limit)
         analyzed: list[dict[str, Any]] = []
-        for declaration in declarations[: max(1, limit)]:
-            search = git_text_search(self.root, str(declaration["name"]), limit=detail_limit)
+        for declaration in declarations[: budget.items]:
+            search = git_text_search(self.root, str(declaration["name"]), limit=budget.nested_items)
             results = list(search.get("results", []))
             analyzed.append(
                 {
@@ -1491,7 +1512,7 @@ class Workspace:
                         "path": str(path),
                         "line": int(declaration["line"]),
                     },
-                    "evidence": "lexical",
+                    "evidence": EVIDENCE_LEXICAL,
                     "residual_match_count": int(search.get("match_count", 0)),
                     "residual_matching_line_count": int(search.get("matching_line_count", 0)),
                     "residual_references": [item for item in results if not item.get("is_test")],
@@ -1501,27 +1522,27 @@ class Workspace:
             )
         return {
             "status": "ok",
-            "evidence": "base-side lexical",
+            "evidence": EVIDENCE_BASE_SIDE_LEXICAL,
             "base_symbol_count": len(declarations),
             "base_symbols": analyzed,
             "truncated": len(declarations) > len(analyzed),
         }
 
     def _pure_rename_analysis(self, path: Path, limit: int) -> dict[str, Any]:
+        budget = QueryBudget.from_limit(limit)
         topology = self._file_context(
             path,
-            limit=max(1, limit),
+            limit=budget.items,
             outline_depth=1,
             include_topology=True,
         )
         if topology.get("status") != "ok":
             return {
                 "status": "unavailable",
-                "evidence": "current semantic",
+                "evidence": EVIDENCE_CURRENT_SEMANTIC,
                 "reason": topology.get("error") or topology.get("reason") or "file context unavailable",
             }
 
-        detail_limit = min(5, max(1, limit))
         symbol_summaries: list[dict[str, Any]] = []
         semantic_kinds = {"Function", "Method", "Constructor", "Class", "Interface", "Enum", "Struct", "Constant"}
         for symbol in topology.get("outline", []):
@@ -1543,16 +1564,16 @@ class Workspace:
                 {
                     "symbol": {k: symbol.get(k) for k in ("name", "kind", "container", "path", "line", "column")},
                     "reference_count": len(refs),
-                    "references": source_refs[:detail_limit],
-                    "tests": tests[:detail_limit],
+                    "references": source_refs[:budget.nested_items],
+                    "tests": tests[:budget.nested_items],
                 }
             )
-            if len(symbol_summaries) >= max(1, limit):
+            if len(symbol_summaries) >= budget.items:
                 break
 
         return {
             "status": "ok",
-            "evidence": "current semantic",
+            "evidence": EVIDENCE_CURRENT_SEMANTIC,
             "importers": topology.get("importers", []),
             "importer_count": int(topology.get("importer_count", 0)),
             "importers_truncated": bool(topology.get("importers_truncated")),
@@ -1561,6 +1582,7 @@ class Workspace:
         }
 
     def review(self, base: str, limit: int = 20, *, merge_base: bool = False) -> dict[str, Any]:
+        budget = QueryBudget.from_limit(limit)
         resolved_base = git_merge_base(self.root, base) if merge_base else git_resolve_commit(self.root, base)
         file_changes = git_changed_files(self.root, resolved_base)
         untracked_changes = git_untracked_files(self.root)
@@ -1620,12 +1642,11 @@ class Workspace:
             if key not in seen_symbols:
                 seen_symbols.add(key)
                 distinct.append(symbol)
-        distinct = distinct[:limit]
+        distinct = distinct[:budget.items]
 
         details: list[dict[str, Any]] = []
         impacted_files: set[str] = set()
         tests: dict[tuple[str, int], dict[str, Any]] = {}
-        detail_limit = min(5, limit)
         for symbol in distinct:
             try:
                 session, project, path, line, column = self._session_and_position(symbol)
@@ -1645,7 +1666,7 @@ class Workspace:
             possible_dynamic = classify_dynamic_references(
                 [r for r in refs if not is_test_path(r["path"])],
                 str(symbol.get("name") or ""),
-                limit=detail_limit,
+                limit=budget.nested_items,
             )
             for caller in callers:
                 impacted_files.add(caller["path"])
@@ -1657,9 +1678,9 @@ class Workspace:
                 tests[(test["path"], test["line"])] = test
             details.append({
                 "symbol": {k: symbol.get(k) for k in ("name", "kind", "container", "path", "line", "column")},
-                "callers": callers[:detail_limit],
+                "callers": callers[:budget.nested_items],
                 "possible_dynamic_references": possible_dynamic,
-                "tests": direct_tests[:detail_limit],
+                "tests": direct_tests[:budget.nested_items],
                 "reference_count": len(refs),
             })
 
@@ -1684,15 +1705,15 @@ class Workspace:
             "untracked_file_count": sum(1 for item in analyzed_changes if item.get("status") == "U"),
             "changed_symbols": details,
             "changed_symbol_count": len(details),
-            "impacted_files": sorted(impacted_files)[:limit],
+            "impacted_files": sorted(impacted_files)[:budget.items],
             "impacted_file_count": len(impacted_files),
-            "impacted_files_truncated": len(impacted_files) > limit,
-            "tests": sorted(tests.values(), key=lambda x: (x["path"], x["line"]))[:limit],
+            "impacted_files_truncated": len(impacted_files) > budget.items,
+            "tests": sorted(tests.values(), key=lambda x: (x["path"], x["line"]))[:budget.items],
             "test_count": len(tests),
-            "tests_truncated": len(tests) > limit,
+            "tests_truncated": len(tests) > budget.items,
             "possible_dynamic_reference_count": dynamic_reference_count,
             "unsupported_changed_files": unsupported,
-            "truncated": len(changed_symbols) > limit,
+            "truncated": len(changed_symbols) > budget.items,
             "limitations": [
                 "deleted-file impact uses conservative base-side declaration extraction plus exact current-worktree lexical evidence; it is not an LSP call graph",
                 "pure-rename impact uses current-path importers/references and may still miss runtime-only loading",

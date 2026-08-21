@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.4.1` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.5.0` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **64/64 pass**
+- `uv run python -W error -m unittest discover -s tests`: **70/70 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.4.1**
-- installed distribution metadata: **0.4.1**
+- installed module version: **0.5.0**
+- installed distribution metadata: **0.5.0**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 0.4.1 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 0.5.0 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -98,7 +98,7 @@ A fresh-workspace `find 'SSE backtest logs'` was repeated three times. All three
 
 TypeScript search now boundedly opens relevant lexical-hit documents before `workspace/symbol`; transient `No Project` responses fall back to document-symbol results instead of leaking an unstable error to the agent.
 
-## Exact working-tree text contracts (0.4.0–0.4.1)
+## Exact working-tree text contracts (0.4.0–0.5.0)
 
 `find --text` uses exact literal matching without semantic interpretation. Since 0.4.1, its file set is Git-visible working-tree text: tracked files plus non-ignored untracked files. Tracked files are searched with `git grep`; untracked candidates come from `git ls-files --others --exclude-standard`, so Git-ignored files remain excluded. Real `~/Quant` validation for:
 
@@ -266,10 +266,27 @@ Detailed review lists continue to follow `--limit` while complete file/count fac
 - Existing independent historical worktree query succeeded directly with no repository-local `.codeq*` state.
 - `~/Quant` `git status --short` was byte-for-byte unchanged before and after the complete acceptance run.
 
+## 0.5.0 correctness contract hardening
+
+Every daemon-backed JSON result now carries `schema_version=1`. Stable machine evidence enums use underscore-separated values (`semantic`, `lexical`, `possible_dynamic`, `base_side_lexical`, `current_semantic`) instead of presentation strings.
+
+A unified internal `QueryBudget` derives all disclosure limits from the single public `--limit` knob: top-level lists follow `--limit`, nested per-symbol details cap at five, hover/source snippets are character-bounded, and exact-text result lines are capped at 500 characters while preserving full match/line/file counts. A real `quant-cli/README.md` `/logs/stream` hit was truncated to exactly **500 characters** with `text_truncated=true`; the response still reported **17 complete matches / 17 matching lines**.
+
+Quant acceptance checks confirmed:
+
+```text
+find BacktestService:                schema_version=1
+context backtest.py:175:17:          schema_version=1, cursor definition preserved
+review HEAD~1:                       base-side evidence=base_side_lexical
+text /logs/stream --path quant-cli:  full counts preserved with bounded payload
+```
+
+Invariant/contract tests now cover schema attachment, evidence enum shape, monotone query budgets, hard snippet/text payload limits, and count-preserving truncation.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 0.4.1
+version                 codeq 0.5.0
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language
