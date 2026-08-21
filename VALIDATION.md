@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-22 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc4` CLI.
+Validated on 2026-08-22 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc5` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **90/90 pass**
+- `uv run python -W error -m unittest discover -s tests`: **99/99 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **1.0.0rc4**
-- installed distribution metadata: **1.0.0rc4**
+- installed module version: **1.0.0rc5**
+- installed distribution metadata: **1.0.0rc5**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 1.0.0rc4 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 1.0.0rc5 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -438,10 +438,34 @@ review --base c855f5bbd                  -> ok; 15 changed files; schema 1
 
 An instrumented run confirmed `<runtime>/lsp-tmp` was `0700`; TypeScript created its own compile/cache children only below that private parent. `~/Quant` remained clean. RC4 passed **90/90 tests**, basedpyright with zero errors/warnings, build, and the **9/9** readiness gate. Artifacts: `benchmarks/1.0.0rc4-readiness.md` and `benchmarks/results/1.0.0rc4-readiness.json`.
 
+## 1.0.0rc5 abstract daemon endpoint
+
+RC5 fixes daemon multiplication in shell sandboxes whose invocations share a Linux network namespace but have independent `/tmp` mount namespaces. Linux/WSL now discovers the daemon through abstract UDS `\\0codeq-$UID-p$DAEMON_PROTOCOL_VERSION`; the endpoint exists only in the kernel namespace and creates no discovery file. `CODEQ_RUNTIME_DIR` remains an explicit compatibility override that forces the existing filesystem-socket path for environments where the network namespace itself is isolated. Non-Linux platforms keep the filesystem fallback.
+
+The abstract endpoint is protocol-scoped (`codeq-1000-p2` for the current protocol), stays well below the 108-byte Linux `sun_path` limit, and is passed to the daemon as an argv-safe name; the leading NUL is added only at `bind`/`connect` time.
+
+Security is based on `SO_PEERCRED` UID on both sides. A real cross-shell sandbox connection exposed the existing daemon as `(pid=0, uid=1000, gid=1000)`, proving that peer PID is not globally meaningful across isolated PID namespaces. RC5 therefore requires exact UID equality, uses PID liveness only when a positive PID is visible, and accepts same-UID PID `0`. Wrong-UID peers are rejected.
+
+The same PID-namespace behavior also made signal-only stale-daemon replacement insufficient. RC5 adds an internal same-UID `_shutdown` request that bypasses package-version matching, allowing a new client to stop an old daemon without seeing its PID; `SIGTERM` remains a fallback when a filesystem daemon exposes a usable PID. A real RC4 -> RC5 mismatch on `codeq-1000-p2` shut down the stale daemon, started the RC5 daemon, and returned a valid TypeScript `context streamBacktestLogs` result under `XDG_RUNTIME_DIR=/proc` plus Windows-side `TMPDIR`/`TEMP`/`TMP` values.
+
+Cross-shell warm reuse was observed before the release cut with the same abstract endpoint and bad host temp variables:
+
+```text
+first shell:  context streamBacktestLogs -> ok; lsp_started=true;  3108.4 ms
+second shell: context streamBacktestLogs -> ok; lsp_started=false;  234.5 ms
+peer credentials in the second PID namespace -> (pid=0, uid=1000, gid=1000)
+```
+
+`lsp_started=false` on the second independent invocation proves the existing daemon/workspace was reused rather than starting another TypeScript server. Runtime scratch remains daemon-private (`$XDG_RUNTIME_DIR/codeq` or `/tmp/codeq-$UID`) and LSP temp normalization from RC4 is unchanged.
+
+The final globally installed RC5 was then exercised against Quant with `XDG_RUNTIME_DIR=/proc` and all host temp variables pointing at the Windows temp path: `context streamBacktestLogs` returned `ok` with 1 caller / 2 references, `trace --in --depth 2` returned 3 nodes, and `review --base c855f5bbd` returned 15 changed files. The default endpoint was confirmed as abstract `\\0codeq-1000-p2`; Quant remained clean. A separate `CODEQ_RUNTIME_DIR=/tmp/...` acceptance confirmed the compatibility override still uses a `0700` filesystem runtime plus `0600` socket and supports internal shutdown.
+
+RC5 passed **99/99 tests**, basedpyright with zero errors/warnings, build, and the **9/9** readiness gate. New regression coverage includes abstract-vs-filesystem endpoint selection, argv-safe abstract spawning, `sun_path` bounds, same-UID/wrong-UID peer credentials, cross-PID-namespace PID `0`, internal shutdown independent of visible PID, and the existing LSP/runtime-state contracts. Artifacts: `benchmarks/1.0.0rc5-readiness.md` and `benchmarks/results/1.0.0rc5-readiness.json`.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 1.0.0rc4
+version                 codeq 1.0.0rc5
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language

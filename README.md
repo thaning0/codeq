@@ -4,7 +4,7 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc4` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** `1.0.0rc5` is the active release candidate. The four-command surface is feature-frozen for 1.0.
 
 ## Why codeq
 
@@ -69,7 +69,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc4
+codeq 1.0.0rc5
 ```
 
 ## The workflow
@@ -257,17 +257,24 @@ The daemon keeps relevant language servers warm, caches only safe file-local doc
 
 ### Runtime state and sandboxing
 
-`codeq` never writes analysis state into the target repository. The daemon and its language servers use only private ephemeral runtime state outside the repository: the Unix socket plus an `lsp-tmp/` directory.
-
-Runtime directory selection is:
+By default, `codeq` writes no runtime or analysis state into the target repository. On Linux/WSL, daemon discovery uses an **abstract Unix-domain socket** in the kernel namespace rather than a filesystem socket:
 
 ```text
-CODEQ_RUNTIME_DIR
-→ $XDG_RUNTIME_DIR/codeq when usable
+\0codeq-$UID-p$DAEMON_PROTOCOL_VERSION
+```
+
+Because the endpoint is not a file, separate shell sandboxes can reuse one daemon even when their `/tmp` mount namespaces differ. Both client and server validate `SO_PEERCRED` UID; peer PID is treated only as optional liveness evidence because cross-PID-namespace peers can legitimately appear as PID `0`.
+
+The daemon still needs private scratch space for language servers. Scratch selection is:
+
+```text
+$XDG_RUNTIME_DIR/codeq when usable
 → /tmp/codeq-$UID fallback
 ```
 
-Runtime directories are private (`0700`). If an agent sandbox cannot write to `XDG_RUNTIME_DIR`, codeq automatically falls back to `/tmp` instead of failing the query. Language-server children always receive `TMPDIR`, `TEMP`, and `TMP` pointing at `<codeq-runtime>/lsp-tmp`, so host/WSL temporary-directory variables cannot redirect them into a sandbox-read-only Windows path.
+That directory is private (`0700`). Language-server children always receive `TMPDIR`, `TEMP`, and `TMP` pointing at `<codeq-runtime>/lsp-tmp`, so host/WSL temporary-directory variables cannot redirect them into a sandbox-read-only Windows path.
+
+Set `CODEQ_RUNTIME_DIR=/some/shared/path` only as an explicit compatibility override. It forces the legacy filesystem socket under that directory and is intended for platforms or sandboxes where the network namespace itself is isolated. If you point it inside a repository, that repository will contain codeq runtime state by explicit user choice rather than by default behavior.
 
 Persistent daemon logging is **off by default**. Daemon stdout/stderr go to `/dev/null`; opt in only when debugging:
 
@@ -296,7 +303,7 @@ Details:
 
 - [Quant cold/warm benchmark](benchmarks/0.5.1-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
-- [RC4 readiness gate](benchmarks/1.0.0rc4-readiness.md)
+- [RC5 readiness gate](benchmarks/1.0.0rc5-readiness.md)
 - [Full validation record](VALIDATION.md)
 
 ## Boundaries

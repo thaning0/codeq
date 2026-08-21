@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import DAEMON_PROTOCOL_VERSION, __version__
-from .daemon import default_socket_path
+from .daemon import SocketEndpoint, default_socket_endpoint
 from .util import compact_location, git_root
 
 
@@ -44,20 +44,28 @@ class PlainArgumentParser(argparse.ArgumentParser):
         super().__init__(*args, **kwargs)
 
 
-def _connect(socket_path: Path, timeout: float) -> socket.socket:
+def _connect(endpoint: SocketEndpoint, timeout: float) -> socket.socket:
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     client.settimeout(timeout)
     try:
-        client.connect(str(socket_path))
+        client.connect(endpoint.address)
+        if endpoint.is_abstract and not _peer_is_trusted(client):
+            raise PermissionError("codeq abstract daemon peer is not trusted")
     except OSError:
         client.close()
         raise
     return client
 
 
-def _spawn_daemon(socket_path: Path) -> None:
-    socket_path.parent.mkdir(parents=True, exist_ok=True)
-    argv = [sys.executable, "-m", "codeq.daemon", "--socket", str(socket_path)]
+def _spawn_daemon(endpoint: SocketEndpoint) -> None:
+    if endpoint.is_abstract:
+        argv = [sys.executable, "-m", "codeq.daemon", "--abstract", endpoint.value]
+    else:
+        socket_path = endpoint.path
+        if socket_path is None:
+            raise RuntimeError("filesystem daemon endpoint is missing a path")
+        socket_path.parent.mkdir(parents=True, exist_ok=True)
+        argv = [sys.executable, "-m", "codeq.daemon", "--socket", str(socket_path)]
     log_path_text = os.environ.get("CODEQ_DAEMON_LOG")
     with open(os.devnull, "r+b", buffering=0) as devnull:
         if log_path_text:
@@ -83,51 +91,85 @@ def _spawn_daemon(socket_path: Path) -> None:
                 output.close()
 
 
-def _connect_or_spawn(socket_path: Path, timeout: float) -> socket.socket:
+def _connect_or_spawn(endpoint: SocketEndpoint, timeout: float) -> socket.socket:
     try:
-        return _connect(socket_path, min(timeout, 1.0))
+        return _connect(endpoint, min(timeout, 1.0))
     except OSError:
-        _spawn_daemon(socket_path)
+        _spawn_daemon(endpoint)
         deadline = time.monotonic() + min(max(timeout, 3.0), 10.0)
         last_error: Exception | None = None
         while time.monotonic() < deadline:
             time.sleep(0.05)
             try:
-                return _connect(socket_path, min(timeout, 1.0))
+                return _connect(endpoint, min(timeout, 1.0))
             except OSError as exc:
                 last_error = exc
         raise RuntimeError(f"codeq daemon failed to start: {last_error}")
 
 
-def _peer_pid(client: socket.socket) -> int | None:
+def _peer_credentials(client: socket.socket) -> tuple[int, int, int] | None:
     peercred = getattr(socket, "SO_PEERCRED", None)
     if peercred is None:
         return None
     try:
         raw = client.getsockopt(socket.SOL_SOCKET, peercred, struct.calcsize("3i"))
-        pid, uid, _ = struct.unpack("3i", raw)
+        return struct.unpack("3i", raw)
     except (OSError, struct.error):
         return None
+
+
+def _peer_is_trusted(client: socket.socket) -> bool:
+    credentials = _peer_credentials(client)
+    return credentials is not None and credentials[1] == os.getuid()
+
+
+def _peer_pid(client: socket.socket) -> int | None:
+    credentials = _peer_credentials(client)
+    if credentials is None:
+        return None
+    pid, uid, _ = credentials
     if uid != os.getuid() or pid <= 1:
         return None
     return pid
 
 
-def _restart_stale_daemon(pid: int | None, socket_path: Path) -> None:
-    if pid is None:
-        raise RuntimeError("codeq daemon version mismatch; unable to identify stale daemon process")
+def _request_daemon_shutdown(endpoint: SocketEndpoint) -> bool:
     try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+        client = _connect(endpoint, 0.5)
+    except OSError:
+        return True
+    try:
+        client.settimeout(1.0)
+        with client:
+            file = client.makefile("rwb")
+            file.write((json.dumps({"command": "_shutdown"}) + "\n").encode("utf-8"))
+            file.flush()
+            line = file.readline()
+        if not line:
+            return False
+        response = json.loads(line)
+        return bool(response.get("ok"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+
+
+def _restart_stale_daemon(pid: int | None, endpoint: SocketEndpoint) -> None:
+    shutdown_sent = _request_daemon_shutdown(endpoint)
+    if not shutdown_sent:
+        if pid is None:
+            raise RuntimeError("codeq daemon version mismatch; stale daemon cannot be stopped")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
     deadline = time.monotonic() + 3.0
     while time.monotonic() < deadline:
-        if not socket_path.exists():
-            return
         try:
-            probe = _connect(socket_path, 0.1)
+            probe = _connect(endpoint, 0.1)
         except OSError:
-            socket_path.unlink(missing_ok=True)
+            path = endpoint.path
+            if path is not None:
+                path.unlink(missing_ok=True)
             return
         else:
             probe.close()
@@ -136,8 +178,8 @@ def _restart_stale_daemon(pid: int | None, socket_path: Path) -> None:
 
 
 def _request(payload: dict[str, Any], timeout: float, *, _allow_restart: bool = True) -> dict[str, Any]:
-    socket_path = default_socket_path()
-    client = _connect_or_spawn(socket_path, timeout)
+    endpoint = default_socket_endpoint()
+    client = _connect_or_spawn(endpoint, timeout)
     peer_pid = _peer_pid(client)
     wire_payload = {
         **payload,
@@ -159,7 +201,7 @@ def _request(payload: dict[str, Any], timeout: float, *, _allow_restart: bool = 
         or response.get("protocol_version") != DAEMON_PROTOCOL_VERSION
     )
     if version_mismatch and _allow_restart:
-        _restart_stale_daemon(peer_pid, socket_path)
+        _restart_stale_daemon(peer_pid, endpoint)
         return _request(payload, timeout, _allow_restart=False)
     if version_mismatch:
         raise RuntimeError("codeq daemon version mismatch after restart")
