@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from codeq.gitdiff import git_changed_files
 from codeq.workspace import Workspace
@@ -57,15 +58,52 @@ class GitChangedFilesTests(unittest.TestCase):
 
             workspace = Workspace(root)
             try:
-                review = workspace.review("HEAD")
+                with patch.object(
+                    workspace,
+                    "_pure_rename_analysis",
+                    return_value={"status": "ok", "evidence": "current semantic", "importers": [], "symbols": []},
+                ):
+                    review = workspace.review("HEAD")
             finally:
                 workspace.close()
             self.assertEqual(review["changed_file_count"], 2)
             self.assertEqual(review["deleted_file_count"], 1)
             self.assertEqual(review["renamed_file_count"], 1)
             by_status = {item["status"]: item for item in review["file_changes"]}
-            self.assertEqual(by_status["D"]["semantic_status"], "deleted_not_analyzed")
-            self.assertEqual(by_status["R"]["semantic_status"], "rename_or_copy_without_content_changes")
+            self.assertEqual(by_status["D"]["semantic_status"], "deleted_base_analyzed")
+            self.assertEqual(by_status["D"]["base_analysis"]["evidence"], "base-side lexical")
+            self.assertEqual(by_status["R"]["semantic_status"], "rename_analyzed")
+            self.assertEqual(by_status["R"]["rename_analysis"]["evidence"], "current semantic")
+
+    def test_deleted_file_reports_residual_references_and_tests_from_base_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._git(root, "init", "-q")
+            self._git(root, "config", "user.email", "codeq@example.invalid")
+            self._git(root, "config", "user.name", "codeq-test")
+            (root / "deleted.py").write_text("def old_api():\n    return 1\n", encoding="utf-8")
+            (root / "consumer.py").write_text("from deleted import old_api\nvalue = old_api()\n", encoding="utf-8")
+            tests = root / "tests"
+            tests.mkdir()
+            (tests / "test_consumer.py").write_text("from deleted import old_api\nassert old_api() == 1\n", encoding="utf-8")
+            self._git(root, "add", ".")
+            self._git(root, "commit", "-qm", "base")
+            (root / "deleted.py").unlink()
+
+            workspace = Workspace(root)
+            try:
+                review = workspace.review("HEAD", limit=10)
+            finally:
+                workspace.close()
+
+            deleted = next(item for item in review["file_changes"] if item["status"] == "D")
+            analysis = deleted["base_analysis"]
+            self.assertEqual(analysis["status"], "ok")
+            old_api = next(item for item in analysis["base_symbols"] if item["symbol"]["name"] == "old_api")
+            self.assertGreaterEqual(old_api["residual_match_count"], 4)
+            self.assertTrue(old_api["residual_references"])
+            self.assertTrue(old_api["tests"])
+            self.assertTrue(all(item["is_test"] for item in old_api["tests"]))
 
 
 if __name__ == "__main__":

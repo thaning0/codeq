@@ -82,6 +82,37 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("must be >= 0", stderr.getvalue())
 
+    def test_find_text_flag_reaches_request_payload(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "ok", "mode": "text", "query": "KEY", "results": [], "match_count": 0, "matching_line_count": 0, "returned_line_count": 0, "returned_match_count": 0, "test_line_count": 0, "truncated": False}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main(["find", "KEY", "--text", "--json"])
+        self.assertTrue(captured["text"])
+
+    def test_context_lexical_override_reaches_request_payload(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "ok"}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main(["context", "Foo.run", "--lexical-references", "/logs/stream", "--json"])
+        self.assertTrue(captured["lexical_references"])
+        self.assertEqual(captured["lexical_query"], "/logs/stream")
+
     def test_success_still_exits_normally(self) -> None:
         result = {
             "status": "ok",

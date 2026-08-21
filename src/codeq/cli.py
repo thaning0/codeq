@@ -178,6 +178,27 @@ def _render_find(data: dict[str, Any]) -> None:
     if data.get("status") and data.get("status") != "ok":
         print(data.get("reason") or data.get("error") or "find failed", file=sys.stderr)
         return
+    if data.get("mode") == "text":
+        for item in data.get("results", []):
+            marker = " [test]" if item.get("is_test") else ""
+            occurrences = int(item.get("occurrences") or 1)
+            repeat = f" x{occurrences}" if occurrences > 1 else ""
+            print(
+                f"{item['path']}:{item['line']}:{item.get('column',1)}{marker}{repeat}  "
+                f"{str(item.get('text') or '').strip()}"
+            )
+        if not data.get("results"):
+            print("No matches.")
+        if data.get("truncated"):
+            print("... more matching lines available; increase --limit", file=sys.stderr)
+        meta = data.get("_meta", {})
+        print(
+            f"\n[{data.get('match_count',0)} exact matches across "
+            f"{data.get('matching_line_count',0)} lines; showing "
+            f"{data.get('returned_line_count',0)} lines; {meta.get('duration_ms','?')} ms]",
+            file=sys.stderr,
+        )
+        return
     for item in data.get("results", []):
         container = f"{item.get('container')}." if item.get("container") else ""
         print(
@@ -203,6 +224,30 @@ def _render_resolution(data: dict[str, Any]) -> bool:
         return False
     print(data.get("reason") or data.get("error") or f"Target not found: {data.get('target')}", file=sys.stderr)
     return False
+
+
+def _print_text_search(title: str, data: dict[str, Any] | None, indent: str = "  ") -> None:
+    if not data:
+        return
+    query = str(data.get("query") or "")
+    print(
+        f"{title} ({data.get('match_count', 0)} matches across "
+        f"{data.get('matching_line_count', 0)} lines)  {query!r}"
+    )
+    results = data.get("results", [])
+    if not results:
+        print(f"{indent}-")
+    for item in results:
+        marker = " [test]" if item.get("is_test") else ""
+        occurrences = int(item.get("occurrences") or 1)
+        repeat = f" x{occurrences}" if occurrences > 1 else ""
+        text = str(item.get("text") or "").strip()
+        print(
+            f"{indent}{item['path']}:{item['line']}:{item.get('column',1)}"
+            f"{marker}{repeat}  {text}"
+        )
+    if data.get("truncated"):
+        print(f"{indent}... more matching lines available; increase --limit")
 
 
 def _print_dynamic_references(items: list[dict[str, Any]], indent: str = "  ") -> None:
@@ -239,6 +284,9 @@ def _render_file_context(data: dict[str, Any]) -> None:
 
     if not data.get("topology_loaded"):
         print(f"\nTopology: hidden ({data.get('import_count', 0)} direct imports; use --topology to disclose imports/importers)")
+        if data.get("lexical_references"):
+            print()
+            _print_text_search("Lexical references", data.get("lexical_references"))
         meta = data.get("_meta", {})
         print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
         return
@@ -267,6 +315,10 @@ def _render_file_context(data: dict[str, Any]) -> None:
         suffix = f"  {text}" if text else ""
         print(f"  {item['path']}:{item['line']}:{item.get('column',1)}{suffix}")
 
+    if data.get("lexical_references"):
+        print()
+        _print_text_search("Lexical references", data.get("lexical_references"))
+
     meta = data.get("_meta", {})
     print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
 
@@ -281,12 +333,20 @@ def _render_context(data: dict[str, Any]) -> None:
     container = f"{s.get('container')}." if s.get("container") else ""
     print(f"{s.get('kind','?')} {container}{s.get('name','')}")
     print(compact_location(s))
+    requested = data.get("requested_location")
+    if isinstance(requested, dict):
+        mode = " -> cursor definition" if data.get("cursor_definition") else ""
+        print(f"Requested at: {compact_location(requested)}{mode}")
     if data.get("hover"):
         print("\nHover")
         print(data["hover"].strip())
+    request_snippet = data.get("request_source", {}).get("text")
+    if request_snippet:
+        print("\nRequest source")
+        print(request_snippet)
     snippet = data.get("source", {}).get("text")
     if snippet:
-        print("\nSource")
+        print("\nDefinition source" if request_snippet else "\nSource")
         print(snippet)
     print()
     _print_locations("Callers", data.get("callers", []))
@@ -295,6 +355,9 @@ def _render_context(data: dict[str, Any]) -> None:
     _print_locations("Tests", data.get("tests", []))
     _print_locations("References", data.get("references", []))
     _print_dynamic_references(data.get("possible_dynamic_references", []))
+    if data.get("lexical_references"):
+        print()
+        _print_text_search("Lexical references", data.get("lexical_references"))
     meta = data.get("_meta", {})
     print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
 
@@ -339,8 +402,31 @@ def _render_review(data: dict[str, Any]) -> None:
                 print(f"  {status} {old_path} -> {path}")
             else:
                 print(f"  {status} {path}")
-            if change.get("semantic_status") == "deleted_not_analyzed":
-                print("    semantic impact: unavailable from current worktree")
+            if change.get("semantic_status") in {"deleted_base_analyzed", "deleted_base_unavailable"}:
+                analysis = change.get("base_analysis") or {}
+                print(
+                    f"    base-side impact: {analysis.get('status', 'unavailable')} "
+                    f"({analysis.get('base_symbol_count', 0)} symbols; lexical evidence)"
+                )
+                for item in analysis.get("base_symbols", [])[:5]:
+                    symbol = item.get("symbol") or {}
+                    print(
+                        f"      {symbol.get('kind','?')} {symbol.get('name','?')}  "
+                        f"residual={item.get('residual_match_count',0)} "
+                        f"tests={len(item.get('tests', []))}"
+                    )
+            if change.get("semantic_status") == "rename_analyzed":
+                analysis = change.get("rename_analysis") or {}
+                print(
+                    f"    rename impact: importers={analysis.get('importer_count', 0)} "
+                    f"symbols={len(analysis.get('symbols', []))} (current semantic)"
+                )
+                for item in analysis.get("symbols", [])[:5]:
+                    symbol = item.get("symbol") or {}
+                    print(
+                        f"      {symbol.get('kind','?')} {symbol.get('name','?')}  "
+                        f"references={item.get('reference_count',0)} tests={len(item.get('tests', []))}"
+                    )
     else:
         for path in data.get("changed_files", []):
             print(f"  {path}")
@@ -458,16 +544,21 @@ Agent notes:
         description="""\
 Find likely code locations before you know an exact target.
 
-`QUERY` may be an exact symbol name, part of a qualified name, or a short
+By default, `QUERY` may be an exact symbol name, part of a qualified name, or a short
 natural-language description. For concept searches, use vocabulary likely to occur
 in the repository's source/comments (usually the source language); codeq does not
 translate queries between natural languages.
+
+With `--text`, QUERY is an exact literal searched across all Git-tracked text files.
+Text mode is intentionally non-semantic: it returns raw matching lines, complete
+match counts, truncation metadata, and test-file markers.
 """,
         epilog="""\
 Examples:
   codeq find BacktestService
   codeq find BacktestService --kind class
   codeq find 'report summary freshness policy evidence' --limit 8
+  codeq find --text 'BACKTEST_QUESTDB_QUERY_TARGET_ROWS' --limit 20
   codeq find fetchBars --root ~/Quant --json
 
 Typical next step:
@@ -479,10 +570,16 @@ Typical next step:
         metavar="QUERY",
         help="Symbol name, qualified-name fragment, or short source-code description.",
     )
-    find.add_argument(
+    find_mode = find.add_mutually_exclusive_group()
+    find_mode.add_argument(
         "--kind",
         metavar="KIND",
-        help="Optional result filter, e.g. function, method, class, interface, test.",
+        help="Optional semantic result filter, e.g. function, method, class, interface, test.",
+    )
+    find_mode.add_argument(
+        "--text",
+        action="store_true",
+        help="Exact literal search across Git-tracked text files; return raw lines instead of symbols.",
     )
 
     context = sub.add_parser(
@@ -491,9 +588,9 @@ Typical next step:
         description="""\
 Return the local semantic neighborhood of one target in a single query.
 
-For a symbol or file:line target, context returns:
+For a symbol or source-position target, context returns:
   Definition/location and signature/hover
-  Bounded source snippet
+  Bounded definition source snippet
   Callers and callees
   Implementations and references
   Likely tests
@@ -503,10 +600,11 @@ For a source-file target, context uses progressive disclosure: top-level outline
 default. Expand only what you need with --outline-depth, --kind, or --container;
 add --topology only when you need imports/importers.
 
-A file:line[:column] target is promoted to its enclosing function/method/type when
-possible. Prefer a qualified symbol when you already know it. Explicit paths are
-exact: missing files return not_found, and unsupported languages return
-unsupported_language rather than falling back to symbol search.
+PATH:LINE keeps the enclosing function/method/type. PATH:LINE:COLUMN first follows
+the exact repository definition under the cursor when available and also returns a
+small request-site snippet; it falls back to enclosing context when no definition is
+available. Explicit paths are exact: missing files return not_found, and unsupported
+languages return unsupported_language rather than falling back to symbol search.
 """,
         epilog="""\
 Examples:
@@ -516,6 +614,8 @@ Examples:
   codeq context backend/src/app/services/backtest_service.py --container BacktestService
   codeq context backend/src/app/services/backtest_service.py --kind method --limit 20
   codeq context frontend/src/features/market/api.ts --topology --limit 20
+  codeq context BacktestService.stream_backtest_logs --lexical-references
+  codeq context BacktestService.stream_backtest_logs --lexical-references '/logs/stream'
   codeq context fetchBars --json
 
 Use `context` instead of several separate grep/read/caller/test lookups. If you need
@@ -549,6 +649,17 @@ more than the direct callers/callees, continue with `codeq trace`.
         "--topology",
         action="store_true",
         help="File targets only: additionally disclose bounded imports and importers.",
+    )
+    context.add_argument(
+        "--lexical-references",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="TEXT",
+        help=(
+            "Also run exact Git-tracked text search. Without TEXT, search the resolved "
+            "symbol/file name; with TEXT, search that exact contract string."
+        ),
     )
 
     trace = sub.add_parser(
@@ -619,8 +730,8 @@ Turn `git diff BASE --` into compact review context for an agent.
 codeq reports Git-added, modified, deleted, and renamed files, then maps current
 changed lines to enclosing semantic symbols and reports callers, references,
 possible dynamic callback/registry references, affected source files, and likely
-tests. Deleted files remain visible in the file list but cannot be semantically
-analyzed against the current worktree.
+tests. Deleted files get conservative base-side declaration + exact-text residual
+reference analysis; pure renames get current-path importer/reference analysis.
 
 Untracked files are included from Git's working-tree view and marked `U`; ignored
 files remain excluded according to Git ignore rules.
@@ -700,6 +811,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "find":
         payload["query"] = args.query
         payload["kind"] = args.kind
+        payload["text"] = args.text
     elif args.command == "context":
         payload.update(
             target=args.target,
@@ -707,6 +819,8 @@ def main(argv: list[str] | None = None) -> None:
             outline_kind=args.outline_kind,
             container=args.container,
             include_topology=args.topology,
+            lexical_references=args.lexical_references is not None,
+            lexical_query=args.lexical_references or None,
         )
     elif args.command == "trace":
         payload.update(

@@ -20,8 +20,8 @@ class _FakeWorkspace:
     def session_stats(self):
         return []
 
-    def find(self, query: str, limit: int = 20, kind: str | None = None):
-        return {"query": query, "results": [], "result_count": 0, "total_candidates": 0, "errors": []}
+    def find(self, query: str, limit: int = 20, kind: str | None = None, *, text: bool = False):
+        return {"query": query, "results": [], "result_count": 0, "total_candidates": 0, "errors": [], "text_seen": text}
 
     def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100):
         return {"status": "ok", "target": target, "direction": direction, "depth": depth, "node_count": 1, "node_limit": limit, "tree": {}, "root": {}}

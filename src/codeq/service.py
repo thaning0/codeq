@@ -111,6 +111,7 @@ class CodeqService:
                     str(request.get("query") or ""),
                     limit=limit,
                     kind=str(request.get("kind") or "") or None,
+                    text=bool(request.get("text")),
                 )
             elif command == "context":
                 data = ws.context(
@@ -120,6 +121,8 @@ class CodeqService:
                     outline_kind=str(request.get("outline_kind") or "") or None,
                     container=str(request.get("container") or "") or None,
                     include_topology=bool(request.get("include_topology")),
+                    lexical_references=bool(request.get("lexical_references")),
+                    lexical_query=str(request.get("lexical_query") or "") or None,
                 )
             elif command == "trace":
                 raw_depth = request.get("depth")

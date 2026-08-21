@@ -9,17 +9,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .baseanalysis import extract_base_declarations
 from .dynamic import classify_dynamic_references
 from .gitdiff import (
     git_changed_files,
     git_changed_ranges,
     git_merge_base,
     git_resolve_commit,
+    git_show_file,
     git_untracked_files,
     merge_ranges,
     whole_file_range,
 )
 from .lsp import LspError, LspProcess
+from .textsearch import git_tracked_text_search
 from .topology import extract_imports, importer_candidate_hits, resolve_import_specifier
 from .util import (
     exact_definition_hits,
@@ -333,7 +336,17 @@ class Workspace:
                 out.append({**symbol, "exact_definition": True})
         return out
 
-    def find(self, query: str, limit: int = 20, kind: str | None = None) -> dict[str, Any]:
+    def find(
+        self,
+        query: str,
+        limit: int = 20,
+        kind: str | None = None,
+        *,
+        text: bool = False,
+    ) -> dict[str, Any]:
+        if text:
+            return git_tracked_text_search(self.root, query, limit=limit)
+
         reference = self._path_reference(query)
         if reference is not None:
             path = Path(reference["path"])
@@ -720,8 +733,52 @@ class Workspace:
                     char_span = int(end.get("character", 0)) - int(start.get("character", 0)) if line_span == 0 else 0
                     return max(0, line_span), max(0, char_span)
 
+                requested_location = {
+                    "path": str(path),
+                    "line": line,
+                    "column": column,
+                    "source": "explicit",
+                }
                 containing = [symbol for symbol in symbols if contains(symbol)]
                 if explicit_column:
+                    definition_candidates: list[dict[str, Any]] = []
+                    seen_definitions: set[tuple[str, int, int, str]] = set()
+                    try:
+                        definitions = self._session(project).definitions(path, line, column)
+                    except (LspError, OSError):
+                        definitions = []
+                    for raw_definition in definitions:
+                        location = lsp_location(raw_definition)
+                        if not location or not self._is_repo_path(location["path"]):
+                            continue
+                        mapped = self._symbol_at_location(location)
+                        key = (
+                            str(mapped.get("path") or ""),
+                            int(mapped.get("line") or 1),
+                            int(mapped.get("column") or 1),
+                            str(mapped.get("name") or ""),
+                        )
+                        if key in seen_definitions:
+                            continue
+                        seen_definitions.add(key)
+                        definition_candidates.append(mapped)
+                    if len(definition_candidates) == 1:
+                        return {
+                            "status": "ok",
+                            "target": target,
+                            "symbol": definition_candidates[0],
+                            "candidates": [],
+                            "requested_location": requested_location,
+                            "cursor_definition": True,
+                        }
+                    if len(definition_candidates) > 1:
+                        return {
+                            "status": "ambiguous",
+                            "target": target,
+                            "candidates": definition_candidates[:8],
+                            "requested_location": requested_location,
+                            "reason": "multiple definitions found at requested cursor position",
+                        }
                     point_matches = [symbol for symbol in containing if contains_point(symbol)]
                     if point_matches:
                         chosen = min(
@@ -733,6 +790,8 @@ class Workspace:
                             "target": target,
                             "symbol": {**chosen, "source": "lsp", "origin": "document"},
                             "candidates": [],
+                            "requested_location": requested_location,
+                            "cursor_definition": False,
                         }
                 semantic = [
                     symbol
@@ -746,6 +805,13 @@ class Workspace:
                         "target": target,
                         "symbol": {**chosen, "source": "lsp", "origin": "document"},
                         "candidates": [],
+                        "requested_location": {
+                            "path": str(path),
+                            "line": line,
+                            "column": column,
+                            "source": "explicit",
+                        },
+                        "cursor_definition": False,
                     }
             col = parsed_column
             if col <= 1:
@@ -762,6 +828,13 @@ class Workspace:
                     "column": col,
                     "source": "explicit",
                 },
+                "requested_location": {
+                    "path": str(path),
+                    "line": parsed_line,
+                    "column": parsed_column,
+                    "source": "explicit",
+                },
+                "cursor_definition": False,
             }
 
         qualified_target = bool(
@@ -1126,10 +1199,12 @@ class Workspace:
         outline_kind: str | None = None,
         container: str | None = None,
         include_topology: bool = False,
+        lexical_references: bool = False,
+        lexical_query: str | None = None,
     ) -> dict[str, Any]:
         file_target = self._file_target(target)
         if file_target is not None:
-            return self._file_context(
+            data = self._file_context(
                 file_target,
                 limit,
                 outline_depth=outline_depth,
@@ -1137,6 +1212,13 @@ class Workspace:
                 container=container,
                 include_topology=include_topology,
             )
+            if data.get("status") == "ok" and lexical_references:
+                data["lexical_references"] = git_tracked_text_search(
+                    self.root,
+                    lexical_query or file_target.name,
+                    limit=limit,
+                )
+            return data
 
         resolved = self.resolve(target)
         if resolved["status"] != "ok":
@@ -1202,7 +1284,24 @@ class Workspace:
                 parts = [item if isinstance(item, str) else str(item.get("value", "")) for item in contents]
                 hover_text = "\n".join(p for p in parts if p)
 
-        return {
+        requested_location = resolved.get("requested_location")
+        request_source: dict[str, Any] | None = None
+        if isinstance(requested_location, dict) and requested_location.get("path") and requested_location.get("line"):
+            request_source = source_snippet(
+                requested_location["path"],
+                int(requested_location["line"]),
+                before=2,
+                after=4,
+            )
+        lexical_data: dict[str, Any] | None = None
+        if lexical_references:
+            lexical_data = git_tracked_text_search(
+                self.root,
+                lexical_query or str(symbol.get("name") or ""),
+                limit=limit,
+            )
+
+        data = {
             "status": "ok",
             "target": target,
             "symbol": symbol,
@@ -1215,6 +1314,14 @@ class Workspace:
             "possible_dynamic_references": possible_dynamic,
             "tests": tests[:limit],
         }
+        if requested_location is not None:
+            data["requested_location"] = requested_location
+            data["cursor_definition"] = bool(resolved.get("cursor_definition"))
+        if request_source is not None:
+            data["request_source"] = request_source
+        if lexical_data is not None:
+            data["lexical_references"] = lexical_data
+        return data
 
     def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100) -> dict[str, Any]:
         resolved = self.resolve(target)
@@ -1340,6 +1447,100 @@ class Workspace:
             dedup[(item["name"], item["line"])] = item
         return list(dedup.values())
 
+    def _deleted_base_analysis(self, path: Path, resolved_base: str, limit: int) -> dict[str, Any]:
+        text = git_show_file(self.root, resolved_base, path)
+        language = language_for(path)
+        if text is None or language is None:
+            return {
+                "status": "unavailable",
+                "evidence": "base-side lexical",
+                "base_symbol_count": 0,
+                "base_symbols": [],
+                "truncated": False,
+            }
+        declarations = extract_base_declarations(text, language)
+        detail_limit = min(5, max(1, limit))
+        analyzed: list[dict[str, Any]] = []
+        for declaration in declarations[: max(1, limit)]:
+            search = git_tracked_text_search(self.root, str(declaration["name"]), limit=detail_limit)
+            results = list(search.get("results", []))
+            analyzed.append(
+                {
+                    "symbol": {
+                        "name": declaration["name"],
+                        "kind": declaration["kind"],
+                        "path": str(path),
+                        "line": int(declaration["line"]),
+                    },
+                    "evidence": "lexical",
+                    "residual_match_count": int(search.get("match_count", 0)),
+                    "residual_matching_line_count": int(search.get("matching_line_count", 0)),
+                    "residual_references": [item for item in results if not item.get("is_test")],
+                    "tests": [item for item in results if item.get("is_test")],
+                    "truncated": bool(search.get("truncated")),
+                }
+            )
+        return {
+            "status": "ok",
+            "evidence": "base-side lexical",
+            "base_symbol_count": len(declarations),
+            "base_symbols": analyzed,
+            "truncated": len(declarations) > len(analyzed),
+        }
+
+    def _pure_rename_analysis(self, path: Path, limit: int) -> dict[str, Any]:
+        topology = self._file_context(
+            path,
+            limit=max(1, limit),
+            outline_depth=1,
+            include_topology=True,
+        )
+        if topology.get("status") != "ok":
+            return {
+                "status": "unavailable",
+                "evidence": "current semantic",
+                "reason": topology.get("error") or topology.get("reason") or "file context unavailable",
+            }
+
+        detail_limit = min(5, max(1, limit))
+        symbol_summaries: list[dict[str, Any]] = []
+        semantic_kinds = {"Function", "Method", "Constructor", "Class", "Interface", "Enum", "Struct", "Constant"}
+        for symbol in topology.get("outline", []):
+            if symbol.get("kind") not in semantic_kinds:
+                continue
+            try:
+                session, project, symbol_path, line, column = self._session_and_position(symbol)
+                self._prewarm_symbol(project, session, symbol, max_files=12)
+                refs = [
+                    item
+                    for item in (lsp_location(raw) for raw in session.references(symbol_path, line, column))
+                    if item and self._is_repo_path(item["path"])
+                ]
+            except (LspError, OSError):
+                refs = []
+            tests = [item for item in refs if is_test_path(item["path"])]
+            source_refs = [item for item in refs if not is_test_path(item["path"])]
+            symbol_summaries.append(
+                {
+                    "symbol": {k: symbol.get(k) for k in ("name", "kind", "container", "path", "line", "column")},
+                    "reference_count": len(refs),
+                    "references": source_refs[:detail_limit],
+                    "tests": tests[:detail_limit],
+                }
+            )
+            if len(symbol_summaries) >= max(1, limit):
+                break
+
+        return {
+            "status": "ok",
+            "evidence": "current semantic",
+            "importers": topology.get("importers", []),
+            "importer_count": int(topology.get("importer_count", 0)),
+            "importers_truncated": bool(topology.get("importers_truncated")),
+            "symbols": symbol_summaries,
+            "symbols_truncated": bool(topology.get("outline_truncated")),
+        }
+
     def review(self, base: str, limit: int = 20, *, merge_base: bool = False) -> dict[str, Any]:
         resolved_base = git_merge_base(self.root, base) if merge_base else git_resolve_commit(self.root, base)
         file_changes = git_changed_files(self.root, resolved_base)
@@ -1363,7 +1564,11 @@ class Workspace:
             annotated = dict(change)
             status = str(change.get("status") or "")
             if status == "D":
-                annotated["semantic_status"] = "deleted_not_analyzed"
+                base_analysis = self._deleted_base_analysis(path, resolved_base, limit)
+                annotated["base_analysis"] = base_analysis
+                annotated["semantic_status"] = (
+                    "deleted_base_analyzed" if base_analysis.get("status") == "ok" else "deleted_base_unavailable"
+                )
                 analyzed_changes.append(annotated)
                 continue
             if language_for(path) is None:
@@ -1377,7 +1582,11 @@ class Workspace:
                 continue
             ranges = ranges_by_path.get(str(path), [])
             if not ranges:
-                annotated["semantic_status"] = "rename_or_copy_without_content_changes"
+                if status == "R":
+                    annotated["rename_analysis"] = self._pure_rename_analysis(path, limit)
+                    annotated["semantic_status"] = "rename_analyzed"
+                else:
+                    annotated["semantic_status"] = "rename_or_copy_without_content_changes"
                 analyzed_changes.append(annotated)
                 continue
             symbols = self._changed_symbols_for_file(path, ranges)
@@ -1466,7 +1675,8 @@ class Workspace:
             "unsupported_changed_files": unsupported,
             "truncated": len(changed_symbols) > limit,
             "limitations": [
-                "deleted files are reported by Git but are not semantically analyzed against the current worktree",
+                "deleted-file impact uses conservative base-side declaration extraction plus exact current-worktree lexical evidence; it is not an LSP call graph",
+                "pure-rename impact uses current-path importers/references and may still miss runtime-only loading",
                 "exact call edges are language-server-resolved and may omit runtime-only dispatch",
                 "possible_dynamic_references classify exact LSP references heuristically; they are not runtime-proof call edges",
                 "test discovery uses semantic references/callers plus test-path classification",

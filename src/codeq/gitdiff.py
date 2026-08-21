@@ -35,6 +35,22 @@ def git_merge_base(root: Path, base: str, head: str = "HEAD") -> str:
     return value
 
 
+def git_show_file(root: Path, commit: str, path: Path) -> str | None:
+    try:
+        relative = path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return None
+    proc = subprocess.run(
+        ["git", "-C", str(root), "show", f"{commit}:{relative}"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
 def git_untracked_files(root: Path) -> list[dict[str, Any]]:
     """Return untracked files, respecting Git ignore/exclude rules."""
     proc = subprocess.run(

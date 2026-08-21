@@ -27,8 +27,8 @@ class HelpTests(unittest.TestCase):
 
     def test_subcommand_help_explains_arguments_and_examples(self):
         expected = {
-            "find": ["QUERY", "--kind KIND", "translate queries", "Examples:", "Typical next step:"],
-            "context": ["TARGET", "PATH:LINE[:COLUMN]", "progressive disclosure", "--outline-depth N", "--topology", "Callers", "Examples:"],
+            "find": ["QUERY", "--kind KIND", "--text", "Git-tracked text files", "Examples:", "Typical next step:"],
+            "context": ["TARGET", "PATH:LINE[:COLUMN]", "progressive disclosure", "--outline-depth N", "--topology", "--lexical-references", "Callers", "Examples:"],
             "trace": ["--in", "--out", "--depth N", "--node-limit N", "Examples:"],
             "review": ["--base REF", "--merge-base", "Untracked files", "merge-base", "Examples:"],
         }

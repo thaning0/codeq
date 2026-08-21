@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.3.6` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.4.0` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **52/52 pass**
+- `uv run python -W error -m unittest discover -s tests`: **60/60 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.3.6**
-- installed distribution metadata: **0.3.6**
+- installed module version: **0.4.0**
+- installed distribution metadata: **0.4.0**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 0.3.6 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 0.4.0 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -70,7 +70,7 @@ and also exits **1**. No LSP session is started and fuzzy symbol search is never
 backend/src/app/api/backtest.py:175:17
 ```
 
-now resolves the real file `/home/thn/Quant/backend/src/app/api/backtest.py` with `line=175`, `column=17`, and `context` promotes it to the enclosing `stream_backtest_logs` function at line 158. `PATH:LINE` remains valid, while a missing `missing.py:175:17` still returns `not_found` with exit status **1**.
+now resolves the real file `/home/thn/Quant/backend/src/app/api/backtest.py` with `line=175`, `column=17`. In 0.4.0 the column-aware resolver follows the cursor definition to `BacktestService.stream_backtest_logs` at `backend/src/app/services/backtest_service.py:673`, while preserving `requested_location` and a request-site snippet containing `service.stream_backtest_logs(...)`. The line-only form `backtest.py:175` deliberately remains on the enclosing API function at line 158. A missing `missing.py:175:17` still returns `not_found` with exit status **1**.
 
 Regression tests also cover a path containing an internal colon so the right-side numeric suffix parsing remains unambiguous.
 
@@ -97,6 +97,26 @@ quant-cli/...    -> /home/thn/Quant/quant-cli
 A fresh-workspace `find 'SSE backtest logs'` was repeated three times. All three runs returned no `No Project` errors and ranked `frontend/src/features/backtests/api.ts::streamBacktestLogs` first.
 
 TypeScript search now boundedly opens relevant lexical-hit documents before `workspace/symbol`; transient `No Project` responses fall back to document-symbol results instead of leaking an unstable error to the agent.
+
+## Exact tracked-text contracts (0.4.0)
+
+`find --text` uses Git's tracked-file view and exact literal matching without attempting semantic interpretation. Real `~/Quant` validation for:
+
+```text
+BACKTEST_QUESTDB_QUERY_TARGET_ROWS
+```
+
+returned **21 exact occurrences across 18 lines**, including Python config/runtime usage, docs, `.env.example`, Compose YAML, and Shell tests; **8 matching lines were tests**. With `--limit 12`, only 12 lines were emitted while the full counts remained available and `truncated=true`.
+
+`context ... --lexical-references TEXT` reuses the same evidence shape. On the real FastAPI call site:
+
+```text
+backend/src/app/api/backtest.py:175:17
+```
+
+using the exact override `/logs/stream` returned **68 matching lines**, including **36 test lines**, while semantic context independently resolved the cursor to `BacktestService.stream_backtest_logs`.
+
+A second exact-text probe for `eod_post_close_pipeline_flow` returned **34 occurrences / 33 lines / 14 test lines**, surfacing deployment metadata/tests/docs that are not connected by ordinary LSP callers.
 
 ## Progressive disclosure for file context
 
@@ -203,29 +223,23 @@ merge-base mode: A feature.py, U untracked.py
 
 The merge-base result recorded `requested_base`, `base_mode=merge-base`, and the exact `resolved_base` SHA, which matched `git merge-base BASE HEAD`. Supported untracked files receive whole-file semantic analysis.
 
-## Review disclosure
+## Review disclosure and base-side edges
 
-`review` uses Git's A/M/D/R/U status as its complete fact layer. Tracked diff status comes from Git, and untracked files are appended from Git's ignore-aware working-tree view. On the real current `HEAD~1` diff:
+`review` uses Git's A/M/D/R/U status as its complete fact layer. Tracked diff status comes from Git, and untracked files are appended from Git's ignore-aware working-tree view. On the final real `~/Quant` `HEAD~1` validation, codeq reported **15 changed files / 5 deleted**, matching Git's file-status view.
 
-```text
-32 changed files
-23 modified
-9 deleted
-0 renamed
-```
+Deleted supported source files now receive base-side analysis instead of stopping at file status. For a deleted Python test file in the real Quant diff, codeq loaded the file from `resolved_base`, extracted **6 base symbols**, and attached current-worktree exact residual-reference evidence. Unsupported deleted docs/config files remain explicit with `deleted_base_unavailable` rather than being guessed.
 
-This exactly matched `git diff --name-status -M HEAD~1 --`.
-
-Deleted files remain explicit and are marked `deleted_not_analyzed` rather than disappearing.
-
-Detailed review material now follows the same disclosure budget as the rest of the CLI. With `--limit 10`:
+A separate real temporary Python repository validated pure rename behavior end-to-end through the globally installed CLI. A `R100 old.py -> new.py` plus updated consumer/test imports produced:
 
 ```text
-12 impacted files total -> 10 returned
-115 likely tests total  -> 10 returned
+importers = 2   (consumer.py, test_consumer.py)
+renamed_api current semantic references = 4
+test references = 2
 ```
 
-Full counts remain present together with truncation flags; increase `--limit` only when deeper review context is needed.
+Deleted-file evidence is labeled `base-side lexical`; pure-rename evidence is labeled `current semantic`. Neither is silently promoted into the other evidence class.
+
+Detailed review lists continue to follow `--limit` while complete file/count facts remain available.
 
 ## Other real-repository checks
 
@@ -237,7 +251,7 @@ Full counts remain present together with truncation flags; increase `--limit` on
 Final acceptance summary:
 
 ```text
-version                 codeq 0.3.6
+version                 codeq 0.4.0
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language
@@ -248,8 +262,10 @@ TS topology             52 symbols, 2 imports, 13 importers
 TS project              /home/thn/Quant/quant-cli
 concept top             streamBacktestLogs
 inheritance             MomentumFactor
+text contracts           21 env-var occurrences; 68 /logs/stream lines
+cursor context            call site -> service definition + request snippet
 trace                    node-limit enforced; depth 0=root only
-review                   untracked files included; merge-base mode validated
+review                   deleted base-side + pure-rename current analysis
 worktree                 pass
 repository mutation      none
 ACCEPTANCE                PASS
@@ -258,6 +274,8 @@ ACCEPTANCE                PASS
 ## Remaining boundaries
 
 - Dynamic runtime dispatch can remain unknowable to static analysis. Heuristic callback/registry evidence stays explicitly labeled `possible` and is not promoted to exact call edges.
+- `find --text` / lexical-reference evidence intentionally searches Git-tracked current-worktree text only; untracked and ignored files are outside that exact-text contract.
+- Deleted-file residual analysis is exact textual evidence from conservative base declarations, not a reconstructed historical LSP call graph; common identifiers can therefore be noisy.
 - Natural-language `find` is lexical + semantic ranking, not translation or embedding search. Use vocabulary likely to occur in the source/comments.
 - `review` test discovery is semantic/reference-based guidance, not coverage proof.
 - Worktrees remain separate language-server workspaces and therefore retain their own first-query warm-up cost.
