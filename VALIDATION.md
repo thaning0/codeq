@@ -5,7 +5,7 @@ Validated on 2026-08-21 against the real `~/Quant` repository using the globally
 ## Static / package checks
 
 - `python3 -m py_compile src/codeq/*.py`: pass
-- focused committed suite (`test_core.py` + `test_dynamic.py`): 16/16 pass; full current working-tree discovery: 19/19 pass
+- focused core/dynamic suite (`test_core.py` + `test_dynamic.py`): 18/18 pass; full current working-tree discovery: 21/21 pass
 - `basedpyright --level error src/codeq tests`: 0 errors, 0 warnings
 - `uv build`: source distribution and wheel build successfully
 
@@ -101,6 +101,53 @@ while excluding the direct call `onChange()` from the dynamic-reference set.
 False-positive guards were validated for Python direct method calls, `typing.cast(...)`, TypeScript direct calls, and TypeScript type annotations.
 
 A temporary Git repository verified positive `review` integration: modifying a function registered as `HANDLERS = {"x": handler}` produced one `mapping_value` dynamic reference in `codeq review --base HEAD`.
+
+### Expanded real-repository query matrix
+
+A second acceptance matrix deliberately varied query wording, symbol kind, class, language, and dispatch style. The run used one freshly started daemon, so the first Python/TypeScript requests include each language server's cold-start cost while later rows are warm queries.
+
+#### Different `find` queries
+
+| Query | Filter | Top result / observation | Time |
+|---|---|---|---:|
+| `BacktestService` | `class` | `BacktestService` at `backend/src/app/services/backtest_service.py:70` | 880.1 ms |
+| `verify_factor_price_semantics` | `function` | exact implementation at `semantic_verification.py:565` | 114.7 ms |
+| `factor price semantic verification` | `function` | test functions ranked above implementation | 280.8 ms |
+| `industry classification data handler` | `class` | `ClassificationDomainDataHandler` at `backtest_classification_domain.py:585` | 262.3 ms |
+| `map bar candle` | `function` | `mapBarToCandle` at `frontend/src/features/market/mappers.ts:36` | 4721.1 ms (TS cold start) |
+| `market bars fetch` | `function` | several backend `MarketDataQueryService._fetch_*bars*` methods ranked above frontend `fetchBars` | 2799.6 ms |
+
+This confirms two distinct behaviors rather than treating them as equivalent:
+
+- exact/near-exact symbol queries are deterministic and high precision;
+- natural-language `find` is bounded lexical ranking, not embedding-based semantic search. Broad wording can legitimately rank tests or another subsystem first, so agents should prefer exact symbols once discovered.
+
+#### Different classes and symbol kinds
+
+| Target | Element kind | Result highlights | Time |
+|---|---|---|---:|
+| `FactorStreamRunner` | Python class | callers include `from_factors`, benchmark/test runtime constructors; callees include `CanonicalFactorStreamEngine` | 922.2 ms |
+| `ClassificationDomainDataHandler` | Python class | caller `build_compatibility_domain_registry` resolved | 320.4 ms |
+| `DividendFactorLoadCoordinator._cleanup_flush_task` | Python method | exact caller/callee plus `add_done_callback(self._cleanup_flush_task)` classified `callback_argument` | 340.0 ms |
+| `StStatusStateActor.on_data` | Python bound method | msgbus registration `handler=self.on_data` classified `callback_argument` | 531.7 ms |
+| `_get_backtest_service` | Python bare function | correctly returned `ambiguous`: definitions exist in both `backtest.py` and `uploaded_strategies.py` | 253.5 ms |
+| `backend/src/app/api/backtest.py:38:5` | Python function by location | disambiguated `_get_backtest_service`; 8 FastAPI `Depends(...)` references classified `callback_argument` | 147.8 ms |
+| `require_admin_role` | Python function | exact unit-test callers plus admin/log API `Depends(require_admin_role)` dynamic references | 286.1 ms |
+| `mapBarToCandle` | TypeScript function | `bars.map(mapBarToCandle)` classified `callback_argument` | 287.7 ms |
+| `frontend/src/hooks/use-mobile.ts:11:11` | TypeScript local constant callback | selected local `onChange`; add/remove event listeners classified dynamic, direct `onChange()` excluded | 207.1 ms |
+| `frontend/src/components/ui/sidebar.tsx:93:11` | TSX local constant callback | selected `handleKeyDown`; both event-listener references classified dynamic | 56.1 ms |
+| `frontend/src/features/market/types.ts:11:13` | TypeScript type alias | selected `BarData`; no call edges and **0 dynamic references** | 104.6 ms |
+
+The `BarData` row caught a real false positive during the first matrix run: generic/type usages such as `Map<string, BarData[]>` were initially misclassified as `collection_member`. The classifier was tightened and two regression tests were added for generic parameter and generic return-type positions; the repeated real-repo query now returns zero dynamic references.
+
+#### Multi-hop traces on different languages
+
+| Target | Direction/depth | Result | Time |
+|---|---|---:|---:|
+| `BacktestService.stream_backtest_logs` | incoming, depth 2 | 8 semantic nodes | 1385.8 ms |
+| `fetchBars` | incoming, depth 2 | 7 semantic nodes | 209.1 ms |
+
+The matrix therefore covers classes, methods, top-level functions, local callbacks, a type alias, exact and ambiguous symbols, file/line/column targets, callback-based dispatch, and ordinary multi-hop call hierarchy in both Python and TypeScript.
 
 ### Worktree assertion
 

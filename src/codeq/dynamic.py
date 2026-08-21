@@ -181,6 +181,12 @@ def _typescript_reason(path: Path, line: int, column: int, symbol_name: str) -> 
         return "mapping_value"
     if re.search(r":\s*$", before):
         return None
+    # Type positions such as `value: Map<string, Foo[]>`, `): Promise<Foo[]>`,
+    # `as Foo`, and generic constraints are references, but not dynamic dispatch.
+    if re.search(r":\s*[A-Za-z_$][\w$]*(?:\s*<[^{};=]*)?$", before):
+        return None
+    if re.search(r"\b(?:as|satisfies|extends|implements)\s*$", before):
+        return None
     if re.search(r"\[[^\]]+\]\s*=\s*$", before) or re.search(r"\.\w+\s*=\s*$", before):
         return "registry_assignment"
     if re.search(r"=\s*$", before):

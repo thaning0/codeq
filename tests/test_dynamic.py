@@ -114,6 +114,26 @@ class DynamicReferenceTests(unittest.TestCase):
         )
         self.assertIsNone(result)
 
+    def test_typescript_generic_type_argument_is_not_dynamic(self):
+        result = self._classify(
+            ".ts",
+            "type BarData = { close: number };\nfunction f(value: Map<string, BarData[]>): void {}\n",
+            "BarData",
+            2,
+            31,
+        )
+        self.assertIsNone(result)
+
+    def test_typescript_return_generic_type_is_not_dynamic(self):
+        result = self._classify(
+            ".ts",
+            "type BarData = { close: number };\nfunction f(): Promise<BarData[]> { throw new Error(); }\n",
+            "BarData",
+            2,
+            23,
+        )
+        self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()
