@@ -1,0 +1,2723 @@
+{
+  "corpus": {
+    "all_crg_workflows": 631,
+    "quant_crg_workflows": 327,
+    "quant_crg_calls": 6216,
+    "top_tools": [
+      [
+        "get_minimal_context",
+        1507
+      ],
+      [
+        "semantic_search_nodes",
+        1100
+      ],
+      [
+        "get_impact_radius",
+        927
+      ],
+      [
+        "query_graph",
+        805
+      ],
+      [
+        "get_affected_flows",
+        578
+      ],
+      [
+        "detect_changes",
+        520
+      ],
+      [
+        "get_architecture_overview",
+        328
+      ],
+      [
+        "build_or_update_graph",
+        194
+      ],
+      [
+        "get_review_context",
+        191
+      ],
+      [
+        "list_graph_stats",
+        20
+      ],
+      [
+        "list_flows",
+        15
+      ],
+      [
+        "list_communities",
+        11
+      ],
+      [
+        "find_large_functions",
+        8
+      ],
+      [
+        "refactor",
+        6
+      ],
+      [
+        "embed_graph",
+        2
+      ],
+      [
+        "get_change_impact",
+        1
+      ],
+      [
+        "get_diff_context",
+        1
+      ],
+      [
+        "status",
+        1
+      ],
+      [
+        "list_nodes",
+        1
+      ]
+    ],
+    "query_graph_patterns": [
+      [
+        "tests_for",
+        220
+      ],
+      [
+        "callers_of",
+        195
+      ],
+      [
+        "file_summary",
+        162
+      ],
+      [
+        "callees_of",
+        107
+      ],
+      [
+        "importers_of",
+        28
+      ],
+      [
+        "${pattern}",
+        18
+      ],
+      [
+        "children_of",
+        11
+      ],
+      [
+        "${p}",
+        5
+      ],
+      [
+        "imports_of",
+        5
+      ],
+      [
+        "inheritors_of",
+        2
+      ],
+      [
+        "callees_of'",
+        1
+      ],
+      [
+        "tests_for'",
+        1
+      ],
+      [
+        "callers_of'",
+        1
+      ],
+      [
+        "tests_of",
+        1
+      ],
+      [
+        "callers_of:_get_or_load_bars",
+        1
+      ]
+    ]
+  },
+  "sample": {
+    "size": 100,
+    "categories": {
+      "navigation": 50,
+      "review": 30,
+      "complex": 20
+    },
+    "sources": {
+      "pi": 29,
+      "codex": 71
+    },
+    "historical_crg_calls": 1130,
+    "historical_companion_observations": 10502,
+    "coverage": {
+      "direct": 913,
+      "approximate": 101,
+      "fallback": 73,
+      "eliminated": 43
+    },
+    "actionable_calls": 1087,
+    "mapped_direct_or_approximate_calls": 1014,
+    "mapped_call_coverage_pct": 93.3,
+    "mapped_unique_codeq_actions": 281,
+    "observation_compression_ratio": 4.02,
+    "fallback_workflows": 39,
+    "fallback_workflow_pct": 39.0,
+    "mapped_action_counts": {
+      "find": 97,
+      "context": 92,
+      "trace": 48,
+      "review": 44
+    },
+    "fallback_counts": {
+      "architecture_rg_read": 39
+    },
+    "workflows": [
+      {
+        "id": "dcd8df182035e4dc",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 2,
+        "companion_calls": {
+          "grep": 14,
+          "read": 48
+        },
+        "tools": {
+          "semantic_search_nodes": 1,
+          "query_graph": 1
+        },
+        "query_graph_patterns": {
+          "callers_of:_get_or_load_bars": 1
+        },
+        "mapped_codeq_actions": [
+          "find"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "b18b25bddca02273",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 24,
+          "grep": 7
+        },
+        "tools": {
+          "semantic_search_nodes": 3
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "3699e360606c8e5d",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 17,
+          "grep": 4
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "9fa57d1da414e8e6",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 30,
+          "grep": 6
+        },
+        "tools": {
+          "list_nodes": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [],
+        "fallback_families": []
+      },
+      {
+        "id": "5bcd16d62ed88519",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 16,
+          "grep": 6
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "348a2119e860085e",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 2,
+        "companion_calls": {
+          "read": 19,
+          "grep": 12
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "semantic_search_nodes": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "95dfd3449cf2a777",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 4
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "76fe197928ed8c14",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 31
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "3204648ee5ee36de",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 17,
+          "grep": 14
+        },
+        "tools": {
+          "get_minimal_context": 3
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "ce69029f22e10e87",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 58,
+          "git": 2
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "cfff998c868cbae4",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 2,
+        "companion_calls": {
+          "read": 113,
+          "grep": 1,
+          "git": 7
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "semantic_search_nodes": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "f785011d9efb85bb",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 2,
+        "companion_calls": {
+          "read": 2
+        },
+        "tools": {
+          "get_minimal_context": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "eeaf83c3d6512efb",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 18,
+          "grep": 5
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "43c42bb60d747ea5",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 13,
+        "companion_calls": {
+          "read": 97,
+          "grep": 27,
+          "git": 5
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "semantic_search_nodes": 7,
+          "query_graph": 5
+        },
+        "query_graph_patterns": {
+          "file_summary": 1,
+          "tests_for": 1,
+          "callers_of": 3
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "b172df6ed4cef95b",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 101,
+          "grep": 3,
+          "git": 1
+        },
+        "tools": {
+          "get_minimal_context": 3
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "822652d46cfcc954",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 12,
+        "companion_calls": {
+          "read": 34,
+          "grep": 4,
+          "git": 1
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "query_graph": 10,
+          "semantic_search_nodes": 1
+        },
+        "query_graph_patterns": {
+          "callers_of": 5,
+          "callees_of": 1,
+          "tests_for": 4
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "c503bebaa48023b6",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 27,
+          "git": 1,
+          "grep": 6
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "5875b5087532a8dc",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 1
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "aaf88869f4987a2f",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 11,
+        "companion_calls": {
+          "read": 103,
+          "grep": 37
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "semantic_search_nodes": 8,
+          "query_graph": 2
+        },
+        "query_graph_patterns": {
+          "callees_of": 2
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "9f349fd4c9b9e90c",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 20,
+          "grep": 10
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "15d2e01243b677e1",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 2,
+        "companion_calls": {},
+        "tools": {
+          "get_minimal_context": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "19d0da81e2d31431",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 69
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "112cd20dfc6ed356",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 50,
+          "grep": 14
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "b99a57ed65d9145e",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 15,
+          "grep": 4,
+          "git": 1
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "fb9cd3884ce08cb4",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 14,
+        "companion_calls": {
+          "read": 78,
+          "git": 6,
+          "grep": 9
+        },
+        "tools": {
+          "get_minimal_context": 10,
+          "semantic_search_nodes": 1,
+          "get_impact_radius": 3
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "264d2e52c5668d71",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 51,
+          "grep": 33,
+          "git": 2
+        },
+        "tools": {
+          "semantic_search_nodes": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "640ca2c1003de852",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 12,
+        "companion_calls": {
+          "read": 150,
+          "grep": 64,
+          "git": 4
+        },
+        "tools": {
+          "get_minimal_context": 6,
+          "semantic_search_nodes": 4,
+          "query_graph": 2
+        },
+        "query_graph_patterns": {
+          "file_summary": 1,
+          "callees_of": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "6206644b57fbf997",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 75,
+          "grep": 9,
+          "git": 4
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "semantic_search_nodes": 1,
+          "query_graph": 1
+        },
+        "query_graph_patterns": {
+          "tests_for": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "7e35af6db6c0eb1c",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 2,
+        "companion_calls": {
+          "grep": 4,
+          "read": 8,
+          "git": 2
+        },
+        "tools": {
+          "get_minimal_context": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "4eb94ea3b1ef4e4b",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 3
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "a13e338b34c788de",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 12,
+          "grep": 3
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "build_or_update_graph": 1,
+          "query_graph": 1
+        },
+        "query_graph_patterns": {
+          "file_summary": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "dfca97356fc12d23",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 12,
+        "companion_calls": {
+          "grep": 9,
+          "read": 29,
+          "git": 1
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "semantic_search_nodes": 6,
+          "query_graph": 2
+        },
+        "query_graph_patterns": {
+          "callees_of": 2
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "aaddb637a1ed3650",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 9,
+        "companion_calls": {
+          "grep": 5,
+          "read": 21,
+          "git": 2
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "build_or_update_graph": 1,
+          "semantic_search_nodes": 1,
+          "query_graph": 6
+        },
+        "query_graph_patterns": {
+          "callers_of": 3,
+          "tests_for": 3
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "109bc823828cee70",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 8,
+        "companion_calls": {
+          "grep": 11,
+          "read": 52,
+          "git": 13
+        },
+        "tools": {
+          "get_minimal_context": 3,
+          "semantic_search_nodes": 1,
+          "get_impact_radius": 3,
+          "build_or_update_graph": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "e97bd8ce85f4fe0c",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "grep": 2,
+          "read": 6,
+          "git": 3
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "080846e7c4ac1362",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 31,
+          "grep": 3
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "1cc116aac26aaad3",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 2,
+        "companion_calls": {
+          "read": 36,
+          "git": 3,
+          "grep": 15
+        },
+        "tools": {
+          "get_minimal_context": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "7a39dcc0fb53cee0",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 19,
+          "grep": 1
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "6f35aa249c2988da",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 34,
+          "grep": 10,
+          "git": 5
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "b6557c5987d1d293",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 86,
+          "grep": 19,
+          "git": 30
+        },
+        "tools": {
+          "build_or_update_graph": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [],
+        "fallback_families": []
+      },
+      {
+        "id": "596fb1a25745de33",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 29,
+          "grep": 2
+        },
+        "tools": {
+          "get_minimal_context": 3
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "2daa5bd51e0a7d04",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 58,
+          "grep": 13,
+          "git": 22
+        },
+        "tools": {
+          "get_impact_radius": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "ffa7b3e348f3247a",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 74,
+          "git": 3,
+          "grep": 42
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "semantic_search_nodes": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "9c0e9e3807b34672",
+        "source": "pi",
+        "category": "navigation",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 59,
+          "grep": 23
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "semantic_search_nodes": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "2c5b56af09be3a05",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 11,
+        "companion_calls": {
+          "read": 25,
+          "grep": 2,
+          "git": 2
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "build_or_update_graph": 3,
+          "semantic_search_nodes": 1,
+          "query_graph": 1,
+          "get_impact_radius": 2
+        },
+        "query_graph_patterns": {
+          "tests_for": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "ef41347643664faa",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 16,
+          "grep": 2
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "ccc06bf50d7b393e",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 6,
+        "companion_calls": {
+          "read": 24,
+          "grep": 12
+        },
+        "tools": {
+          "get_minimal_context": 2,
+          "get_impact_radius": 4
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "2f4609bff618f288",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 4,
+          "grep": 2
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "f0127b582d2347a0",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 1,
+        "companion_calls": {
+          "read": 38
+        },
+        "tools": {
+          "get_minimal_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "2b2b7e6d74fd1d0e",
+        "source": "codex",
+        "category": "navigation",
+        "crg_calls": 7,
+        "companion_calls": {
+          "read": 112,
+          "grep": 22,
+          "git": 26
+        },
+        "tools": {
+          "get_minimal_context": 2,
+          "semantic_search_nodes": 2,
+          "query_graph": 3
+        },
+        "query_graph_patterns": {
+          "tests_for": 1,
+          "callers_of": 1,
+          "file_summary": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "7f9559d8bf1b3797",
+        "source": "pi",
+        "category": "review",
+        "crg_calls": 10,
+        "companion_calls": {
+          "read": 15
+        },
+        "tools": {
+          "get_architecture_overview": 3,
+          "semantic_search_nodes": 2,
+          "list_communities": 1,
+          "detect_changes": 1,
+          "query_graph": 3
+        },
+        "query_graph_patterns": {
+          "callers_of": 3
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "e197a1969511d551",
+        "source": "pi",
+        "category": "review",
+        "crg_calls": 5,
+        "companion_calls": {
+          "read": 40,
+          "git": 8,
+          "grep": 17
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "detect_changes": 1,
+          "get_affected_flows": 1,
+          "get_impact_radius": 1,
+          "get_review_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "172463d08483c4e8",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 9,
+        "companion_calls": {
+          "read": 419,
+          "git": 6,
+          "grep": 5
+        },
+        "tools": {
+          "get_minimal_context": 5,
+          "semantic_search_nodes": 2,
+          "detect_changes": 1,
+          "get_architecture_overview": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "5194bc0a15d40b41",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 36,
+        "companion_calls": {
+          "read": 132
+        },
+        "tools": {
+          "get_minimal_context": 6,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 13,
+          "query_graph": 7,
+          "detect_changes": 4,
+          "get_affected_flows": 2,
+          "get_impact_radius": 2,
+          "get_review_context": 1
+        },
+        "query_graph_patterns": {
+          "importers_of": 2,
+          "tests_for": 3,
+          "callers_of": 1,
+          "file_summary": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "16c831afb58436bb",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 20,
+        "companion_calls": {
+          "read": 174,
+          "grep": 17
+        },
+        "tools": {
+          "get_minimal_context": 6,
+          "semantic_search_nodes": 4,
+          "query_graph": 1,
+          "detect_changes": 5,
+          "get_impact_radius": 2,
+          "get_affected_flows": 2
+        },
+        "query_graph_patterns": {
+          "callees_of": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "b34462352af3ef69",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 6,
+        "companion_calls": {
+          "grep": 2,
+          "read": 44
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "get_architecture_overview": 1,
+          "detect_changes": 1,
+          "get_review_context": 1,
+          "get_impact_radius": 1,
+          "get_affected_flows": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "4154d2f2baf870b7",
+        "source": "pi",
+        "category": "review",
+        "crg_calls": 9,
+        "companion_calls": {
+          "read": 207,
+          "grep": 91,
+          "git": 25
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "detect_changes": 2,
+          "get_affected_flows": 1,
+          "get_impact_radius": 1,
+          "get_review_context": 1,
+          "query_graph": 3
+        },
+        "query_graph_patterns": {
+          "tests_for": 2,
+          "callers_of": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "376c6634042bf192",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 36,
+        "companion_calls": {
+          "read": 132,
+          "grep": 33,
+          "git": 25
+        },
+        "tools": {
+          "get_minimal_context": 8,
+          "get_architecture_overview": 3,
+          "semantic_search_nodes": 3,
+          "detect_changes": 3,
+          "get_impact_radius": 7,
+          "get_affected_flows": 6,
+          "query_graph": 1,
+          "build_or_update_graph": 5
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "bbf204e3c873a74b",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 45,
+        "companion_calls": {
+          "read": 128,
+          "git": 28,
+          "grep": 47
+        },
+        "tools": {
+          "get_minimal_context": 13,
+          "semantic_search_nodes": 3,
+          "get_impact_radius": 12,
+          "detect_changes": 6,
+          "get_review_context": 1,
+          "get_affected_flows": 7,
+          "get_architecture_overview": 2,
+          "build_or_update_graph": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "fbb5c24fa2ac822a",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 8,
+        "companion_calls": {
+          "read": 13,
+          "grep": 5,
+          "git": 4
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "detect_changes": 1,
+          "get_review_context": 1,
+          "get_affected_flows": 1,
+          "get_impact_radius": 1,
+          "query_graph": 3
+        },
+        "query_graph_patterns": {
+          "tests_for": 3
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "97c628b94089c46c",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 11,
+        "companion_calls": {
+          "read": 18,
+          "git": 2,
+          "grep": 8
+        },
+        "tools": {
+          "get_minimal_context": 3,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 3,
+          "query_graph": 2,
+          "detect_changes": 2
+        },
+        "query_graph_patterns": {
+          "callees_of": 1,
+          "callers_of": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "1483fb7e41a0ff48",
+        "source": "pi",
+        "category": "review",
+        "crg_calls": 9,
+        "companion_calls": {
+          "read": 29,
+          "git": 9,
+          "grep": 3
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "detect_changes": 1,
+          "get_affected_flows": 2,
+          "get_impact_radius": 1,
+          "get_review_context": 1,
+          "query_graph": 3
+        },
+        "query_graph_patterns": {
+          "tests_for": 3
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "c2b3db66e9a7d3a6",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 24,
+        "companion_calls": {
+          "read": 50,
+          "git": 27,
+          "grep": 16
+        },
+        "tools": {
+          "get_minimal_context": 7,
+          "detect_changes": 3,
+          "get_impact_radius": 3,
+          "get_affected_flows": 3,
+          "get_review_context": 2,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 1,
+          "list_graph_stats": 1,
+          "query_graph": 3
+        },
+        "query_graph_patterns": {
+          "callers_of": 2,
+          "tests_for": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "cafa331e92691fcc",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 23,
+        "companion_calls": {
+          "read": 345,
+          "git": 41,
+          "grep": 150
+        },
+        "tools": {
+          "get_minimal_context": 10,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 4,
+          "get_impact_radius": 3,
+          "get_affected_flows": 1,
+          "detect_changes": 4
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "283a4d4b91058459",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 24,
+        "companion_calls": {
+          "read": 101,
+          "grep": 23,
+          "git": 30
+        },
+        "tools": {
+          "build_or_update_graph": 1,
+          "get_minimal_context": 6,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 1,
+          "query_graph": 7,
+          "get_impact_radius": 5,
+          "get_affected_flows": 2,
+          "detect_changes": 1
+        },
+        "query_graph_patterns": {
+          "callers_of": 2,
+          "callees_of": 1,
+          "tests_for": 1,
+          "file_summary": 2,
+          "${p}": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "b27a5e1e464b13a4",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 11,
+        "companion_calls": {
+          "read": 132,
+          "grep": 25,
+          "git": 24
+        },
+        "tools": {
+          "get_minimal_context": 7,
+          "detect_changes": 1,
+          "get_impact_radius": 2,
+          "get_affected_flows": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "1750edc4acfbd985",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 18,
+        "companion_calls": {
+          "grep": 8,
+          "read": 26,
+          "git": 12
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "get_architecture_overview": 2,
+          "get_impact_radius": 3,
+          "get_affected_flows": 3,
+          "list_graph_stats": 1,
+          "build_or_update_graph": 2,
+          "embed_graph": 1,
+          "detect_changes": 1,
+          "get_review_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "e88678fec9233525",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 43,
+        "companion_calls": {
+          "read": 317,
+          "git": 58,
+          "grep": 86
+        },
+        "tools": {
+          "get_minimal_context": 5,
+          "get_architecture_overview": 4,
+          "semantic_search_nodes": 6,
+          "query_graph": 5,
+          "get_review_context": 4,
+          "get_impact_radius": 12,
+          "detect_changes": 4,
+          "get_affected_flows": 3
+        },
+        "query_graph_patterns": {
+          "callers_of": 3,
+          "tests_for": 1,
+          "tests_for'": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "d036c5b445b1cc17",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 32,
+        "companion_calls": {
+          "read": 87,
+          "grep": 21,
+          "git": 13
+        },
+        "tools": {
+          "get_minimal_context": 6,
+          "get_architecture_overview": 4,
+          "semantic_search_nodes": 4,
+          "build_or_update_graph": 3,
+          "get_impact_radius": 4,
+          "get_affected_flows": 4,
+          "query_graph": 5,
+          "detect_changes": 2
+        },
+        "query_graph_patterns": {
+          "callers_of'": 1,
+          "tests_for": 2,
+          "callers_of": 1,
+          "callees_of": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "5f8a608b5c00db44",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 68,
+        "companion_calls": {
+          "read": 531,
+          "grep": 137,
+          "git": 65
+        },
+        "tools": {
+          "get_impact_radius": 16,
+          "get_affected_flows": 6,
+          "get_minimal_context": 17,
+          "get_review_context": 2,
+          "get_architecture_overview": 2,
+          "semantic_search_nodes": 11,
+          "query_graph": 10,
+          "detect_changes": 3,
+          "build_or_update_graph": 1
+        },
+        "query_graph_patterns": {
+          "tests_for": 4,
+          "callers_of": 3,
+          "callees_of": 3
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "6140c7bb8821dc76",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 13,
+        "companion_calls": {
+          "read": 96,
+          "git": 13,
+          "grep": 10
+        },
+        "tools": {
+          "get_minimal_context": 5,
+          "semantic_search_nodes": 1,
+          "get_impact_radius": 6,
+          "get_review_context": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "f8afd4501a42f0b7",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 32,
+        "companion_calls": {
+          "read": 83,
+          "git": 15,
+          "grep": 13
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "get_architecture_overview": 5,
+          "semantic_search_nodes": 11,
+          "get_impact_radius": 3,
+          "get_affected_flows": 3,
+          "query_graph": 3,
+          "detect_changes": 2,
+          "get_review_context": 1
+        },
+        "query_graph_patterns": {
+          "file_summary": 2,
+          "${pattern}": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "76d27d1b67a88c56",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 68,
+        "companion_calls": {
+          "read": 264,
+          "grep": 48,
+          "git": 30
+        },
+        "tools": {
+          "get_minimal_context": 14,
+          "query_graph": 14,
+          "semantic_search_nodes": 17,
+          "build_or_update_graph": 6,
+          "get_impact_radius": 8,
+          "detect_changes": 2,
+          "get_architecture_overview": 3,
+          "get_affected_flows": 3,
+          "get_review_context": 1
+        },
+        "query_graph_patterns": {
+          "callers_of": 2,
+          "callees_of": 4,
+          "tests_for": 1,
+          "children_of": 2
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "d2e417b6ce09b848",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 34,
+        "companion_calls": {
+          "read": 129,
+          "grep": 49,
+          "git": 26
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "get_architecture_overview": 3,
+          "semantic_search_nodes": 7,
+          "query_graph": 9,
+          "get_impact_radius": 6,
+          "get_affected_flows": 2,
+          "detect_changes": 2,
+          "build_or_update_graph": 1
+        },
+        "query_graph_patterns": {
+          "${p}": 1,
+          "callers_of": 2,
+          "callees_of": 3,
+          "file_summary": 2,
+          "tests_for": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "8f8451a30b8e1673",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 19,
+        "companion_calls": {
+          "read": 118,
+          "git": 17,
+          "grep": 12
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 3,
+          "query_graph": 4,
+          "get_impact_radius": 3,
+          "get_affected_flows": 2,
+          "detect_changes": 1,
+          "get_review_context": 1
+        },
+        "query_graph_patterns": {
+          "callers_of": 1,
+          "callees_of": 1,
+          "tests_for": 1,
+          "${p}": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "81c8d83d8d39f948",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 28,
+        "companion_calls": {
+          "read": 28,
+          "git": 3,
+          "grep": 3
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 3,
+          "query_graph": 6,
+          "get_impact_radius": 4,
+          "get_affected_flows": 4,
+          "build_or_update_graph": 1,
+          "detect_changes": 4,
+          "get_review_context": 1
+        },
+        "query_graph_patterns": {
+          "file_summary": 1,
+          "${pattern}": 1,
+          "importers_of": 2,
+          "callers_of": 1,
+          "tests_for": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "165f7aaf394b0962",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 11,
+        "companion_calls": {
+          "read": 115,
+          "grep": 19,
+          "git": 8
+        },
+        "tools": {
+          "get_minimal_context": 5,
+          "detect_changes": 1,
+          "get_impact_radius": 1,
+          "get_affected_flows": 1,
+          "get_review_context": 1,
+          "query_graph": 2
+        },
+        "query_graph_patterns": {
+          "callers_of": 1,
+          "tests_for": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "9ff529f86ab22405",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 41,
+        "companion_calls": {
+          "read": 108,
+          "git": 16,
+          "grep": 29
+        },
+        "tools": {
+          "get_minimal_context": 7,
+          "semantic_search_nodes": 8,
+          "query_graph": 9,
+          "get_architecture_overview": 2,
+          "get_impact_radius": 6,
+          "get_affected_flows": 3,
+          "build_or_update_graph": 1,
+          "detect_changes": 3,
+          "get_review_context": 2
+        },
+        "query_graph_patterns": {
+          "file_summary": 1,
+          "callers_of": 8
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "433c7b21a64dfd68",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 31,
+        "companion_calls": {
+          "read": 202,
+          "git": 13,
+          "grep": 53
+        },
+        "tools": {
+          "get_minimal_context": 7,
+          "get_architecture_overview": 2,
+          "semantic_search_nodes": 3,
+          "get_impact_radius": 6,
+          "get_affected_flows": 2,
+          "build_or_update_graph": 5,
+          "query_graph": 4,
+          "detect_changes": 2
+        },
+        "query_graph_patterns": {
+          "tests_for": 2,
+          "callees_of": 2
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "3fd314cae58538f0",
+        "source": "codex",
+        "category": "review",
+        "crg_calls": 19,
+        "companion_calls": {
+          "read": 130,
+          "grep": 43,
+          "git": 9
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "semantic_search_nodes": 4,
+          "list_graph_stats": 1,
+          "detect_changes": 2,
+          "query_graph": 3,
+          "get_impact_radius": 2,
+          "get_affected_flows": 3
+        },
+        "query_graph_patterns": {
+          "inheritors_of": 2,
+          "callers_of": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "bccbc90f3c10d250",
+        "source": "pi",
+        "category": "complex",
+        "crg_calls": 3,
+        "companion_calls": {
+          "read": 3
+        },
+        "tools": {
+          "get_architecture_overview": 1,
+          "list_communities": 1,
+          "semantic_search_nodes": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "57241111d116087a",
+        "source": "pi",
+        "category": "complex",
+        "crg_calls": 7,
+        "companion_calls": {
+          "read": 25,
+          "grep": 23,
+          "git": 1
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "query_graph": 3,
+          "get_affected_flows": 1,
+          "get_impact_radius": 1,
+          "semantic_search_nodes": 1
+        },
+        "query_graph_patterns": {
+          "callers_of": 2,
+          "callees_of": 1
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "9cd9d2839ba355f5",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 27,
+        "companion_calls": {
+          "read": 205,
+          "grep": 10
+        },
+        "tools": {
+          "get_minimal_context": 6,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 11,
+          "query_graph": 8,
+          "get_impact_radius": 1
+        },
+        "query_graph_patterns": {
+          "file_summary": 2,
+          "callers_of": 2,
+          "callees_of": 4
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "88e2d445141b1f7d",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 6,
+        "companion_calls": {
+          "read": 25
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 1,
+          "query_graph": 3
+        },
+        "query_graph_patterns": {
+          "file_summary": 1,
+          "tests_for": 2
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "3c3ddf16909989c4",
+        "source": "pi",
+        "category": "complex",
+        "crg_calls": 7,
+        "companion_calls": {
+          "read": 103,
+          "grep": 50,
+          "git": 1
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "semantic_search_nodes": 5,
+          "list_flows": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": []
+      },
+      {
+        "id": "706711864e091bc5",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 14,
+        "companion_calls": {
+          "read": 57,
+          "git": 5,
+          "grep": 18
+        },
+        "tools": {
+          "get_minimal_context": 8,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 2,
+          "get_impact_radius": 3
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "277235da37a9bf82",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 5,
+        "companion_calls": {
+          "read": 18,
+          "git": 3,
+          "grep": 2
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 1,
+          "get_impact_radius": 1,
+          "get_affected_flows": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "6d74b2411b56cb68",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 11,
+        "companion_calls": {
+          "read": 43,
+          "grep": 7,
+          "git": 2
+        },
+        "tools": {
+          "get_minimal_context": 4,
+          "get_architecture_overview": 2,
+          "semantic_search_nodes": 2,
+          "get_impact_radius": 2,
+          "get_affected_flows": 1
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "247b9f76b89f1062",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 10,
+        "companion_calls": {
+          "read": 79,
+          "grep": 13,
+          "git": 11
+        },
+        "tools": {
+          "get_minimal_context": 2,
+          "get_architecture_overview": 2,
+          "semantic_search_nodes": 1,
+          "get_impact_radius": 3,
+          "get_affected_flows": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "c81a0a6f1c3ecd80",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 8,
+        "companion_calls": {
+          "read": 11,
+          "grep": 5,
+          "git": 2
+        },
+        "tools": {
+          "get_minimal_context": 2,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 1,
+          "get_impact_radius": 2,
+          "get_affected_flows": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "91255789c03f9b2f",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 21,
+        "companion_calls": {
+          "read": 149,
+          "git": 7,
+          "grep": 21
+        },
+        "tools": {
+          "get_minimal_context": 7,
+          "get_architecture_overview": 3,
+          "semantic_search_nodes": 5,
+          "query_graph": 2,
+          "get_impact_radius": 2,
+          "get_affected_flows": 2
+        },
+        "query_graph_patterns": {
+          "${pattern}": 2
+        },
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "32fe89e02b10ed78",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 6,
+        "companion_calls": {
+          "read": 36,
+          "grep": 3
+        },
+        "tools": {
+          "get_minimal_context": 2,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 2,
+          "query_graph": 1
+        },
+        "query_graph_patterns": {
+          "${pattern}": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "6bb68bac6a3e3be7",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 14,
+        "companion_calls": {
+          "read": 122,
+          "grep": 6,
+          "git": 1
+        },
+        "tools": {
+          "get_minimal_context": 9,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 4
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "b12d0d0551f27643",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 10,
+        "companion_calls": {
+          "read": 55,
+          "grep": 25,
+          "git": 22
+        },
+        "tools": {
+          "get_minimal_context": 3,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 2,
+          "get_impact_radius": 2,
+          "get_affected_flows": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "review",
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "14096cbc11da6040",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 8,
+        "companion_calls": {
+          "read": 15,
+          "grep": 3
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 5,
+          "query_graph": 1
+        },
+        "query_graph_patterns": {
+          "callees_of": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "1b2f385472829004",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 5,
+        "companion_calls": {
+          "read": 133,
+          "grep": 22,
+          "git": 6
+        },
+        "tools": {
+          "get_minimal_context": 2,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 1,
+          "query_graph": 1
+        },
+        "query_graph_patterns": {
+          "callees_of": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "fdc14aabc0060b5b",
+        "source": "pi",
+        "category": "complex",
+        "crg_calls": 7,
+        "companion_calls": {
+          "read": 118,
+          "grep": 50,
+          "git": 7
+        },
+        "tools": {
+          "get_minimal_context": 2,
+          "list_graph_stats": 1,
+          "get_architecture_overview": 2,
+          "list_communities": 2
+        },
+        "query_graph_patterns": {},
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "e1095b94600e2c13",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 4,
+        "companion_calls": {
+          "read": 11,
+          "git": 1,
+          "grep": 1
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 1,
+          "query_graph": 1
+        },
+        "query_graph_patterns": {
+          "callers_of": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "8abbeed5d772f764",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 6,
+        "companion_calls": {
+          "read": 7,
+          "grep": 4,
+          "git": 4
+        },
+        "tools": {
+          "get_minimal_context": 1,
+          "get_architecture_overview": 1,
+          "semantic_search_nodes": 2,
+          "query_graph": 2
+        },
+        "query_graph_patterns": {
+          "file_summary": 1,
+          "tests_for": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      },
+      {
+        "id": "006eb3afb2e4ad7f",
+        "source": "codex",
+        "category": "complex",
+        "crg_calls": 31,
+        "companion_calls": {
+          "read": 444,
+          "grep": 86,
+          "git": 27
+        },
+        "tools": {
+          "get_minimal_context": 9,
+          "get_architecture_overview": 1,
+          "list_flows": 1,
+          "semantic_search_nodes": 7,
+          "find_large_functions": 1,
+          "query_graph": 8,
+          "build_or_update_graph": 4
+        },
+        "query_graph_patterns": {
+          "file_summary": 3,
+          "callers_of": 2,
+          "callees_of": 2,
+          "tests_for": 1
+        },
+        "mapped_codeq_actions": [
+          "find",
+          "context",
+          "trace"
+        ],
+        "fallback_families": [
+          "architecture_rg_read"
+        ]
+      }
+    ]
+  },
+  "current_validation": {
+    "queries": 30,
+    "by_kind": {
+      "find": 16,
+      "context": 14
+    },
+    "statuses": {
+      "ok": 30
+    },
+    "p50_ms": 484.2,
+    "max_ms": 2785.5
+  },
+  "codeq_version": "0.5.2"
+}

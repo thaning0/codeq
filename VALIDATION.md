@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.5.1` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.5.2` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **74/74 pass**
+- `uv run python -W error -m unittest discover -s tests`: **78/78 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.5.1**
-- installed distribution metadata: **0.5.1**
+- installed module version: **0.5.2**
+- installed distribution metadata: **0.5.2**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 0.5.1 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 0.5.2 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -304,10 +304,24 @@ There were no 10 s+ semantic outliers. Warm context samples showed document-symb
 
 Full samples are stored in `benchmarks/results/0.5.1-quant.json`; the human-readable baseline is `benchmarks/0.5.1-quant.md`.
 
+## 0.5.2 historical workflow replay
+
+The replay parser scanned actual local Codex/Pi session JSONL tool-call records and found **327 Quant-related CRG workflows / 6216 CRG calls**. The committed 100-workflow sample is stratified as **50 navigation / 30 review / 20 complex** with **71 Codex / 29 Pi** sources. Artifacts are anonymized: no user prompts, raw session paths, or concrete private targets are stored.
+
+The sample contained **1130 historical CRG calls**. Excluding graph-maintenance calls that codeq eliminates entirely, **93.3%** of actionable CRG calls map directly or approximately onto current `find/context/trace/review`. Those 1130 CRG observations compress to **281 mapped codeq observations (4.02x)**. All **50/50 navigation workflows** map without an unsupported fallback.
+
+The only repeated unsupported family is historical **architecture/community abstraction** usage (39/100 workflows). Named affected-flow calls are intentionally classified as approximate `review/trace` coverage rather than as a mandatory fallback because the underlying impact/caller questions are already exposed by current codeq. This does not justify reintroducing a persistent graph.
+
+Thirty anonymized concrete historical query probes (16 `find`, 14 `context`) were executed against the current Quant tree with the final 0.5.2 tool: **30/30 returned `ok`**, P50 **484.2 ms**, max **2785.5 ms**. The replay explicitly does not invent a counterfactual pure-rg/read success/time baseline; historical companion grep/read/git observations are reported as observed pressure only.
+
+Parser regression tests cover Codex `exec -> mcporter`, Pi direct/wrapped CRG calls, injected-doc exclusion, affected-flow mapping, and committed-artifact anonymization.
+
+Full anonymized data: `benchmarks/results/0.5.2-workflows.json`. Human report: `benchmarks/0.5.2-workflows.md`.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 0.5.1
+version                 codeq 0.5.2
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language

@@ -253,6 +253,8 @@ Caller/reference prewarming is budget-adaptive: likely reference files are opene
 
 JSON `_meta` exposes per-request performance deltas (`lsp_started`, `lsp_request_count`, prewarm counters, and document-symbol cache hit/miss/eviction counts). Default plain text remains unchanged. The fixed Quant cold/warm benchmark lives under `benchmarks/` and is not an agent-facing command.
 
+Historical workflow replay is also a development-only benchmark. `benchmarks/historical_workflow_replay.py` reads actual local Codex/Pi session JSONL records, maps historical code-review-graph observation families onto the current four-command surface, validates anonymized concrete queries against the current Quant tree, and writes only anonymized aggregate artifacts. It never stores historical prompts, raw session paths, or concrete private targets in the repository. The 0.5.2 report is `benchmarks/0.5.2-workflows.md`.
+
 For agent ergonomics, global options work before or after the subcommand:
 
 ```bash
