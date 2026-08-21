@@ -57,20 +57,30 @@ def _connect(socket_path: Path, timeout: float) -> socket.socket:
 
 def _spawn_daemon(socket_path: Path) -> None:
     socket_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path = socket_path.parent / "daemon.log"
     argv = [sys.executable, "-m", "codeq.daemon", "--socket", str(socket_path)]
-    with open(os.devnull, "rb") as devnull, open(log_path, "ab", buffering=0) as log:
-        os.posix_spawn(
-            sys.executable,
-            argv,
-            os.environ.copy(),
-            file_actions=[
-                (os.POSIX_SPAWN_DUP2, devnull.fileno(), 0),
-                (os.POSIX_SPAWN_DUP2, log.fileno(), 1),
-                (os.POSIX_SPAWN_DUP2, log.fileno(), 2),
-            ],
-            setpgroup=0,
-        )
+    log_path_text = os.environ.get("CODEQ_DAEMON_LOG")
+    with open(os.devnull, "r+b", buffering=0) as devnull:
+        if log_path_text:
+            log_path = Path(log_path_text).expanduser()
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            output = open(log_path, "ab", buffering=0)
+        else:
+            output = devnull
+        try:
+            os.posix_spawn(
+                sys.executable,
+                argv,
+                os.environ.copy(),
+                file_actions=[
+                    (os.POSIX_SPAWN_DUP2, devnull.fileno(), 0),
+                    (os.POSIX_SPAWN_DUP2, output.fileno(), 1),
+                    (os.POSIX_SPAWN_DUP2, output.fileno(), 2),
+                ],
+                setpgroup=0,
+            )
+        finally:
+            if output is not devnull:
+                output.close()
 
 
 def _connect_or_spawn(socket_path: Path, timeout: float) -> socket.socket:

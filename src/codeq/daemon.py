@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import signal
 import socket
+import stat
 import threading
 from pathlib import Path
 from typing import Any
@@ -18,11 +20,49 @@ _MAX_WORKSPACES = int(os.environ.get("CODEQ_MAX_WORKSPACES", "4"))
 _MAINTENANCE_INTERVAL_SECONDS = 5.0
 
 
+def _prepare_runtime_dir(path: Path) -> Path:
+    path = path.expanduser()
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    info = path.stat()
+    if info.st_uid != os.getuid():
+        raise PermissionError(f"runtime directory is not owned by current user: {path}")
+    if stat.S_IMODE(info.st_mode) != 0o700:
+        path.chmod(0o700)
+
+    socket_path = path / "codeq.sock"
+    if socket_path.exists():
+        return path
+
+    probe_path = path / f".socket-probe-{os.getpid()}-{secrets.token_hex(4)}"
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        probe.bind(str(probe_path))
+    finally:
+        probe.close()
+        probe_path.unlink(missing_ok=True)
+    return path
+
+
 def default_socket_path() -> Path:
+    explicit = os.environ.get("CODEQ_RUNTIME_DIR")
+    if explicit:
+        try:
+            return _prepare_runtime_dir(Path(explicit)) / "codeq.sock"
+        except OSError as exc:
+            raise RuntimeError(f"CODEQ_RUNTIME_DIR is not usable: {explicit}: {exc}") from exc
+
     runtime = os.environ.get("XDG_RUNTIME_DIR")
-    base = Path(runtime) if runtime else Path("/tmp") / f"codeq-{os.getuid()}"
-    base.mkdir(parents=True, exist_ok=True)
-    return base / "codeq.sock"
+    if runtime:
+        try:
+            return _prepare_runtime_dir(Path(runtime) / "codeq") / "codeq.sock"
+        except OSError:
+            pass
+
+    fallback = Path("/tmp") / f"codeq-{os.getuid()}"
+    try:
+        return _prepare_runtime_dir(fallback) / "codeq.sock"
+    except OSError as exc:
+        raise RuntimeError(f"no usable codeq runtime directory: {fallback}: {exc}") from exc
 
 
 def _serve_connection(conn: socket.socket, service: CodeqService) -> None:

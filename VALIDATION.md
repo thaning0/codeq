@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-22 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc2` CLI.
+Validated on 2026-08-22 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc3` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **82/82 pass**
+- `uv run python -W error -m unittest discover -s tests`: **88/88 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **1.0.0rc2**
-- installed distribution metadata: **1.0.0rc2**
+- installed module version: **1.0.0rc3**
+- installed distribution metadata: **1.0.0rc3**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 1.0.0rc2 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 1.0.0rc3 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -412,10 +412,20 @@ stderr = 0 bytes
 
 A missing explicit path still produced `rc=1`, zero stdout bytes, and the error only on stderr. RC2 passed **82/82 tests**, basedpyright with zero errors/warnings, build, and the **9/9** readiness gate. Artifacts: `benchmarks/1.0.0rc2-readiness.md` and `benchmarks/results/1.0.0rc2-readiness.json`.
 
+## 1.0.0rc3 sandbox/runtime-state hardening
+
+RC3 removes persistent daemon logging from the default execution path and makes runtime state sandbox-tolerant. `codeq` still never writes analysis/index state into the target repository; the daemon only needs an ephemeral private Unix socket outside it.
+
+Runtime selection is now `CODEQ_RUNTIME_DIR` (explicit) -> usable `$XDG_RUNTIME_DIR/codeq` -> `/tmp/codeq-$UID`. Runtime directories are private (`0700`). A real run with `XDG_RUNTIME_DIR=/proc` selected `/tmp/codeq-1000/codeq.sock` and completed a Quant `find BacktestService` query with `status=ok` / `schema_version=1`.
+
+Default daemon stdout/stderr are redirected to `/dev/null`; no `daemon.log` is created. Persistent logging is opt-in via `CODEQ_DAEMON_LOG=/path/to/file.log`. Acceptance verified that a default isolated runtime contained only `codeq.sock`, while an explicitly logged runtime contained `codeq.sock` plus the requested empty `daemon.log`.
+
+RC3 passed **88/88 tests**, basedpyright with zero errors/warnings, build, and the **9/9** readiness gate. Runtime-state tests cover private permissions, XDG fallback, strict explicit runtime configuration, default no-log spawning, and explicit log creation. Artifacts: `benchmarks/1.0.0rc3-readiness.md` and `benchmarks/results/1.0.0rc3-readiness.json`.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 1.0.0rc2
+version                 codeq 1.0.0rc3
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language

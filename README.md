@@ -4,7 +4,7 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc2` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** `1.0.0rc3` is the active release candidate. The four-command surface is feature-frozen for 1.0.
 
 ## Why codeq
 
@@ -69,7 +69,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc2
+codeq 1.0.0rc3
 ```
 
 ## The workflow
@@ -255,6 +255,28 @@ Agent / shell
 
 The daemon keeps relevant language servers warm, caches only safe file-local document symbols, and releases inactive workspaces. It does **not** maintain a persistent repository graph or embedding index.
 
+### Runtime state and sandboxing
+
+`codeq` never writes analysis state into the target repository. The daemon only needs a private Unix socket outside the repository.
+
+Runtime directory selection is:
+
+```text
+CODEQ_RUNTIME_DIR
+→ $XDG_RUNTIME_DIR/codeq when usable
+→ /tmp/codeq-$UID fallback
+```
+
+Runtime directories are private (`0700`). If an agent sandbox cannot write to `XDG_RUNTIME_DIR`, codeq automatically falls back to `/tmp` instead of failing the query.
+
+Persistent daemon logging is **off by default**. Daemon stdout/stderr go to `/dev/null`; opt in only when debugging:
+
+```bash
+CODEQ_DAEMON_LOG=/tmp/codeq-daemon.log codeq find Foo
+```
+
+This keeps the read-only contract focused on the analyzed repository while allowing the ephemeral IPC state required by the daemon.
+
 ## Performance and validation
 
 The release candidate is validated against a large Python/TypeScript monorepo and historical real-agent workflows.
@@ -274,7 +296,7 @@ Details:
 
 - [Quant cold/warm benchmark](benchmarks/0.5.1-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
-- [RC2 readiness gate](benchmarks/1.0.0rc2-readiness.md)
+- [RC3 readiness gate](benchmarks/1.0.0rc3-readiness.md)
 - [Full validation record](VALIDATION.md)
 
 ## Boundaries
