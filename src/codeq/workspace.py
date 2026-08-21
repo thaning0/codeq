@@ -23,6 +23,7 @@ from .util import (
     lexical_hits,
     lsp_location,
     parse_target,
+    path_target_intent,
     source_snippet,
     symbol_kind,
     uri_to_path,
@@ -326,28 +327,44 @@ class Workspace:
 
     def find(self, query: str, limit: int = 20, kind: str | None = None) -> dict[str, Any]:
         reference = self._path_reference(query)
-        if reference is not None and reference["line"] is None:
+        if reference is not None:
             path = Path(reference["path"])
-            if language_for(path) is None:
-                return {
-                    "status": "unsupported_language",
-                    "query": query,
-                    "path": str(path),
-                    "reason": f"unsupported source language: {path.suffix or '<no extension>'}",
-                    "results": [],
-                    "result_count": 0,
-                    "total_candidates": 0,
-                    "errors": [],
-                }
-            return {
-                "status": "unsupported_target",
+            common = {
                 "query": query,
                 "path": str(path),
-                "reason": "use `codeq context FILE` for a source-file target",
                 "results": [],
                 "result_count": 0,
                 "total_candidates": 0,
                 "errors": [],
+            }
+            if not reference["inside_repo"]:
+                return {
+                    **common,
+                    "status": "not_found",
+                    "reason": f"path is outside repository root: {path}",
+                }
+            if not reference["exists"]:
+                return {
+                    **common,
+                    "status": "not_found",
+                    "reason": f"file not found: {path}",
+                }
+            if reference["line"] is not None:
+                return {
+                    **common,
+                    "status": "unsupported_target",
+                    "reason": "use `codeq context PATH:LINE[:COLUMN]` for a source location",
+                }
+            if language_for(path) is None:
+                return {
+                    **common,
+                    "status": "unsupported_language",
+                    "reason": f"unsupported source language: {path.suffix or '<no extension>'}",
+                }
+            return {
+                **common,
+                "status": "unsupported_target",
+                "reason": "use `codeq context FILE` for a source-file target",
             }
 
         hits = lexical_hits(self.root, query, limit=max(80, limit * 8))
@@ -613,6 +630,20 @@ class Workspace:
         reference = self._path_reference(target)
         if reference is not None:
             path = Path(reference["path"])
+            if not reference["inside_repo"]:
+                return {
+                    "status": "not_found",
+                    "target": target,
+                    "path": str(path),
+                    "reason": f"path is outside repository root: {path}",
+                }
+            if not reference["exists"]:
+                return {
+                    "status": "not_found",
+                    "target": target,
+                    "path": str(path),
+                    "reason": f"file not found: {path}",
+                }
             language = language_for(path)
             if language is None:
                 return {
@@ -810,29 +841,27 @@ class Workspace:
         return out
 
     def _path_reference(self, target: str) -> dict[str, Any] | None:
-        """Resolve an existing repository file, optionally with :line[:column]."""
-        raw_path = target
-        line: int | None = None
-        column: int | None = None
-        match = re.match(r"^(?P<path>.+):(?P<line>\d+)(?::(?P<column>\d+))?$", target)
-        if match:
-            raw_path = match.group("path")
-            line = int(match.group("line"))
-            column = int(match.group("column") or 1)
-        path = Path(raw_path).expanduser()
-        if not path.is_absolute():
-            path = self.root / path
-        try:
-            resolved = path.resolve()
-        except OSError:
+        """Resolve explicit path intent, preserving missing-path information."""
+        intent = path_target_intent(target, self.root)
+        if intent is None:
             return None
-        if not resolved.is_file() or not self._is_repo_path(resolved):
-            return None
-        return {"path": resolved, "line": line, "column": column}
+        resolved = Path(intent["path"])
+        return {
+            "path": resolved,
+            "line": intent["line"],
+            "column": intent["column"],
+            "exists": resolved.is_file(),
+            "inside_repo": self._is_repo_path(resolved),
+        }
 
     def _file_target(self, target: str) -> Path | None:
         reference = self._path_reference(target)
-        if reference is None or reference["line"] is not None:
+        if (
+            reference is None
+            or reference["line"] is not None
+            or not reference["exists"]
+            or not reference["inside_repo"]
+        ):
             return None
         return Path(reference["path"])
 

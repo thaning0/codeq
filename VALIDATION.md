@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.3.2` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.3.3` CLI.
 
 ## Release gates
 
-- `python -W error -m unittest discover -s tests`: **37/37 pass**
+- `uv run python -W error -m unittest discover -s tests`: **42/42 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.3.2**
-- installed distribution metadata: **0.3.2**
+- installed module version: **0.3.3**
+- installed distribution metadata: **0.3.3**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The final installed CLI's first daemon-backed query after the 0.3.2 version bump was deliberately the qualified target. It resolved correctly on the cold workspace in **4130.1 ms**.
+The installed CLI was revalidated after the 0.3.3 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -39,6 +39,28 @@ BacktestService.definitely_missing_member
 ```
 
 It is never degraded to a same-named function in another container.
+
+### Missing explicit paths (Issue #1)
+
+The exact Issue #1 reproductions were run from `~/Quant`, where both requested files were confirmed absent:
+
+```text
+scripts/migrate_catalog_1m_to_questdb.py
+windata_service/src/QMT_service/tmp_option_probe.py
+```
+
+Plain-text `context` now returns only `file not found: ...` and exits **1**. A missing `path:line` query in `--json` mode returns a structured document:
+
+```json
+{
+  "status": "not_found",
+  "target": "scripts/migrate_catalog_1m_to_questdb.py:12",
+  "path": "/home/thn/Quant/scripts/migrate_catalog_1m_to_questdb.py",
+  "reason": "file not found: ..."
+}
+```
+
+and also exits **1**. No LSP session is started and fuzzy symbol search is never entered. Existing source-file context, bare symbol search, and qualified symbol context were rechecked and still exit **0** with their original semantics.
 
 ### Unsupported existing files
 
@@ -159,7 +181,7 @@ Full counts remain present together with truncation flags; increase `--limit` on
 Final acceptance summary:
 
 ```text
-version                 codeq 0.3.2
+version                 codeq 0.3.3
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language

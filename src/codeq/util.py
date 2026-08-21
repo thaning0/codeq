@@ -173,6 +173,48 @@ def guess_symbol_column(path: str | Path, line: int, preferred: str | None = Non
 
 
 _TARGET_RE = re.compile(r"^(?P<path>.+?\.(?:pyi?|tsx?|jsx?|mjs|cjs)):(?P<line>\d+)(?::(?P<col>\d+))?$")
+_PATH_LINE_RE = re.compile(r"^(?P<path>.+):(?P<line>\d+)(?::(?P<col>\d+))?$")
+_PATH_LIKE_SUFFIXES = set(SOURCE_LANG) | {
+    ".sh", ".bash", ".zsh", ".fish", ".sql", ".ps1", ".psm1",
+    ".go", ".rs", ".java", ".c", ".h", ".cc", ".cpp", ".hpp",
+    ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".lua",
+    ".r", ".jl", ".vue", ".svelte", ".md", ".json", ".toml", ".yaml", ".yml",
+}
+
+
+def path_target_intent(target: str, root: str | Path) -> dict[str, Any] | None:
+    """Classify explicit path-like input without requiring the target to exist.
+
+    This is deliberately conservative around dotted symbols: `Class.method` is not
+    treated as a path unless it contains a path separator or a known file suffix.
+    """
+    raw_path = target
+    line: int | None = None
+    column: int | None = None
+    match = _PATH_LINE_RE.match(target)
+    if match:
+        raw_path = match.group("path")
+        line = int(match.group("line"))
+        column = int(match.group("col") or 1)
+
+    candidate = Path(raw_path).expanduser()
+    suffix = candidate.suffix.lower()
+    path_like = (
+        candidate.is_absolute()
+        or "/" in raw_path
+        or "\\" in raw_path
+        or raw_path.startswith(("./", "../", "~/"))
+        or suffix in _PATH_LIKE_SUFFIXES
+    )
+    if not path_like:
+        return None
+    if not candidate.is_absolute():
+        candidate = Path(root) / candidate
+    return {
+        "path": str(candidate.resolve()),
+        "line": line,
+        "column": column,
+    }
 
 
 def parse_target(target: str, root: str | Path) -> dict[str, Any]:

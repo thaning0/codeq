@@ -159,6 +159,11 @@ def _print_locations(title: str, items: list[dict[str, Any]], indent: str = "  "
         print(f"{indent}{prefix}{compact_location(item)}")
 
 
+def _query_exit_code(data: dict[str, Any]) -> int:
+    status = data.get("status")
+    return 0 if status in (None, "ok") else 1
+
+
 def _render_find(data: dict[str, Any]) -> None:
     if data.get("status") and data.get("status") != "ok":
         print(data.get("reason") or data.get("error") or "find failed", file=sys.stderr)
@@ -387,7 +392,9 @@ Targets accepted by context/trace:
 
 Agent notes:
   * Prefer qualified symbols when known; qualified resolution is fail-closed.
+  * Explicit path targets are exact; missing files fail closed with status not_found.
   * Existing unsupported source files return unsupported_language instead of fuzzy matches.
+  * Query failures exit 1; runtime/tool failures exit 2.
   * Default output is compact plain text with no ANSI colors.
   * Use --json when another tool/script will consume the result.
   * Global options may appear before or after the subcommand.
@@ -484,8 +491,9 @@ default. Expand only what you need with --outline-depth, --kind, or --container;
 add --topology only when you need imports/importers.
 
 A file:line[:column] target is promoted to its enclosing function/method/type when
-possible. Prefer a qualified symbol when you already know it. Existing files outside
-supported Python/TypeScript/JavaScript families return unsupported_language.
+possible. Prefer a qualified symbol when you already know it. Explicit paths are
+exact: missing files return not_found, and unsupported languages return
+unsupported_language rather than falling back to symbol search.
 """,
         epilog="""\
 Examples:
@@ -695,8 +703,11 @@ def main(argv: list[str] | None = None) -> None:
         print(f"codeq: {exc}", file=sys.stderr)
         raise SystemExit(2)
 
+    exit_code = _query_exit_code(data)
     if args.json:
         print(json.dumps(data, ensure_ascii=False, indent=2))
+        if exit_code:
+            raise SystemExit(exit_code)
         return
     if args.command == "find":
         _render_find(data)
@@ -706,6 +717,8 @@ def main(argv: list[str] | None = None) -> None:
         _render_trace(data)
     elif args.command == "review":
         _render_review(data)
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

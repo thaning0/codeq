@@ -181,6 +181,8 @@ Arguments:
 | `--limit N` | `20` | Bound matches/symbols where the selected command uses a result limit. |
 | `--timeout SEC` | `20` | Language-server request timeout in seconds. |
 
+Query outcomes such as `not_found`, `ambiguous`, and `unsupported_language` exit with status `1`. Runtime/tool failures exit with status `2`. In `--json` mode the structured error document is still emitted before the nonzero exit.
+
 For agent ergonomics, global options work before or after the subcommand:
 
 ```bash
@@ -284,6 +286,7 @@ Language servers remain the semantic authority for symbols, references, and call
 
 - Python/JavaScript dynamic dispatch cannot always be resolved statically. `codeq` may surface bounded callback/registry references as explicitly labeled "possible" evidence, but it does not promote heuristic matches to exact call edges.
 - Qualified targets such as `Class.method` are fail-closed: if the container/member relationship cannot be verified exactly, codeq returns `not_found`/`ambiguous` rather than falling back to an unrelated same-named symbol.
+- Explicit path targets are exact even when the file is missing. A missing `file.py`, `path/to/file.ts`, or `path:line[:column]` returns `not_found` and never enters fuzzy symbol search.
 - Existing source files outside the currently supported Python/TypeScript/JavaScript families return `unsupported_language`; they are never reinterpreted as fuzzy symbol queries.
 - `find` natural-language behavior is lightweight lexical + semantic ranking, not translation or embedding search; use terms likely to occur in the repository source/comments.
 - `review` test discovery uses language-server references/callers plus test-path classification; it is useful context, not a formal coverage proof.

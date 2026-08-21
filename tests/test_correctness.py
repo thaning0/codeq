@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from codeq.util import exact_definition_hits
+from codeq.util import exact_definition_hits, path_target_intent
 from codeq.workspace import Workspace
 
 
@@ -24,6 +24,33 @@ class CorrectnessGuardTests(unittest.TestCase):
                 self.assertEqual(workspace.find(str(shell))["status"], "unsupported_language")
             finally:
                 workspace.close()
+
+    def test_missing_source_paths_fail_closed_without_fuzzy_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = Workspace(root)
+            try:
+                with patch.object(workspace, "find", side_effect=AssertionError("fuzzy fallback must not run")):
+                    for target in (
+                        "scripts/migrate_catalog.py",
+                        "frontend/src/missing.ts",
+                        "frontend/src/missing.js",
+                        "scripts/migrate_catalog.py:12",
+                        "scripts/migrate_catalog.py:12:4",
+                    ):
+                        with self.subTest(target=target):
+                            result = workspace.context(target)
+                            self.assertEqual(result["status"], "not_found")
+                            self.assertIn("file not found", result["reason"])
+            finally:
+                workspace.close()
+
+    def test_path_intent_does_not_capture_qualified_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertIsNone(path_target_intent("BacktestService.stream_backtest_logs", root))
+            self.assertIsNotNone(path_target_intent("scripts/missing.py", root))
+            self.assertIsNotNone(path_target_intent("missing.ts:12", root))
 
     def test_qualified_target_never_falls_back_to_global_fuzzy_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
