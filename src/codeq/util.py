@@ -204,6 +204,51 @@ def run_json_lines(cmd: list[str], cwd: str | Path, timeout: float = 10.0) -> li
     return out
 
 
+def exact_definition_hits(root: str | Path, name: str, limit: int = 80) -> list[dict[str, Any]]:
+    """Find declaration-looking lines for one exact identifier.
+
+    This is a cold-start safety primitive, not a semantic authority: callers map
+    returned files/lines back through document symbols before accepting a result.
+    """
+    if not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", name):
+        return []
+    escaped = re.escape(name)
+    patterns = [
+        rf"^\s*(?:async\s+def|def|class)\s+{escaped}\b",
+        rf"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+{escaped}\b",
+        rf"^\s*(?:export\s+)?(?:const|let|var)\s+{escaped}\b",
+    ]
+    cmd = [
+        "rg", "--json", "-n", "--hidden",
+        "-g", "*.py", "-g", "*.pyi", "-g", "*.ts", "-g", "*.tsx",
+        "-g", "*.js", "-g", "*.jsx", "-g", "!node_modules/**",
+        "-g", "!.git/**", "-g", "!.next/**", "-g", "!dist/**", "-g", "!build/**",
+        "-g", "!Quant-worktrees/**", "-g", "!worktrees/**", "-g", "!.worktrees/**",
+    ]
+    for pattern in patterns:
+        cmd.extend(["-e", pattern])
+    cmd.append(".")
+    try:
+        events = run_json_lines(cmd, root, timeout=8.0)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    hits: list[dict[str, Any]] = []
+    for event in events:
+        if event.get("type") != "match":
+            continue
+        data = event.get("data", {})
+        rel = data.get("path", {}).get("text")
+        line = data.get("line_number")
+        if not rel or not line:
+            continue
+        path = (Path(root) / rel).resolve()
+        text = data.get("lines", {}).get("text", "").rstrip()
+        hits.append(loc(path, int(line), 1, source="exact_definition", text=text))
+        if len(hits) >= limit:
+            break
+    return hits
+
+
 def lexical_hits(root: str | Path, query: str, limit: int = 40) -> list[dict[str, Any]]:
     tokens = identifier_tokens(query)
     if not tokens:

@@ -113,7 +113,14 @@ class CodeqService:
                     kind=str(request.get("kind") or "") or None,
                 )
             elif command == "context":
-                data = ws.context(str(request.get("target") or ""), limit=limit)
+                data = ws.context(
+                    str(request.get("target") or ""),
+                    limit=limit,
+                    outline_depth=max(0, int(request.get("outline_depth") or 1)),
+                    outline_kind=str(request.get("outline_kind") or "") or None,
+                    container=str(request.get("container") or "") or None,
+                    include_topology=bool(request.get("include_topology")),
+                )
             elif command == "trace":
                 data = ws.trace(
                     str(request.get("target") or ""),

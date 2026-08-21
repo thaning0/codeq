@@ -160,6 +160,9 @@ def _print_locations(title: str, items: list[dict[str, Any]], indent: str = "  "
 
 
 def _render_find(data: dict[str, Any]) -> None:
+    if data.get("status") and data.get("status") != "ok":
+        print(data.get("reason") or data.get("error") or "find failed", file=sys.stderr)
+        return
     for item in data.get("results", []):
         container = f"{item.get('container')}." if item.get("container") else ""
         print(
@@ -206,15 +209,27 @@ def _render_file_context(data: dict[str, Any]) -> None:
         print(f"Language: {file_info['language']}")
 
     outline = data.get("outline", [])
-    print(f"\nOutline ({data.get('symbol_count', len(outline))})")
+    total_symbols = int(data.get("symbol_count", len(outline)))
+    matching = int(data.get("outline_matching_count", len(outline)))
+    print(f"\nOutline (showing {len(outline)} of {matching} matching; {total_symbols} total symbols)")
     if not outline:
         print("  -")
     for item in outline:
         container = f"{item.get('container')}." if item.get("container") else ""
         print(f"  {item.get('kind','?'):<12} {container}{item.get('name','')}  line {item.get('line',1)}")
+    if data.get("outline_truncated"):
+        print("  ... more matching symbols available; increase --limit")
+    if not data.get("outline_kind") and not data.get("container"):
+        print("  next: use --outline-depth 2, --kind KIND, or --container NAME to disclose more")
+
+    if not data.get("topology_loaded"):
+        print(f"\nTopology: hidden ({data.get('import_count', 0)} direct imports; use --topology to disclose imports/importers)")
+        meta = data.get("_meta", {})
+        print(f"\n[{meta.get('duration_ms','?')} ms]", file=sys.stderr)
+        return
 
     imports = data.get("imports", [])
-    print(f"\nImports ({data.get('import_count', len(imports))})")
+    print(f"\nImports (showing {len(imports)} of {data.get('import_count', len(imports))})")
     if not imports:
         print("  -")
     for item in imports:
@@ -224,8 +239,12 @@ def _render_file_context(data: dict[str, Any]) -> None:
         resolved_text = f" -> {', '.join(resolved)}" if resolved else ""
         print(f"  {item.get('specifier','')}:{item.get('line',1)}{suffix}{resolved_text}")
 
+    if data.get("imports_truncated"):
+        print("  ... more imports available; increase --limit")
+
     importers = data.get("importers", [])
-    print(f"\nImported by ({data.get('importer_count', len(importers))})")
+    importer_suffix = "+" if data.get("importers_truncated") else ""
+    print(f"\nImported by (showing {len(importers)}{importer_suffix})")
     if not importers:
         print("  -")
     for item in importers:
@@ -322,12 +341,16 @@ def _render_review(data: dict[str, Any]) -> None:
         for test in detail.get("tests", [])[:5]:
             print(f"    test {test['path']}:{test['line']}")
     print(f"\nAffected files: {data.get('impacted_file_count', 0)}")
-    for path in data.get("impacted_files", [])[:30]:
+    for path in data.get("impacted_files", []):
         print(f"  {path}")
+    if data.get("impacted_files_truncated"):
+        print("  ... more affected files available; increase --limit")
     print(f"\nPossible dynamic references: {data.get('possible_dynamic_reference_count', 0)}")
     print(f"\nLikely tests: {data.get('test_count', 0)}")
-    for test in data.get("tests", [])[:30]:
+    for test in data.get("tests", []):
         print(f"  {test.get('name','')}  {test['path']}:{test['line']}")
+    if data.get("tests_truncated"):
+        print("  ... more likely tests available; increase --limit")
     if data.get("truncated"):
         print("\nResult truncated by --limit.", file=sys.stderr)
     meta = data.get("_meta", {})
@@ -363,12 +386,19 @@ Targets accepted by context/trace:
   Source file (context)  backend/src/app/services/backtest_service.py
 
 Agent notes:
-  * Prefer qualified symbols when known; ambiguous bare symbols return candidates.
+  * Prefer qualified symbols when known; qualified resolution is fail-closed.
+  * Existing unsupported source files return unsupported_language instead of fuzzy matches.
   * Default output is compact plain text with no ANSI colors.
   * Use --json when another tool/script will consume the result.
   * Global options may appear before or after the subcommand.
   * Run `codeq COMMAND --help` for command-specific arguments and examples.
 """,
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show codeq version and exit.",
     )
     parser.add_argument(
         "--root",
@@ -449,17 +479,22 @@ For a symbol or file:line target, context returns:
   Likely tests
   Possible dynamic callback/registry references when detected
 
-For a source-file target, context returns the complete file outline plus direct
-imports and verified importers.
+For a source-file target, context uses progressive disclosure: top-level outline by
+default. Expand only what you need with --outline-depth, --kind, or --container;
+add --topology only when you need imports/importers.
 
 A file:line[:column] target is promoted to its enclosing function/method/type when
-possible. Prefer a qualified symbol when you already know it.
+possible. Prefer a qualified symbol when you already know it. Existing files outside
+supported Python/TypeScript/JavaScript families return unsupported_language.
 """,
         epilog="""\
 Examples:
   codeq context BacktestService.stream_backtest_logs
   codeq context backend/src/app/services/backtest_service.py:684
   codeq context backend/src/app/services/backtest_service.py
+  codeq context backend/src/app/services/backtest_service.py --container BacktestService
+  codeq context backend/src/app/services/backtest_service.py --kind method --limit 20
+  codeq context frontend/src/features/market/api.ts --topology --limit 20
   codeq context fetchBars --json
 
 Use `context` instead of several separate grep/read/caller/test lookups. If you need
@@ -470,6 +505,29 @@ more than the direct callers/callees, continue with `codeq trace`.
         "target",
         metavar="TARGET",
         help="Qualified/bare symbol, source file, or location as PATH:LINE[:COLUMN].",
+    )
+    context.add_argument(
+        "--outline-depth",
+        type=int,
+        default=1,
+        metavar="N",
+        help="File targets only: outline nesting depth; 1=top-level (default: 1).",
+    )
+    context.add_argument(
+        "--kind",
+        dest="outline_kind",
+        metavar="KIND",
+        help="File targets only: show matching symbols of one kind across the file.",
+    )
+    context.add_argument(
+        "--container",
+        metavar="NAME",
+        help="File targets only: show a class/container and its children.",
+    )
+    context.add_argument(
+        "--topology",
+        action="store_true",
+        help="File targets only: additionally disclose bounded imports and importers.",
     )
 
     trace = sub.add_parser(
@@ -551,8 +609,9 @@ Examples:
   codeq review --base origin/main
   codeq review --base master --limit 15 --json
 
-`--limit` bounds changed symbols analyzed/emitted. For a PR/worktree, choose the
-same base ref you would use for the review diff.
+`--limit` bounds detailed changed symbols, affected files, and likely tests while
+file status/counts remain complete. For a PR/worktree, choose the same base ref you
+would use for the review diff.
 """,
     )
     review.add_argument(
@@ -570,7 +629,7 @@ def _normalize_global_options(argv: list[str]) -> list[str]:
     Coding agents naturally emit both `codeq --json find Foo` and
     `codeq find Foo --json`; argparse normally accepts only the former.
     """
-    flags = {"--json"}
+    flags = {"--json", "--version"}
     valued = {"--root", "--limit", "--timeout"}
     front: list[str] = []
     rest: list[str] = []
@@ -613,7 +672,13 @@ def main(argv: list[str] | None = None) -> None:
         payload["query"] = args.query
         payload["kind"] = args.kind
     elif args.command == "context":
-        payload["target"] = args.target
+        payload.update(
+            target=args.target,
+            outline_depth=max(0, args.outline_depth),
+            outline_kind=args.outline_kind,
+            container=args.container,
+            include_topology=args.topology,
+        )
     elif args.command == "trace":
         payload.update(
             target=args.target,

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import io
 import unittest
+from contextlib import redirect_stdout
 
 from codeq.cli import PlainArgumentParser, build_parser
 
@@ -26,7 +28,7 @@ class HelpTests(unittest.TestCase):
     def test_subcommand_help_explains_arguments_and_examples(self):
         expected = {
             "find": ["QUERY", "--kind KIND", "translate queries", "Examples:", "Typical next step:"],
-            "context": ["TARGET", "PATH:LINE[:COLUMN]", "complete file outline", "Callers", "Examples:"],
+            "context": ["TARGET", "PATH:LINE[:COLUMN]", "progressive disclosure", "--outline-depth N", "--topology", "Callers", "Examples:"],
             "trace": ["--in", "--out", "--depth N", "--node-limit N", "Examples:"],
             "review": ["--base REF", "added, modified, deleted, and renamed", "Untracked files", "Examples:"],
         }
@@ -41,6 +43,13 @@ class HelpTests(unittest.TestCase):
         parser = PlainArgumentParser(prog="codeq-test")
         if hasattr(parser, "color"):
             self.assertFalse(parser.color)
+
+    def test_version_is_a_real_top_level_flag(self):
+        stdout = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, redirect_stdout(stdout):
+            build_parser().parse_args(["--version"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertRegex(stdout.getvalue().strip(), r"^codeq \d+\.\d+\.\d+$")
 
 
 if __name__ == "__main__":

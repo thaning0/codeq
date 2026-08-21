@@ -14,6 +14,7 @@ from .gitdiff import git_changed_files, git_changed_ranges, merge_ranges
 from .lsp import LspError, LspProcess
 from .topology import extract_imports, importer_candidate_hits, resolve_import_specifier
 from .util import (
+    exact_definition_hits,
     fuzzy_score,
     guess_symbol_column,
     identifier_tokens,
@@ -287,21 +288,112 @@ class Workspace:
                 selected.add(project)
         return sorted(selected or set(self.projects), key=lambda p: (p.family, str(p.root)))
 
+    def _exact_document_candidates(self, name: str, *, limit: int = 80) -> list[dict[str, Any]]:
+        """Map exact declaration-looking hits back to LSP document symbols.
+
+        This bypasses workspace/symbol indexing for cold-start correctness while
+        still requiring the language server to confirm the semantic symbol.
+        """
+        out: list[dict[str, Any]] = []
+        seen: set[tuple[str, int, str]] = set()
+        for hit in exact_definition_hits(self.root, name, limit=limit):
+            path = Path(hit["path"])
+            project = self.project_for_path(path)
+            if project is None:
+                continue
+            try:
+                symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
+            except (LspError, OSError):
+                continue
+            exact = [symbol for symbol in symbols if symbol.get("name") == name]
+            if not exact:
+                continue
+            hit_line = int(hit["line"])
+            exact.sort(
+                key=lambda symbol: (
+                    abs(int(symbol["line"]) - hit_line),
+                    -_definition_priority(symbol),
+                    int(symbol["line"]),
+                )
+            )
+            for symbol in exact:
+                key = (symbol["path"], int(symbol["line"]), str(symbol.get("name") or ""))
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({**symbol, "exact_definition": True})
+        return out
+
     def find(self, query: str, limit: int = 20, kind: str | None = None) -> dict[str, Any]:
-        hits = lexical_hits(self.root, query, limit=max(40, limit * 3))
+        reference = self._path_reference(query)
+        if reference is not None and reference["line"] is None:
+            path = Path(reference["path"])
+            if language_for(path) is None:
+                return {
+                    "status": "unsupported_language",
+                    "query": query,
+                    "path": str(path),
+                    "reason": f"unsupported source language: {path.suffix or '<no extension>'}",
+                    "results": [],
+                    "result_count": 0,
+                    "total_candidates": 0,
+                    "errors": [],
+                }
+            return {
+                "status": "unsupported_target",
+                "query": query,
+                "path": str(path),
+                "reason": "use `codeq context FILE` for a source-file target",
+                "results": [],
+                "result_count": 0,
+                "total_candidates": 0,
+                "errors": [],
+            }
+
+        hits = lexical_hits(self.root, query, limit=max(80, limit * 8))
         projects = self._candidate_projects(hits)
         tokens = identifier_tokens(query)
         search_terms = tokens[:3] or [query]
         results: list[dict[str, Any]] = []
         errors: list[str] = []
 
+        # Exact identifiers get a cold-start-safe definition path that does not
+        # depend on workspace/symbol having finished background indexing.
+        if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", query.strip()):
+            results.extend(self._exact_document_candidates(query.strip(), limit=max(40, limit * 4)))
+
         def search_project(project: Project) -> tuple[list[dict[str, Any]], str | None]:
             try:
                 session = self._session(project)
+                # typescript-language-server can transiently answer workspace/symbol
+                # with "No Project" until at least one relevant document is open.
+                # Prime only bounded lexical-hit files from this project.
+                if project.family == "typescript":
+                    primed = 0
+                    for hit in hits:
+                        path = Path(hit["path"])
+                        if self.project_for_path(path) != project:
+                            continue
+                        try:
+                            session.document_symbols(path, timeout=min(self.timeout, 5.0))
+                        except (LspError, OSError):
+                            continue
+                        primed += 1
+                        if primed >= 4:
+                            break
                 found: list[dict[str, Any]] = []
                 seen: set[tuple[str, str, int]] = set()
                 for term in search_terms:
-                    for item in session.workspace_symbols(term, timeout=self.timeout):
+                    try:
+                        items = session.workspace_symbols(term, timeout=self.timeout)
+                    except LspError as exc:
+                        if "No Project" in str(exc) and project.family == "typescript":
+                            # Document-symbol fallback below remains authoritative for
+                            # files already discovered lexically; do not expose a
+                            # transient project-initialization error to the agent.
+                            continue
+                        raise
+                    for item in items:
                         entry = _workspace_symbol_entry(item)
                         if not entry:
                             continue
@@ -447,6 +539,7 @@ class Workspace:
             else:
                 ordered = [item for item in ordered if str(item.get("kind", "")).lower() == requested]
         return {
+            "status": "ok",
             "query": query,
             "kind": kind,
             "results": ordered[:limit],
@@ -461,14 +554,19 @@ class Workspace:
             return None
         container_name = parts[-2]
         member_name = parts[-1]
-        found = self.find(container_name, limit=20)
         containers = [
             item
-            for item in found.get("results", [])
-            if item.get("source") == "lsp"
-            and item.get("name") == container_name
+            for item in self._exact_document_candidates(container_name, limit=80)
+            if item.get("name") == container_name
             and item.get("kind") in {"Class", "Interface", "Struct", "Enum", "Namespace", "Module"}
         ]
+        if not containers:
+            return {
+                "status": "not_found",
+                "target": target,
+                "reason": f"qualified container not found: {container_name}",
+                "candidates": [],
+            }
         matches: list[dict[str, Any]] = []
         seen_files: set[str] = set()
         for container in containers:
@@ -489,10 +587,19 @@ class Workspace:
                 combined = ".".join(
                     part for part in (str(symbol.get("container") or ""), member_name) if part
                 )
-                if combined == target or combined.endswith("." + target):
+                if (
+                    combined == target
+                    or combined.endswith("." + target)
+                    or target.endswith("." + combined)
+                ):
                     matches.append({**symbol, "score": 10000})
         if not matches:
-            return None
+            return {
+                "status": "not_found",
+                "target": target,
+                "reason": f"qualified member not found in {container_name}: {member_name}",
+                "candidates": [],
+            }
         matches.sort(key=lambda item: (-_definition_priority(item), item["path"], item["line"]))
         best_priority = _definition_priority(matches[0])
         top = [item for item in matches if _definition_priority(item) == best_priority]
@@ -503,9 +610,36 @@ class Workspace:
         return {"status": "ok", "target": target, "symbol": chosen, "candidates": matches[1:5]}
 
     def resolve(self, target: str) -> dict[str, Any]:
-        parsed = parse_target(target, self.root)
+        reference = self._path_reference(target)
+        if reference is not None:
+            path = Path(reference["path"])
+            language = language_for(path)
+            if language is None:
+                return {
+                    "status": "unsupported_language",
+                    "target": target,
+                    "path": str(path),
+                    "reason": f"unsupported source language: {path.suffix or '<no extension>'}",
+                }
+            if reference["line"] is None:
+                return {
+                    "status": "unsupported_target",
+                    "target": target,
+                    "path": str(path),
+                    "reason": "source-file targets are supported by `codeq context`, not symbol tracing",
+                }
+            parsed = {
+                "kind": "location",
+                "path": str(path),
+                "line": int(reference["line"]),
+                "column": int(reference["column"] or 1),
+            }
+        else:
+            parsed = parse_target(target, self.root)
         if parsed["kind"] == "location":
-            path = Path(parsed["path"])
+            path = Path(str(parsed["path"]))
+            parsed_line = int(parsed["line"])
+            parsed_column = int(parsed["column"])
             if not path.exists():
                 return {"status": "not_found", "target": target, "reason": f"file not found: {path}"}
             project = self.project_for_path(path)
@@ -514,8 +648,8 @@ class Workspace:
                     symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
                 except (LspError, OSError):
                     symbols = []
-                line = int(parsed["line"])
-                column = int(parsed["column"])
+                line = parsed_line
+                column = parsed_column
                 explicit_column = bool(re.search(r":\d+:\d+$", target))
 
                 def contains(symbol: dict[str, Any]) -> bool:
@@ -574,9 +708,9 @@ class Workspace:
                         "symbol": {**chosen, "source": "lsp", "origin": "document"},
                         "candidates": [],
                     }
-            col = parsed["column"]
+            col = parsed_column
             if col <= 1:
-                col = guess_symbol_column(path, parsed["line"]) + 1
+                col = guess_symbol_column(path, parsed_line) + 1
             return {
                 "status": "ok",
                 "target": target,
@@ -585,15 +719,25 @@ class Workspace:
                     "kind": "Location",
                     "container": "",
                     "path": str(path),
-                    "line": parsed["line"],
+                    "line": parsed_line,
                     "column": col,
                     "source": "explicit",
                 },
             }
 
-        qualified = self._resolve_qualified(target)
-        if qualified is not None:
-            return qualified
+        qualified_target = bool(
+            re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+", target)
+        )
+        if qualified_target:
+            qualified = self._resolve_qualified(target)
+            if qualified is not None:
+                return qualified
+            return {
+                "status": "not_found",
+                "target": target,
+                "reason": "qualified target could not be resolved exactly",
+                "candidates": [],
+            }
 
         found = self.find(target, limit=12)
         candidates = [r for r in found["results"] if r.get("source") == "lsp"] or found["results"]
@@ -665,17 +809,80 @@ class Workspace:
                 out.append(entry)
         return out
 
-    def _file_target(self, target: str) -> Path | None:
-        path = Path(target).expanduser()
+    def _path_reference(self, target: str) -> dict[str, Any] | None:
+        """Resolve an existing repository file, optionally with :line[:column]."""
+        raw_path = target
+        line: int | None = None
+        column: int | None = None
+        match = re.match(r"^(?P<path>.+):(?P<line>\d+)(?::(?P<column>\d+))?$", target)
+        if match:
+            raw_path = match.group("path")
+            line = int(match.group("line"))
+            column = int(match.group("column") or 1)
+        path = Path(raw_path).expanduser()
         if not path.is_absolute():
             path = self.root / path
         try:
             resolved = path.resolve()
         except OSError:
             return None
-        if resolved.is_file() and language_for(resolved) is not None and self._is_repo_path(resolved):
-            return resolved
-        return None
+        if not resolved.is_file() or not self._is_repo_path(resolved):
+            return None
+        return {"path": resolved, "line": line, "column": column}
+
+    def _file_target(self, target: str) -> Path | None:
+        reference = self._path_reference(target)
+        if reference is None or reference["line"] is not None:
+            return None
+        return Path(reference["path"])
+
+    def _symbol_at_location(self, location: dict[str, Any]) -> dict[str, Any]:
+        path = Path(location["path"]).resolve()
+        project = self.project_for_path(path)
+        if project is None:
+            return location
+        try:
+            symbols = _flatten_document_symbols(self._session(project).document_symbols(path), path)
+        except (LspError, OSError):
+            return location
+        line = int(location.get("line") or 1)
+        column0 = max(0, int(location.get("column") or 1) - 1)
+
+        def contains(symbol: dict[str, Any]) -> bool:
+            rng = symbol.get("range") or {}
+            start = rng.get("start") or {}
+            end = rng.get("end") or {}
+            start_line = int(start.get("line", symbol["line"] - 1)) + 1
+            end_line = int(end.get("line", start_line - 1)) + 1
+            if not (start_line <= line <= end_line):
+                return False
+            if line == start_line and column0 < int(start.get("character", 0)):
+                return False
+            if line == end_line and column0 > int(end.get("character", column0)):
+                return False
+            return True
+
+        candidates = [symbol for symbol in symbols if contains(symbol)]
+        if not candidates:
+            candidates = [symbol for symbol in symbols if int(symbol["line"]) == line]
+        if not candidates:
+            return location
+
+        def span(symbol: dict[str, Any]) -> tuple[int, int]:
+            rng = symbol.get("range") or {}
+            start = rng.get("start") or {}
+            end = rng.get("end") or {}
+            line_span = int(end.get("line", symbol["line"] - 1)) - int(start.get("line", symbol["line"] - 1))
+            char_span = int(end.get("character", 0)) - int(start.get("character", 0)) if line_span == 0 else 0
+            return max(0, line_span), max(0, char_span)
+
+        chosen = min(candidates, key=lambda symbol: (span(symbol), -_definition_priority(symbol)))
+        return {
+            **location,
+            "name": chosen.get("name", ""),
+            "kind": chosen.get("kind", ""),
+            "container": chosen.get("container", ""),
+        }
 
     def _definition_paths(
         self,
@@ -697,7 +904,24 @@ class Workspace:
             out.append(candidate)
         return out
 
-    def _file_context(self, path: Path, limit: int) -> dict[str, Any]:
+    def _file_context(
+        self,
+        path: Path,
+        limit: int,
+        *,
+        outline_depth: int = 1,
+        outline_kind: str | None = None,
+        container: str | None = None,
+        include_topology: bool = False,
+    ) -> dict[str, Any]:
+        language = language_for(path)
+        if language is None:
+            return {
+                "status": "unsupported_language",
+                "target": str(path),
+                "path": str(path),
+                "reason": f"unsupported source language: {path.suffix or '<no extension>'}",
+            }
         project = self.project_for_path(path)
         if project is None:
             return {
@@ -713,75 +937,123 @@ class Workspace:
 
         imports = extract_imports(path)
         resolved_imports: list[dict[str, Any]] = []
-        for item in imports:
-            definitions = resolve_import_specifier(path, str(item.get("specifier") or ""), project.root)
-            if not definitions:
-                definitions = self._definition_paths(
-                    session,
-                    path,
-                    int(item.get("line") or 1),
-                    int(item.get("column") or 1),
-                )
-            resolved_imports.append(
-                {
-                    **item,
-                    "resolved_paths": [str(candidate) for candidate in definitions if candidate != path],
-                }
-            )
-
         importers: list[dict[str, Any]] = []
-        seen_importers: set[tuple[str, int]] = set()
-        for hit in importer_candidate_hits(project.root, path, limit=max(400, limit * 20)):
-            importer_path = Path(hit["path"]).resolve()
-            importer_project = self.project_for_path(importer_path)
-            if importer_project is None:
-                continue
-            matched = False
-            resolved_any_local = False
-            for imported in extract_imports(importer_path):
-                if int(imported.get("line") or 0) != int(hit["line"]):
-                    continue
-                resolved_paths = resolve_import_specifier(
-                    importer_path,
-                    str(imported.get("specifier") or ""),
-                    importer_project.root,
-                )
-                resolved_any_local = resolved_any_local or bool(resolved_paths)
-                if path in resolved_paths:
-                    matched = True
-                    break
-            if not matched and not resolved_any_local:
-                try:
-                    importer_session = self._session(importer_project)
-                    matched = path in self._definition_paths(
-                        importer_session,
-                        importer_path,
-                        int(hit["line"]),
-                        int(hit.get("column") or 1),
+        importers_truncated = False
+        if include_topology:
+            for item in imports:
+                definitions = resolve_import_specifier(path, str(item.get("specifier") or ""), project.root)
+                if not definitions:
+                    definitions = self._definition_paths(
+                        session,
+                        path,
+                        int(item.get("line") or 1),
+                        int(item.get("column") or 1),
                     )
-                except (LspError, OSError):
-                    matched = False
-            if not matched:
-                continue
-            key = (str(importer_path), int(hit["line"]))
-            if key in seen_importers:
-                continue
-            seen_importers.add(key)
-            importers.append(
-                {
-                    "path": str(importer_path),
-                    "line": int(hit["line"]),
-                    "column": int(hit.get("column") or 1),
-                    "text": str(hit.get("text") or "").strip(),
-                }
-            )
-            if len(importers) >= limit:
-                break
+                resolved_imports.append(
+                    {
+                        **item,
+                        "resolved_paths": [str(candidate) for candidate in definitions if candidate != path],
+                    }
+                )
 
+            seen_importers: set[tuple[str, int]] = set()
+            for hit in importer_candidate_hits(project.root, path, limit=max(400, limit * 20)):
+                importer_path = Path(hit["path"]).resolve()
+                importer_project = self.project_for_path(importer_path)
+                if importer_project is None:
+                    continue
+                matched = False
+                resolved_any_local = False
+                for imported in extract_imports(importer_path):
+                    if int(imported.get("line") or 0) != int(hit["line"]):
+                        continue
+                    resolved_paths = resolve_import_specifier(
+                        importer_path,
+                        str(imported.get("specifier") or ""),
+                        importer_project.root,
+                    )
+                    resolved_any_local = resolved_any_local or bool(resolved_paths)
+                    if path in resolved_paths:
+                        matched = True
+                        break
+                if not matched and not resolved_any_local:
+                    try:
+                        importer_session = self._session(importer_project)
+                        matched = path in self._definition_paths(
+                            importer_session,
+                            importer_path,
+                            int(hit["line"]),
+                            int(hit.get("column") or 1),
+                        )
+                    except (LspError, OSError):
+                        matched = False
+                if not matched:
+                    continue
+                key = (str(importer_path), int(hit["line"]))
+                if key in seen_importers:
+                    continue
+                seen_importers.add(key)
+                importers.append(
+                    {
+                        "path": str(importer_path),
+                        "line": int(hit["line"]),
+                        "column": int(hit.get("column") or 1),
+                        "text": str(hit.get("text") or "").strip(),
+                    }
+                )
+                if len(importers) > limit:
+                    importers_truncated = True
+                    break
+
+        def outline_depth_of(symbol: dict[str, Any]) -> int:
+            parent = str(symbol.get("container") or "")
+            return 1 if not parent else len([part for part in parent.split(".") if part]) + 1
+
+        def kind_matches(symbol: dict[str, Any]) -> bool:
+            if not outline_kind:
+                return True
+            requested = outline_kind.strip().lower()
+            actual = str(symbol.get("kind") or "").lower()
+            if requested == "function":
+                return actual in {"function", "method", "constructor"}
+            if requested == "class":
+                return actual in {"class", "interface", "struct", "enum"}
+            return actual == requested
+
+        selected_symbols: list[dict[str, Any]] = []
+        normalized_container = (container or "").strip()
+        for symbol in symbols:
+            symbol_container = str(symbol.get("container") or "")
+            if normalized_container:
+                in_container = (
+                    symbol.get("name") == normalized_container
+                    or symbol_container == normalized_container
+                    or symbol_container.startswith(normalized_container + ".")
+                )
+                if not in_container:
+                    continue
+                if symbol.get("name") == normalized_container and not symbol_container:
+                    relative_depth = 0
+                elif symbol_container == normalized_container:
+                    relative_depth = 1
+                else:
+                    suffix = symbol_container.removeprefix(normalized_container + ".")
+                    relative_depth = len([part for part in suffix.split(".") if part]) + 1
+                if relative_depth > max(0, outline_depth):
+                    continue
+            elif not outline_kind and outline_depth_of(symbol) > max(1, outline_depth):
+                continue
+            if not kind_matches(symbol):
+                continue
+            selected_symbols.append(symbol)
+
+        outline_total_matching = len(selected_symbols)
         outline = [
             {k: symbol[k] for k in ("name", "kind", "container", "path", "line", "column")}
-            for symbol in symbols
+            for symbol in selected_symbols[:limit]
         ]
+        returned_importers = importers[:limit]
+        returned_imports = resolved_imports[:limit]
         return {
             "status": "ok",
             "target": str(path),
@@ -792,17 +1064,42 @@ class Workspace:
                 "project_root": str(project.root),
             },
             "outline": outline,
-            "symbol_count": len(outline),
-            "imports": resolved_imports,
-            "import_count": len(resolved_imports),
-            "importers": importers,
-            "importer_count": len(importers),
+            "symbol_count": len(symbols),
+            "outline_count": len(outline),
+            "outline_matching_count": outline_total_matching,
+            "outline_truncated": outline_total_matching > len(outline),
+            "outline_depth": outline_depth,
+            "outline_kind": outline_kind,
+            "container": container,
+            "topology_loaded": include_topology,
+            "imports": returned_imports,
+            "import_count": len(imports),
+            "imports_truncated": include_topology and len(resolved_imports) > len(returned_imports),
+            "importers": returned_importers,
+            "importer_count": len(returned_importers),
+            "importers_truncated": importers_truncated,
         }
 
-    def context(self, target: str, limit: int = 20) -> dict[str, Any]:
+    def context(
+        self,
+        target: str,
+        limit: int = 20,
+        *,
+        outline_depth: int = 1,
+        outline_kind: str | None = None,
+        container: str | None = None,
+        include_topology: bool = False,
+    ) -> dict[str, Any]:
         file_target = self._file_target(target)
         if file_target is not None:
-            return self._file_context(file_target, limit)
+            return self._file_context(
+                file_target,
+                limit,
+                outline_depth=outline_depth,
+                outline_kind=outline_kind,
+                container=container,
+                include_topology=include_topology,
+            )
 
         resolved = self.resolve(target)
         if resolved["status"] != "ok":
@@ -828,19 +1125,27 @@ class Workspace:
         except LspError:
             refs = []
         try:
-            impls = [
+            impl_locations = [
                 x
                 for x in (lsp_location(r) for r in session.implementations(path, line, column))
                 if x and self._is_repo_path(x["path"])
             ]
+            impls = []
+            seen_impls: set[tuple[str, int, int]] = set()
+            for implementation in impl_locations:
+                key = (
+                    str(implementation["path"]),
+                    int(implementation["line"]),
+                    int(implementation.get("column") or 1),
+                )
+                if key == (str(path), int(line), int(column)) or key in seen_impls:
+                    continue
+                seen_impls.add(key)
+                impls.append(self._symbol_at_location(implementation))
         except LspError:
             impls = []
         callers = self._call_neighbors(session, path, line, column, "in")
         callees = self._call_neighbors(session, path, line, column, "out")
-        try:
-            doc_symbols = _flatten_document_symbols(session.document_symbols(path), path)
-        except LspError:
-            doc_symbols = []
 
         tests = [r for r in refs if is_test_path(r["path"])]
         source_refs = [r for r in refs if not is_test_path(r["path"])]
@@ -872,10 +1177,6 @@ class Workspace:
             "references": source_refs[:limit],
             "possible_dynamic_references": possible_dynamic,
             "tests": tests[:limit],
-            "file_symbols": [
-                {k: s[k] for k in ("name", "kind", "container", "path", "line", "column")}
-                for s in doc_symbols[: min(limit, 30)]
-            ],
         }
 
     def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100) -> dict[str, Any]:
@@ -1035,6 +1336,7 @@ class Workspace:
         details: list[dict[str, Any]] = []
         impacted_files: set[str] = set()
         tests: dict[tuple[str, int], dict[str, Any]] = {}
+        detail_limit = min(5, limit)
         for symbol in distinct:
             try:
                 session, project, path, line, column = self._session_and_position(symbol)
@@ -1054,7 +1356,7 @@ class Workspace:
             possible_dynamic = classify_dynamic_references(
                 [r for r in refs if not is_test_path(r["path"])],
                 str(symbol.get("name") or ""),
-                limit=10,
+                limit=detail_limit,
             )
             for caller in callers:
                 impacted_files.add(caller["path"])
@@ -1066,9 +1368,9 @@ class Workspace:
                 tests[(test["path"], test["line"])] = test
             details.append({
                 "symbol": {k: symbol.get(k) for k in ("name", "kind", "container", "path", "line", "column")},
-                "callers": callers[:10],
+                "callers": callers[:detail_limit],
                 "possible_dynamic_references": possible_dynamic,
-                "tests": direct_tests[:10],
+                "tests": direct_tests[:detail_limit],
                 "reference_count": len(refs),
             })
 
@@ -1089,10 +1391,12 @@ class Workspace:
             "renamed_file_count": renamed_count,
             "changed_symbols": details,
             "changed_symbol_count": len(details),
-            "impacted_files": sorted(impacted_files)[:100],
+            "impacted_files": sorted(impacted_files)[:limit],
             "impacted_file_count": len(impacted_files),
-            "tests": sorted(tests.values(), key=lambda x: (x["path"], x["line"]))[:100],
+            "impacted_files_truncated": len(impacted_files) > limit,
+            "tests": sorted(tests.values(), key=lambda x: (x["path"], x["line"]))[:limit],
             "test_count": len(tests),
+            "tests_truncated": len(tests) > limit,
             "possible_dynamic_reference_count": dynamic_reference_count,
             "unsupported_changed_files": unsupported,
             "truncated": len(changed_symbols) > limit,

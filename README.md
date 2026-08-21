@@ -84,12 +84,23 @@ For a symbol or `file:line[:column]` target it returns:
 - references from test files;
 - possible dynamic callback/registry references when detected.
 
-For a source-file target it returns the complete document outline plus direct imports and verified importers.
+For a source-file target it uses progressive disclosure. The default returns only a bounded top-level outline. Expand deliberately:
+
+```bash
+codeq context backend/src/app/services/backtest_service.py
+codeq context backend/src/app/services/backtest_service.py --outline-depth 2
+codeq context backend/src/app/services/backtest_service.py --container BacktestService
+codeq context backend/src/app/services/backtest_service.py --kind method --limit 20
+codeq context frontend/src/features/market/api.ts --topology --limit 20
+```
+
+`--topology` is opt-in because imports/importers are much less frequently needed than a file outline. Without it, codeq does not scan importer candidates.
+
+Symbol/location examples remain:
 
 ```bash
 codeq context BacktestService.stream_backtest_logs
 codeq context backend/src/app/services/backtest_service.py:684
-codeq context backend/src/app/services/backtest_service.py
 ```
 
 A `file:line[:column]` target is promoted to its enclosing function/method/type when possible.
@@ -99,7 +110,11 @@ Arguments:
 | Argument | Meaning |
 | --- | --- |
 | `TARGET` | Qualified symbol, bare symbol, source file, or `PATH:LINE[:COLUMN]`. Qualified symbols are preferred when known. |
-| `--limit N` | Bounds returned callers/callees/references/tests; global option, default `20`. |
+| `--outline-depth N` | File targets only. Maximum nesting depth; default `1` (top-level only). |
+| `--kind KIND` | File targets only. Select one symbol kind across the file, such as `method` or `class`. |
+| `--container NAME` | File targets only. Reveal one class/container and its children. |
+| `--topology` | File targets only. Additionally resolve bounded direct imports and importers. |
+| `--limit N` | Bounds returned symbols/references/topology entries; global option, default `20`. |
 | `--json` | Return the same context as one JSON document. |
 
 ### `trace`
@@ -152,7 +167,7 @@ Arguments:
 | Argument | Meaning |
 | --- | --- |
 | `--base REF` | Left side of `git diff REF --`; default `HEAD~1`. For PR review, use the same base ref as the review diff. |
-| `--limit N` | Bounds changed symbols analyzed/emitted; global option, default `20`. |
+| `--limit N` | Bounds detailed changed symbols, affected files, and likely tests; file status/counts remain complete. Global option, default `20`. |
 
 `review` does not include untracked files because they are not part of `git diff REF --`.
 
@@ -160,6 +175,7 @@ Arguments:
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
+| `--version` | — | Print the installed codeq version and exit. |
 | `--root PATH` | `.` | Repository or worktree path. codeq resolves the containing Git root. |
 | `--json` | off | Emit one machine-readable JSON document instead of compact plain text. |
 | `--limit N` | `20` | Bound matches/symbols where the selected command uses a result limit. |
@@ -267,6 +283,8 @@ Language servers remain the semantic authority for symbols, references, and call
 ## Known limitations
 
 - Python/JavaScript dynamic dispatch cannot always be resolved statically. `codeq` may surface bounded callback/registry references as explicitly labeled "possible" evidence, but it does not promote heuristic matches to exact call edges.
+- Qualified targets such as `Class.method` are fail-closed: if the container/member relationship cannot be verified exactly, codeq returns `not_found`/`ambiguous` rather than falling back to an unrelated same-named symbol.
+- Existing source files outside the currently supported Python/TypeScript/JavaScript families return `unsupported_language`; they are never reinterpreted as fuzzy symbol queries.
 - `find` natural-language behavior is lightweight lexical + semantic ranking, not translation or embedding search; use terms likely to occur in the repository source/comments.
 - `review` test discovery uses language-server references/callers plus test-path classification; it is useful context, not a formal coverage proof.
 - The first query for a symbol can take a few seconds while the relevant language workspace warms and a bounded set of likely reference files is opened.
