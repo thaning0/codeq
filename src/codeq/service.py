@@ -112,6 +112,9 @@ class CodeqService:
                     limit=limit,
                     kind=str(request.get("kind") or "") or None,
                     text=bool(request.get("text")),
+                    text_paths=tuple(str(value) for value in (request.get("text_paths") or [])),
+                    text_globs=tuple(str(value) for value in (request.get("text_globs") or [])),
+                    text_exclude_tests=bool(request.get("text_exclude_tests")),
                 )
             elif command == "context":
                 data = ws.context(
@@ -123,6 +126,9 @@ class CodeqService:
                     include_topology=bool(request.get("include_topology")),
                     lexical_references=bool(request.get("lexical_references")),
                     lexical_query=str(request.get("lexical_query") or "") or None,
+                    lexical_paths=tuple(str(value) for value in (request.get("lexical_paths") or [])),
+                    lexical_globs=tuple(str(value) for value in (request.get("lexical_globs") or [])),
+                    lexical_exclude_tests=bool(request.get("lexical_exclude_tests")),
                 )
             elif command == "trace":
                 raw_depth = request.get("depth")

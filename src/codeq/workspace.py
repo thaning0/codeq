@@ -22,7 +22,7 @@ from .gitdiff import (
     whole_file_range,
 )
 from .lsp import LspError, LspProcess
-from .textsearch import git_tracked_text_search
+from .textsearch import git_text_search
 from .topology import extract_imports, importer_candidate_hits, resolve_import_specifier
 from .util import (
     exact_definition_hits,
@@ -343,9 +343,19 @@ class Workspace:
         kind: str | None = None,
         *,
         text: bool = False,
+        text_paths: tuple[str, ...] = (),
+        text_globs: tuple[str, ...] = (),
+        text_exclude_tests: bool = False,
     ) -> dict[str, Any]:
         if text:
-            return git_tracked_text_search(self.root, query, limit=limit)
+            return git_text_search(
+                self.root,
+                query,
+                limit=limit,
+                paths=text_paths,
+                globs=text_globs,
+                exclude_tests=text_exclude_tests,
+            )
 
         reference = self._path_reference(query)
         if reference is not None:
@@ -1201,6 +1211,9 @@ class Workspace:
         include_topology: bool = False,
         lexical_references: bool = False,
         lexical_query: str | None = None,
+        lexical_paths: tuple[str, ...] = (),
+        lexical_globs: tuple[str, ...] = (),
+        lexical_exclude_tests: bool = False,
     ) -> dict[str, Any]:
         file_target = self._file_target(target)
         if file_target is not None:
@@ -1213,10 +1226,13 @@ class Workspace:
                 include_topology=include_topology,
             )
             if data.get("status") == "ok" and lexical_references:
-                data["lexical_references"] = git_tracked_text_search(
+                data["lexical_references"] = git_text_search(
                     self.root,
                     lexical_query or file_target.name,
                     limit=limit,
+                    paths=lexical_paths,
+                    globs=lexical_globs,
+                    exclude_tests=lexical_exclude_tests,
                 )
             return data
 
@@ -1295,10 +1311,13 @@ class Workspace:
             )
         lexical_data: dict[str, Any] | None = None
         if lexical_references:
-            lexical_data = git_tracked_text_search(
+            lexical_data = git_text_search(
                 self.root,
                 lexical_query or str(symbol.get("name") or ""),
                 limit=limit,
+                paths=lexical_paths,
+                globs=lexical_globs,
+                exclude_tests=lexical_exclude_tests,
             )
 
         data = {
@@ -1462,7 +1481,7 @@ class Workspace:
         detail_limit = min(5, max(1, limit))
         analyzed: list[dict[str, Any]] = []
         for declaration in declarations[: max(1, limit)]:
-            search = git_tracked_text_search(self.root, str(declaration["name"]), limit=detail_limit)
+            search = git_text_search(self.root, str(declaration["name"]), limit=detail_limit)
             results = list(search.get("results", []))
             analyzed.append(
                 {

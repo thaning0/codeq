@@ -94,8 +94,11 @@ class CliFailureContractTests(unittest.TestCase):
             patch("codeq.cli._request", side_effect=request),
             redirect_stdout(io.StringIO()),
         ):
-            main(["find", "KEY", "--text", "--json"])
+            main(["find", "KEY", "--text", "--path", "frontend", "--glob", "*.ts", "--exclude-tests", "--json"])
         self.assertTrue(captured["text"])
+        self.assertEqual(captured["text_paths"], ["frontend"])
+        self.assertEqual(captured["text_globs"], ["*.ts"])
+        self.assertTrue(captured["text_exclude_tests"])
 
     def test_context_lexical_override_reaches_request_payload(self) -> None:
         captured: dict[str, object] = {}
@@ -109,9 +112,37 @@ class CliFailureContractTests(unittest.TestCase):
             patch("codeq.cli._request", side_effect=request),
             redirect_stdout(io.StringIO()),
         ):
-            main(["context", "Foo.run", "--lexical-references", "/logs/stream", "--json"])
+            main([
+                "context",
+                "Foo.run",
+                "--lexical-references",
+                "/logs/stream",
+                "--path",
+                "frontend",
+                "--glob",
+                "*.ts",
+                "--exclude-tests",
+                "--json",
+            ])
         self.assertTrue(captured["lexical_references"])
         self.assertEqual(captured["lexical_query"], "/logs/stream")
+        self.assertEqual(captured["lexical_paths"], ["frontend"])
+        self.assertEqual(captured["lexical_globs"], ["*.ts"])
+        self.assertTrue(captured["lexical_exclude_tests"])
+
+    def test_text_filters_require_text_mode(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            main(["find", "KEY", "--path", "frontend"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("require find --text", stderr.getvalue())
+
+    def test_lexical_filters_require_lexical_reference_mode(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            main(["context", "Foo.run", "--exclude-tests"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("require --lexical-references", stderr.getvalue())
 
     def test_success_still_exits_normally(self) -> None:
         result = {

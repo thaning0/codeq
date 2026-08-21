@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.4.0` CLI.
+Validated on 2026-08-21 against the real `~/Quant` repository using the installed editable `codeq 0.4.1` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **60/60 pass**
+- `uv run python -W error -m unittest discover -s tests`: **64/64 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **0.4.0**
-- installed distribution metadata: **0.4.0**
+- installed module version: **0.4.1**
+- installed distribution metadata: **0.4.1**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 0.4.0 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 0.4.1 version bump; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -98,9 +98,9 @@ A fresh-workspace `find 'SSE backtest logs'` was repeated three times. All three
 
 TypeScript search now boundedly opens relevant lexical-hit documents before `workspace/symbol`; transient `No Project` responses fall back to document-symbol results instead of leaking an unstable error to the agent.
 
-## Exact tracked-text contracts (0.4.0)
+## Exact working-tree text contracts (0.4.0–0.4.1)
 
-`find --text` uses Git's tracked-file view and exact literal matching without attempting semantic interpretation. Real `~/Quant` validation for:
+`find --text` uses exact literal matching without semantic interpretation. Since 0.4.1, its file set is Git-visible working-tree text: tracked files plus non-ignored untracked files. Tracked files are searched with `git grep`; untracked candidates come from `git ls-files --others --exclude-standard`, so Git-ignored files remain excluded. Real `~/Quant` validation for:
 
 ```text
 BACKTEST_QUESTDB_QUERY_TARGET_ROWS
@@ -117,6 +117,24 @@ backend/src/app/api/backtest.py:175:17
 using the exact override `/logs/stream` returned **68 matching lines**, including **36 test lines**, while semantic context independently resolved the cursor to `BacktestService.stream_backtest_logs`.
 
 A second exact-text probe for `eod_post_close_pipeline_flow` returned **34 occurrences / 33 lines / 14 test lines**, surfacing deployment metadata/tests/docs that are not connected by ordinary LSP callers.
+
+The 0.4.1 untracked-file acceptance created three temporary, non-ignored files in `~/Quant` (YAML, Shell, SQL) containing the same unique marker. Default text search returned exactly **3 matches / 3 lines**, all marked `untracked`; `--glob '*.yaml'`, `--glob '*.sh'`, and `--glob '*.sql'` each reduced the result to the corresponding single file. The temporary files were then removed and `git status --short` returned to empty.
+
+Path/category filtering was validated against the real `/logs/stream` contract:
+
+```text
+--path frontend --exclude-tests
+  -> 3 matches / 3 lines / 0 test lines
+  -> frontend/src/features/backtests/api.ts
+  -> frontend/src/features/logs/api.ts
+  -> frontend/src/features/uploaded-strategies/api.ts
+
+--path quant-cli/src --glob '*.ts' --exclude-tests
+  -> 1 match / 1 line / 0 test lines
+  -> quant-cli/src/cli/commands/backtests.ts:894
+```
+
+`--path` and `--glob` are repeatable OR filters; `--exclude-tests` affects both returned lines and aggregate counts. The same filters are available through `context --lexical-references`.
 
 ## Progressive disclosure for file context
 
@@ -251,7 +269,7 @@ Detailed review lists continue to follow `--limit` while complete file/count fac
 Final acceptance summary:
 
 ```text
-version                 codeq 0.4.0
+version                 codeq 0.4.1
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language
@@ -262,7 +280,7 @@ TS topology             52 symbols, 2 imports, 13 importers
 TS project              /home/thn/Quant/quant-cli
 concept top             streamBacktestLogs
 inheritance             MomentumFactor
-text contracts           21 env-var occurrences; 68 /logs/stream lines
+text contracts           tracked + untracked; path/glob/test filters validated
 cursor context            call site -> service definition + request snippet
 trace                    node-limit enforced; depth 0=root only
 review                   deleted base-side + pure-rename current analysis
@@ -274,7 +292,7 @@ ACCEPTANCE                PASS
 ## Remaining boundaries
 
 - Dynamic runtime dispatch can remain unknowable to static analysis. Heuristic callback/registry evidence stays explicitly labeled `possible` and is not promoted to exact call edges.
-- `find --text` / lexical-reference evidence intentionally searches Git-tracked current-worktree text only; untracked and ignored files are outside that exact-text contract.
+- `find --text` / lexical-reference evidence includes tracked and non-ignored untracked working-tree text; Git-ignored files remain outside that exact-text contract.
 - Deleted-file residual analysis is exact textual evidence from conservative base declarations, not a reconstructed historical LSP call graph; common identifiers can therefore be noisy.
 - Natural-language `find` is lexical + semantic ranking, not translation or embedding search. Use vocabulary likely to occur in the source/comments.
 - `review` test discovery is semantic/reference-based guidance, not coverage proof.

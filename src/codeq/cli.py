@@ -180,7 +180,12 @@ def _render_find(data: dict[str, Any]) -> None:
         return
     if data.get("mode") == "text":
         for item in data.get("results", []):
-            marker = " [test]" if item.get("is_test") else ""
+            markers: list[str] = []
+            if not item.get("tracked", True):
+                markers.append("untracked")
+            if item.get("is_test"):
+                markers.append("test")
+            marker = f" [{' '.join(markers)}]" if markers else ""
             occurrences = int(item.get("occurrences") or 1)
             repeat = f" x{occurrences}" if occurrences > 1 else ""
             print(
@@ -194,8 +199,10 @@ def _render_find(data: dict[str, Any]) -> None:
         meta = data.get("_meta", {})
         print(
             f"\n[{data.get('match_count',0)} exact matches across "
-            f"{data.get('matching_line_count',0)} lines; showing "
-            f"{data.get('returned_line_count',0)} lines; {meta.get('duration_ms','?')} ms]",
+            f"{data.get('matching_line_count',0)} lines / {data.get('matching_file_count',0)} files; "
+            f"tracked={data.get('tracked_line_count',0)} untracked={data.get('untracked_line_count',0)} "
+            f"tests={data.get('test_line_count',0)}; showing {data.get('returned_line_count',0)} lines; "
+            f"{meta.get('duration_ms','?')} ms]",
             file=sys.stderr,
         )
         return
@@ -238,7 +245,12 @@ def _print_text_search(title: str, data: dict[str, Any] | None, indent: str = " 
     if not results:
         print(f"{indent}-")
     for item in results:
-        marker = " [test]" if item.get("is_test") else ""
+        markers: list[str] = []
+        if not item.get("tracked", True):
+            markers.append("untracked")
+        if item.get("is_test"):
+            markers.append("test")
+        marker = f" [{' '.join(markers)}]" if markers else ""
         occurrences = int(item.get("occurrences") or 1)
         repeat = f" x{occurrences}" if occurrences > 1 else ""
         text = str(item.get("text") or "").strip()
@@ -549,9 +561,9 @@ natural-language description. For concept searches, use vocabulary likely to occ
 in the repository's source/comments (usually the source language); codeq does not
 translate queries between natural languages.
 
-With `--text`, QUERY is an exact literal searched across all Git-tracked text files.
-Text mode is intentionally non-semantic: it returns raw matching lines, complete
-match counts, truncation metadata, and test-file markers.
+With `--text`, QUERY is an exact literal searched across Git-visible working-tree
+text: tracked files plus untracked files that are not ignored. Text mode is
+intentionally non-semantic and supports optional path/glob/test filtering.
 """,
         epilog="""\
 Examples:
@@ -559,6 +571,8 @@ Examples:
   codeq find BacktestService --kind class
   codeq find 'report summary freshness policy evidence' --limit 8
   codeq find --text 'BACKTEST_QUESTDB_QUERY_TARGET_ROWS' --limit 20
+  codeq find --text '/logs/stream' --path frontend --exclude-tests
+  codeq find --text 'DEPLOYMENTS' --glob '*.py' --glob '*.yaml'
   codeq find fetchBars --root ~/Quant --json
 
 Typical next step:
@@ -579,7 +593,29 @@ Typical next step:
     find_mode.add_argument(
         "--text",
         action="store_true",
-        help="Exact literal search across Git-tracked text files; return raw lines instead of symbols.",
+        help="Exact literal search across tracked + non-ignored untracked text files.",
+    )
+    find.add_argument(
+        "--path",
+        dest="text_paths",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help="Text mode only: repository-relative path prefix; repeat for OR matching.",
+    )
+    find.add_argument(
+        "--glob",
+        dest="text_globs",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Text mode only: shell-style path glob; repeat for OR matching.",
+    )
+    find.add_argument(
+        "--exclude-tests",
+        dest="text_exclude_tests",
+        action="store_true",
+        help="Text mode only: exclude test paths from results and counts.",
     )
 
     context = sub.add_parser(
@@ -616,6 +652,7 @@ Examples:
   codeq context frontend/src/features/market/api.ts --topology --limit 20
   codeq context BacktestService.stream_backtest_logs --lexical-references
   codeq context BacktestService.stream_backtest_logs --lexical-references '/logs/stream'
+  codeq context BacktestService.stream_backtest_logs --lexical-references '/logs/stream' --path frontend --exclude-tests
   codeq context fetchBars --json
 
 Use `context` instead of several separate grep/read/caller/test lookups. If you need
@@ -657,9 +694,31 @@ more than the direct callers/callees, continue with `codeq trace`.
         default=None,
         metavar="TEXT",
         help=(
-            "Also run exact Git-tracked text search. Without TEXT, search the resolved "
-            "symbol/file name; with TEXT, search that exact contract string."
+            "Also run exact tracked + non-ignored untracked text search. Without TEXT, "
+            "search the resolved symbol/file name; with TEXT, search that exact contract string."
         ),
+    )
+    context.add_argument(
+        "--path",
+        dest="lexical_paths",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help="Lexical-reference mode only: repository-relative path prefix; repeat for OR matching.",
+    )
+    context.add_argument(
+        "--glob",
+        dest="lexical_globs",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Lexical-reference mode only: shell-style path glob; repeat for OR matching.",
+    )
+    context.add_argument(
+        "--exclude-tests",
+        dest="lexical_exclude_tests",
+        action="store_true",
+        help="Lexical-reference mode only: exclude test paths from results and counts.",
     )
 
     trace = sub.add_parser(
@@ -801,6 +860,12 @@ def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(_normalize_global_options(raw_argv))
+    if args.command == "find":
+        if (args.text_paths or args.text_globs or args.text_exclude_tests) and not args.text:
+            parser.error("--path/--glob/--exclude-tests require find --text")
+    elif args.command == "context":
+        if (args.lexical_paths or args.lexical_globs or args.lexical_exclude_tests) and args.lexical_references is None:
+            parser.error("--path/--glob/--exclude-tests require --lexical-references")
     root = git_root(args.root)
     payload: dict[str, Any] = {
         "command": args.command,
@@ -812,6 +877,9 @@ def main(argv: list[str] | None = None) -> None:
         payload["query"] = args.query
         payload["kind"] = args.kind
         payload["text"] = args.text
+        payload["text_paths"] = args.text_paths
+        payload["text_globs"] = args.text_globs
+        payload["text_exclude_tests"] = args.text_exclude_tests
     elif args.command == "context":
         payload.update(
             target=args.target,
@@ -821,6 +889,9 @@ def main(argv: list[str] | None = None) -> None:
             include_topology=args.topology,
             lexical_references=args.lexical_references is not None,
             lexical_query=args.lexical_references or None,
+            lexical_paths=args.lexical_paths,
+            lexical_globs=args.lexical_globs,
+            lexical_exclude_tests=args.lexical_exclude_tests,
         )
     elif args.command == "trace":
         payload.update(

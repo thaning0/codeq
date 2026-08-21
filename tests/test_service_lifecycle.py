@@ -20,8 +20,28 @@ class _FakeWorkspace:
     def session_stats(self):
         return []
 
-    def find(self, query: str, limit: int = 20, kind: str | None = None, *, text: bool = False):
-        return {"query": query, "results": [], "result_count": 0, "total_candidates": 0, "errors": [], "text_seen": text}
+    def find(
+        self,
+        query: str,
+        limit: int = 20,
+        kind: str | None = None,
+        *,
+        text: bool = False,
+        text_paths: tuple[str, ...] = (),
+        text_globs: tuple[str, ...] = (),
+        text_exclude_tests: bool = False,
+    ):
+        return {
+            "query": query,
+            "results": [],
+            "result_count": 0,
+            "total_candidates": 0,
+            "errors": [],
+            "text_seen": text,
+            "text_paths_seen": text_paths,
+            "text_globs_seen": text_globs,
+            "text_exclude_tests_seen": text_exclude_tests,
+        }
 
     def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100):
         return {"status": "ok", "target": target, "direction": direction, "depth": depth, "node_count": 1, "node_limit": limit, "tree": {}, "root": {}}
@@ -44,6 +64,23 @@ class ServiceLifecycleTests(unittest.TestCase):
             self.assertEqual(evicted, [str(Path(tmp).resolve())])
             self.assertTrue(bool(getattr(workspace, "closed", False)))
             self.assertEqual(service.workspace_count(), 0)
+
+    def test_text_filters_reach_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            result = service.handle({
+                "command": "find",
+                "root": tmp,
+                "query": "TOKEN",
+                "text": True,
+                "text_paths": ["frontend", "quant-cli/src"],
+                "text_globs": ["*.ts"],
+                "text_exclude_tests": True,
+            })
+            self.assertTrue(result["text_seen"])
+            self.assertEqual(result["text_paths_seen"], ("frontend", "quant-cli/src"))
+            self.assertEqual(result["text_globs_seen"], ("*.ts",))
+            self.assertTrue(result["text_exclude_tests_seen"])
 
     def test_trace_node_limit_is_not_raised_by_global_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):

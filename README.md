@@ -49,12 +49,14 @@ All human-readable CLI output and help are plain text without ANSI colors. Use `
 
 ### `find`
 
-Find a symbol or related code from a name or a short natural-language query, or switch to exact tracked-text mode for runtime/configuration contracts.
+Find a symbol or related code from a name or a short natural-language query, or switch to exact working-tree text mode for runtime/configuration contracts.
 
 ```bash
 codeq find BacktestService --kind class
 codeq find 'report summary freshness policy evidence' --limit 8
 codeq find --text 'BACKTEST_QUESTDB_QUERY_TARGET_ROWS' --limit 20
+codeq find --text '/logs/stream' --path frontend --exclude-tests
+codeq find --text '/logs/stream' --path quant-cli/src --glob '*.ts' --exclude-tests
 ```
 
 Arguments:
@@ -63,10 +65,13 @@ Arguments:
 | --- | --- |
 | `QUERY` | Exact symbol, qualified-name fragment, or short source-code description. For concepts, use vocabulary likely to appear in source/comments; queries are not automatically translated between natural languages. |
 | `--kind KIND` | Optional semantic result filter such as `function`, `method`, `class`, `interface`, or `test`. |
-| `--text` | Treat `QUERY` as an exact literal and search all Git-tracked text files. Returns raw lines, full exact-match/line counts, truncation state, occurrence count per line, and test-file markers. Ignored/untracked files are not searched. |
+| `--text` | Treat `QUERY` as an exact literal and search Git-visible working-tree text: tracked files plus untracked files not excluded by Git ignore rules. Results mark `tracked`/`untracked` and keep full exact-match/line/file counts. |
+| `--path PREFIX` | Text mode only. Restrict to a repository-relative path prefix; repeat for OR matching. |
+| `--glob PATTERN` | Text mode only. Restrict to a shell-style path glob; repeat for OR matching. `*.ts` matches by basename as well as repository-relative path. |
+| `--exclude-tests` | Text mode only. Exclude test paths from both returned lines and aggregate counts. |
 | `--limit N` | Maximum number of result lines/symbols returned; full text-match counts remain available even when text output is truncated. Global option, default `20`. |
 
-The default semantic mode combines LSP workspace/document symbols, bounded `rg` discovery, and deterministic ranking. `--text` is deliberately separate: it uses Git's tracked-file view and exact literal matching, and never tries to reinterpret YAML/Shell/SQL/docs lines as semantic symbols.
+The default semantic mode combines LSP workspace/document symbols, bounded `rg` discovery, and deterministic ranking. `--text` is deliberately separate: tracked files come from `git grep`, non-ignored untracked files come from Git's working-tree file view, and raw YAML/Shell/SQL/docs lines are never reinterpreted as semantic symbols.
 
 ### `context`
 
@@ -102,14 +107,15 @@ codeq context frontend/src/features/market/api.ts --topology --limit 20
 Exact textual evidence is also opt-in:
 
 ```bash
-# Search the resolved symbol/file name literally across tracked text files
+# Search the resolved symbol/file name literally across Git-visible text
 codeq context BacktestService.stream_backtest_logs --lexical-references
 
-# Override the literal for a runtime/HTTP/config contract
-codeq context backend/src/app/api/backtest.py:175:17 --lexical-references '/logs/stream'
+# Override the literal for a runtime/HTTP/config contract and filter the evidence
+codeq context backend/src/app/api/backtest.py:175:17 \
+  --lexical-references '/logs/stream' --path frontend --exclude-tests
 ```
 
-`lexical_references` uses the same non-semantic tracked-text result shape as `find --text`; it is kept separate from LSP `references` so agents can distinguish semantic edges from exact textual evidence.
+`lexical_references` uses the same non-semantic Git-visible text result shape and the same `--path` / `--glob` / `--exclude-tests` filters as `find --text`; it is kept separate from LSP `references` so agents can distinguish semantic edges from exact textual evidence.
 
 Symbol/location examples remain:
 
@@ -130,7 +136,10 @@ Arguments:
 | `--kind KIND` | File targets only. Select one symbol kind across the file, such as `method` or `class`. |
 | `--container NAME` | File targets only. Reveal one class/container and its children. |
 | `--topology` | File targets only. Additionally resolve bounded direct imports and importers. |
-| `--lexical-references [TEXT]` | Also return exact tracked-text evidence. Without `TEXT`, search the resolved symbol/file name; with `TEXT`, search that exact contract string. |
+| `--lexical-references [TEXT]` | Also return exact Git-visible text evidence. Without `TEXT`, search the resolved symbol/file name; with `TEXT`, search that exact contract string. |
+| `--path PREFIX` | Lexical-reference mode only. Restrict text evidence to a repository-relative prefix; repeat for OR matching. |
+| `--glob PATTERN` | Lexical-reference mode only. Restrict text evidence to a shell-style path glob; repeat for OR matching. |
+| `--exclude-tests` | Lexical-reference mode only. Exclude test paths from text evidence and its counts. |
 | `--limit N` | Bounds returned symbols/references/topology/text lines; full exact-text counts remain available. Global option, default `20`. |
 | `--json` | Return the same context as one JSON document. |
 
@@ -182,7 +191,7 @@ git diff
   -> affected source files
 ```
 
-Deleted files receive conservative base-side analysis: codeq reads the file from `resolved_base`, extracts top-level functions/classes and important constants, then performs exact tracked-text search in the current worktree for residual references and tests. This evidence is explicitly labeled lexical rather than being promoted to an LSP call edge.
+Deleted files receive conservative base-side analysis: codeq reads the file from `resolved_base`, extracts top-level functions/classes and important constants, then performs exact Git-visible working-tree text search for residual references and tests. This evidence is explicitly labeled lexical rather than being promoted to an LSP call edge.
 
 Pure renames (no content hunk in the renamed file) are analyzed on the new path using current import topology plus bounded LSP references/tests for top-level symbols. Changed-symbol selection for ordinary modified files still prefers the innermost function/method/type instead of flooding the result with local variables and containing classes.
 
@@ -310,7 +319,7 @@ Language servers remain the semantic authority for symbols, references, and call
 ## Known limitations
 
 - Python/JavaScript dynamic dispatch cannot always be resolved statically. `codeq` may surface bounded callback/registry references as explicitly labeled "possible" evidence, but it does not promote heuristic matches to exact call edges.
-- Exact text evidence (`find --text`, `context --lexical-references`) searches Git-tracked current-worktree text only. It intentionally excludes untracked/ignored files and does not claim semantic linkage.
+- Exact text evidence (`find --text`, `context --lexical-references`) searches tracked plus non-ignored untracked working-tree text. Git-ignored files remain outside the contract, and raw text hits do not claim semantic linkage.
 - Deleted-file review evidence is base-side declaration extraction plus exact current-worktree text search, not a reconstructed historical LSP graph; common names can therefore be noisy.
 - Pure-rename analysis uses current-path importers/references and can still miss runtime-only loaders.
 - Qualified targets such as `Class.method` are fail-closed: if the container/member relationship cannot be verified exactly, codeq returns `not_found`/`ambiguous` rather than falling back to an unrelated same-named symbol.
