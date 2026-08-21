@@ -1,6 +1,6 @@
 [project]
 name = "codeq"
-version = "1.0.0rc3"
+version = "1.0.0rc4"
 description = "Small CLI-first code intelligence for coding agents"
 requires-python = ">=3.12"
 dependencies = []

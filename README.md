@@ -4,7 +4,7 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc3` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** `1.0.0rc4` is the active release candidate. The four-command surface is feature-frozen for 1.0.
 
 ## Why codeq
 
@@ -69,7 +69,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc3
+codeq 1.0.0rc4
 ```
 
 ## The workflow
@@ -257,7 +257,7 @@ The daemon keeps relevant language servers warm, caches only safe file-local doc
 
 ### Runtime state and sandboxing
 
-`codeq` never writes analysis state into the target repository. The daemon only needs a private Unix socket outside the repository.
+`codeq` never writes analysis state into the target repository. The daemon and its language servers use only private ephemeral runtime state outside the repository: the Unix socket plus an `lsp-tmp/` directory.
 
 Runtime directory selection is:
 
@@ -267,7 +267,7 @@ CODEQ_RUNTIME_DIR
 → /tmp/codeq-$UID fallback
 ```
 
-Runtime directories are private (`0700`). If an agent sandbox cannot write to `XDG_RUNTIME_DIR`, codeq automatically falls back to `/tmp` instead of failing the query.
+Runtime directories are private (`0700`). If an agent sandbox cannot write to `XDG_RUNTIME_DIR`, codeq automatically falls back to `/tmp` instead of failing the query. Language-server children always receive `TMPDIR`, `TEMP`, and `TMP` pointing at `<codeq-runtime>/lsp-tmp`, so host/WSL temporary-directory variables cannot redirect them into a sandbox-read-only Windows path.
 
 Persistent daemon logging is **off by default**. Daemon stdout/stderr go to `/dev/null`; opt in only when debugging:
 
@@ -296,7 +296,7 @@ Details:
 
 - [Quant cold/warm benchmark](benchmarks/0.5.1-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
-- [RC3 readiness gate](benchmarks/1.0.0rc3-readiness.md)
+- [RC4 readiness gate](benchmarks/1.0.0rc4-readiness.md)
 - [Full validation record](VALIDATION.md)
 
 ## Boundaries

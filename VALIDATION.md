@@ -1,16 +1,16 @@
 # Validation
 
-Validated on 2026-08-22 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc3` CLI.
+Validated on 2026-08-22 against the real `~/Quant` repository using the installed editable `codeq 1.0.0rc4` CLI.
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **88/88 pass**
+- `uv run python -W error -m unittest discover -s tests`: **90/90 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
-- installed module version: **1.0.0rc3**
-- installed distribution metadata: **1.0.0rc3**
+- installed module version: **1.0.0rc4**
+- installed distribution metadata: **1.0.0rc4**
 
 ## Correctness blockers from the 0.2.1 evaluation
 
@@ -28,7 +28,7 @@ BacktestService.stream_backtest_logs
   -> backend/src/app/services/backtest_service.py:673
 ```
 
-The installed CLI was revalidated after the 1.0.0rc3 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
+The installed CLI was revalidated after the 1.0.0rc4 release cut; qualified symbol resolution remained exact and the daemon upgrade handshake completed transparently.
 
 A nonexistent qualified member now fails closed:
 
@@ -422,10 +422,26 @@ Default daemon stdout/stderr are redirected to `/dev/null`; no `daemon.log` is c
 
 RC3 passed **88/88 tests**, basedpyright with zero errors/warnings, build, and the **9/9** readiness gate. Runtime-state tests cover private permissions, XDG fallback, strict explicit runtime configuration, default no-log spawning, and explicit log creation. Artifacts: `benchmarks/1.0.0rc3-readiness.md` and `benchmarks/results/1.0.0rc3-readiness.json`.
 
+## 1.0.0rc4 language-server temp normalization
+
+RC4 fixes the remaining WSL + workspace-write sandbox failure where the daemon inherited host `TMPDIR`/`TEMP`/`TMP` values pointing at a Windows-side temporary directory that the sandbox could not write. TypeScript language-server initialization could therefore fail with `ENOENT` while Python analysis still worked.
+
+The daemon now records its actual runtime directory as `CODEQ_EFFECTIVE_RUNTIME_DIR`. Every language-server child receives `TMPDIR`, `TEMP`, and `TMP` overwritten to `<effective-codeq-runtime>/lsp-tmp`; that directory is created with mode `0700`. The host shell's temporary-directory variables are never trusted for LSP scratch state.
+
+A real TypeScript acceptance used `XDG_RUNTIME_DIR=/proc` plus `TMPDIR`, `TEMP`, and `TMP` all set to `/mnt/c/Users/thn/AppData/Local/Temp`, with no `CODEQ_RUNTIME_DIR` or manual `/tmp` override. Three independent globally installed RC4 invocations produced:
+
+```text
+context streamBacktestLogs               -> ok; streamBacktestLogs; 1 caller / 2 references; schema 1
+trace streamBacktestLogs --in --depth 2  -> ok; 3 nodes; not truncated; schema 1
+review --base c855f5bbd                  -> ok; 15 changed files; schema 1
+```
+
+An instrumented run confirmed `<runtime>/lsp-tmp` was `0700`; TypeScript created its own compile/cache children only below that private parent. `~/Quant` remained clean. RC4 passed **90/90 tests**, basedpyright with zero errors/warnings, build, and the **9/9** readiness gate. Artifacts: `benchmarks/1.0.0rc4-readiness.md` and `benchmarks/results/1.0.0rc4-readiness.json`.
+
 Final acceptance summary:
 
 ```text
-version                 codeq 1.0.0rc3
+version                 codeq 1.0.0rc4
 cold qualified          BacktestService.stream_backtest_logs:673
 exact class             BacktestService:70
 unsupported .sh/.sql    explicit unsupported_language

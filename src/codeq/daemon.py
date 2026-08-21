@@ -94,6 +94,7 @@ def _serve_connection(conn: socket.socket, service: CodeqService) -> None:
 
 def run(socket_path: Path) -> int:
     socket_path.parent.mkdir(parents=True, exist_ok=True)
+    os.environ["CODEQ_EFFECTIVE_RUNTIME_DIR"] = str(socket_path.parent.resolve())
     if socket_path.exists():
         try:
             probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

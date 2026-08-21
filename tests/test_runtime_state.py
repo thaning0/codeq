@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from codeq.cli import _spawn_daemon
 from codeq.daemon import default_socket_path
+from codeq.lsp import _lsp_environment
 
 
 class RuntimeStateTests(unittest.TestCase):
@@ -85,6 +86,46 @@ class RuntimeStateTests(unittest.TestCase):
                 _spawn_daemon(socket_path)
             self.assertTrue(log_path.exists())
             self.assertEqual(log_path.read_bytes(), b"")
+
+    def test_lsp_temp_environment_uses_effective_codeq_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp) / "runtime"
+            bad_windows_temp = "/mnt/c/Users/example/AppData/Local/Temp"
+            with patch.dict(
+                os.environ,
+                {
+                    "CODEQ_EFFECTIVE_RUNTIME_DIR": str(runtime),
+                    "CODEQ_RUNTIME_DIR": "",
+                    "TMPDIR": bad_windows_temp,
+                    "TEMP": bad_windows_temp,
+                    "TMP": bad_windows_temp,
+                },
+                clear=False,
+            ):
+                env = _lsp_environment()
+            expected = str((runtime / "lsp-tmp").resolve())
+            self.assertEqual(env["TMPDIR"], expected)
+            self.assertEqual(env["TEMP"], expected)
+            self.assertEqual(env["TMP"], expected)
+            self.assertEqual(stat.S_IMODE((runtime / "lsp-tmp").stat().st_mode), 0o700)
+
+    def test_lsp_temp_environment_ignores_host_temp_without_effective_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            explicit = Path(tmp) / "runtime"
+            with patch.dict(
+                os.environ,
+                {
+                    "CODEQ_EFFECTIVE_RUNTIME_DIR": "",
+                    "CODEQ_RUNTIME_DIR": str(explicit),
+                    "TMPDIR": "/host/read-only/tmpdir",
+                    "TEMP": "/host/read-only/temp",
+                    "TMP": "/host/read-only/tmp",
+                },
+                clear=False,
+            ):
+                env = _lsp_environment()
+            expected = str((explicit / "lsp-tmp").resolve())
+            self.assertEqual({env["TMPDIR"], env["TEMP"], env["TMP"]}, {expected})
 
 
 if __name__ == "__main__":

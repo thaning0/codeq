@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import stat
 import subprocess
 import threading
 import time
@@ -17,6 +18,24 @@ class LspError(RuntimeError):
     pass
 
 
+def _lsp_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    runtime_text = env.get("CODEQ_EFFECTIVE_RUNTIME_DIR") or env.get("CODEQ_RUNTIME_DIR")
+    runtime = Path(runtime_text).expanduser() if runtime_text else Path("/tmp") / f"codeq-{os.getuid()}"
+    temp_dir = runtime / "lsp-tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    info = temp_dir.stat()
+    if info.st_uid != os.getuid():
+        raise LspError(f"LSP temp directory is not owned by current user: {temp_dir}")
+    if stat.S_IMODE(info.st_mode) != 0o700:
+        temp_dir.chmod(0o700)
+    temp_text = str(temp_dir.resolve())
+    env["TMPDIR"] = temp_text
+    env["TEMP"] = temp_text
+    env["TMP"] = temp_text
+    return env
+
+
 class LspProcess:
     """Minimal JSON-RPC/LSP stdio client with a persistent language-server process."""
 
@@ -28,6 +47,7 @@ class LspProcess:
         self._proc = subprocess.Popen(
             command,
             cwd=str(self.root),
+            env=_lsp_environment(),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
