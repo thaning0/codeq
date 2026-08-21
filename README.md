@@ -136,7 +136,7 @@ Arguments:
 | `--in` | Walk incoming calls toward callers/entry points; use for impact radius. |
 | `--out` | Walk outgoing calls toward callees/implementation; use for execution flow. |
 | `--depth N` | Maximum number of call edges. `0` = root only, `1` = direct neighbors; default `3`. |
-| `--node-limit N` | Hard cap on emitted call-tree nodes; default `100`. |
+| `--node-limit N` | Hard cap on emitted call-tree nodes; default `100`. This cap is independent of global `--limit`. |
 
 ### `review`
 
@@ -144,14 +144,19 @@ Turn a Git diff into compact semantic review context:
 
 ```bash
 codeq review --base HEAD~1
-codeq review --base master --limit 15 --json
+codeq review --base origin/main --merge-base
+codeq review --base master --merge-base --limit 15 --json
 ```
 
-It first reports Git's added/modified/deleted/renamed file set, then analyzes current changed source:
+Working-tree review includes tracked staged/unstaged changes plus untracked files reported by `git ls-files --others --exclude-standard`; ignored files stay excluded. Untracked files are marked `U` and supported source files receive whole-file semantic analysis.
+
+For PR/feature-branch review, add `--merge-base`. codeq resolves `git merge-base BASE HEAD` and compares that commit against the current worktree, so base-only commits after divergence are excluded while current staged/unstaged/untracked worktree edits remain visible.
+
+It first reports Git's added/modified/deleted/renamed/untracked file set, then analyzes current changed source:
 
 ```text
 git diff
-  -> A/M/D/R file status
+  -> A/M/D/R/U file status
   -> current changed line ranges
   -> enclosing semantic symbols
   -> callers / references
@@ -166,10 +171,11 @@ Arguments:
 
 | Argument | Meaning |
 | --- | --- |
-| `--base REF` | Left side of `git diff REF --`; default `HEAD~1`. For PR review, use the same base ref as the review diff. |
+| `--base REF` | Requested Git base ref; default `HEAD~1`. |
+| `--merge-base` | Resolve `merge-base(BASE, HEAD)` before diffing; recommended for PR/feature-branch review. |
 | `--limit N` | Bounds detailed changed symbols, affected files, and likely tests; file status/counts remain complete. Global option, default `20`. |
 
-`review` does not include untracked files because they are not part of `git diff REF --`.
+Review JSON records `requested_base`, `base_mode`, and `resolved_base` for auditability.
 
 ## Global options
 

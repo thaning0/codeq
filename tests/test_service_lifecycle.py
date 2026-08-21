@@ -23,6 +23,12 @@ class _FakeWorkspace:
     def find(self, query: str, limit: int = 20, kind: str | None = None):
         return {"query": query, "results": [], "result_count": 0, "total_candidates": 0, "errors": []}
 
+    def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100):
+        return {"status": "ok", "target": target, "direction": direction, "depth": depth, "node_count": 1, "node_limit": limit, "tree": {}, "root": {}}
+
+    def review(self, base: str, limit: int = 20, *, merge_base: bool = False):
+        return {"status": "ok", "base": base, "limit_seen": limit, "merge_base_seen": merge_base}
+
 
 class ServiceLifecycleTests(unittest.TestCase):
     def test_idle_workspace_is_evicted_and_closed(self) -> None:
@@ -38,6 +44,26 @@ class ServiceLifecycleTests(unittest.TestCase):
             self.assertEqual(evicted, [str(Path(tmp).resolve())])
             self.assertTrue(bool(getattr(workspace, "closed", False)))
             self.assertEqual(service.workspace_count(), 0)
+
+    def test_trace_node_limit_is_not_raised_by_global_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            result = service.handle({
+                "command": "trace",
+                "root": tmp,
+                "target": "Foo.run",
+                "direction": "in",
+                "depth": 2,
+                "limit": 20,
+                "node_limit": 2,
+            })
+            self.assertEqual(result["node_limit"], 2)
+
+    def test_review_merge_base_flag_reaches_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            result = service.handle({"command": "review", "root": tmp, "base": "main", "merge_base": True})
+            self.assertTrue(result["merge_base_seen"])
 
     def test_workspace_cap_evicts_least_recently_used_inactive_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):

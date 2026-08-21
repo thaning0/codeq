@@ -126,10 +126,14 @@ class CodeqService:
                     str(request.get("target") or ""),
                     direction=str(request.get("direction") or "in"),
                     depth=int(request.get("depth") or 3),
-                    limit=max(limit, int(request.get("node_limit") or 100)),
+                    limit=max(1, int(request.get("node_limit") or 100)),
                 )
             elif command == "review":
-                data = ws.review(str(request.get("base") or "HEAD~1"), limit=limit)
+                data = ws.review(
+                    str(request.get("base") or "HEAD~1"),
+                    limit=limit,
+                    merge_base=bool(request.get("merge_base")),
+                )
             else:
                 raise ValueError(f"unknown command: {command}")
             after = ws.session_stats()

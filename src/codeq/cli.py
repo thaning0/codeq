@@ -314,7 +314,10 @@ def _render_trace(data: dict[str, Any]) -> None:
 
 
 def _render_review(data: dict[str, Any]) -> None:
-    print(f"Base: {data.get('base')}")
+    print(f"Base: {data.get('requested_base', data.get('base'))}")
+    print(f"Base mode: {data.get('base_mode', 'direct')}")
+    if data.get("resolved_base"):
+        print(f"Resolved base: {data['resolved_base']}")
     print(f"Changed files: {data.get('changed_file_count', 0)}")
     file_changes = data.get("file_changes", [])
     if file_changes:
@@ -609,24 +612,32 @@ possible dynamic callback/registry references, affected source files, and likely
 tests. Deleted files remain visible in the file list but cannot be semantically
 analyzed against the current worktree.
 
-Untracked files are not part of `git diff BASE --` and therefore are not included.
+Untracked files are included from Git's working-tree view and marked `U`; ignored
+files remain excluded according to Git ignore rules.
 """,
         epilog="""\
 Examples:
   codeq review --base HEAD~1
-  codeq review --base origin/main
-  codeq review --base master --limit 15 --json
+  codeq review --base origin/main --merge-base
+  codeq review --base master --merge-base --limit 15 --json
 
-`--limit` bounds detailed changed symbols, affected files, and likely tests while
-file status/counts remain complete. For a PR/worktree, choose the same base ref you
-would use for the review diff.
+Use --merge-base for PR/feature-branch review: codeq resolves `git merge-base BASE
+HEAD` and diffs that commit against the current worktree, preserving staged,
+unstaged, and untracked worktree changes. Without --merge-base, BASE is compared
+directly. `--limit` bounds detailed changed symbols, affected files, and likely
+tests while file status/counts remain complete.
 """,
     )
     review.add_argument(
         "--base",
         default="HEAD~1",
         metavar="REF",
-        help="Git ref used as the left side of `git diff REF --` (default: HEAD~1).",
+        help="Requested Git base ref (default: HEAD~1).",
+    )
+    review.add_argument(
+        "--merge-base",
+        action="store_true",
+        help="Resolve merge-base(BASE, HEAD) before diffing; use for PR/feature-branch review.",
     )
     return parser
 
@@ -696,6 +707,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     elif args.command == "review":
         payload["base"] = args.base
+        payload["merge_base"] = args.merge_base
 
     try:
         data = _request(payload, timeout=max(args.timeout + 5.0, 10.0))

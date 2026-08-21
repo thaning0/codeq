@@ -8,6 +8,62 @@ from typing import Any
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
 
 
+def git_resolve_commit(root: Path, ref: str) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--verify", f"{ref}^{{commit}}"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or f"cannot resolve Git ref {ref}")
+    return proc.stdout.strip()
+
+
+def git_merge_base(root: Path, base: str, head: str = "HEAD") -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(root), "merge-base", base, head],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or f"cannot resolve merge base for {base} and {head}")
+    value = proc.stdout.strip()
+    if not value:
+        raise RuntimeError(f"no merge base found for {base} and {head}")
+    return value
+
+
+def git_untracked_files(root: Path) -> list[dict[str, Any]]:
+    """Return untracked files, respecting Git ignore/exclude rules."""
+    proc = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "git ls-files failed")
+    out: list[dict[str, Any]] = []
+    for rel in proc.stdout.split("\0"):
+        if not rel:
+            continue
+        path = (root / rel).resolve()
+        if not path.is_file():
+            continue
+        out.append({"status": "U", "similarity": None, "old_path": None, "path": str(path)})
+    return out
+
+
+def whole_file_range(path: Path) -> dict[str, Any]:
+    try:
+        line_count = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+    except OSError:
+        line_count = 0
+    return {"path": str(path.resolve()), "start": 1, "end": max(1, line_count)}
+
+
 def git_changed_files(root: Path, base: str) -> list[dict[str, Any]]:
     """Return Git's authoritative A/M/D/R/C file status for a diff base."""
     proc = subprocess.run(

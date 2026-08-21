@@ -10,7 +10,15 @@ from pathlib import Path
 from typing import Any
 
 from .dynamic import classify_dynamic_references
-from .gitdiff import git_changed_files, git_changed_ranges, merge_ranges
+from .gitdiff import (
+    git_changed_files,
+    git_changed_ranges,
+    git_merge_base,
+    git_resolve_commit,
+    git_untracked_files,
+    merge_ranges,
+    whole_file_range,
+)
 from .lsp import LspError, LspProcess
 from .topology import extract_imports, importer_candidate_hits, resolve_import_specifier
 from .util import (
@@ -1228,38 +1236,52 @@ class Workspace:
         root_item = roots[0]
         seen: set[tuple[str, int, str]] = set()
         count = 0
+        truncated = False
+        limit = max(1, limit)
 
-        def walk(item: dict[str, Any], remaining: int) -> dict[str, Any]:
-            nonlocal count
+        def walk(item: dict[str, Any], remaining: int) -> dict[str, Any] | None:
+            nonlocal count, truncated
+            if count >= limit:
+                truncated = True
+                return None
             entry = _call_item_entry(item)
             key = (entry["path"], entry["line"], entry["name"])
-            if key in seen:
-                return {"node": entry, "cycle": True, "children": []}
-            seen.add(key)
+            cycle = key in seen
             count += 1
             node: dict[str, Any] = {"node": entry, "children": []}
-            if remaining <= 0 or count >= limit:
+            if cycle:
+                node["cycle"] = True
+                return node
+            seen.add(key)
+            if remaining <= 0:
                 return node
             raw = session.incoming_calls(item) if direction == "in" else session.outgoing_calls(item)
             edge_key = "from" if direction == "in" else "to"
             for edge in raw:
                 child = edge.get(edge_key)
-                if isinstance(child, dict):
-                    child_entry = _call_item_entry(child)
-                    if self._is_repo_path(child_entry["path"]):
-                        node["children"].append(walk(child, remaining - 1))
+                if not isinstance(child, dict):
+                    continue
+                child_entry = _call_item_entry(child)
+                if not self._is_repo_path(child_entry["path"]):
+                    continue
                 if count >= limit:
+                    truncated = True
                     break
+                child_node = walk(child, remaining - 1)
+                if child_node is not None:
+                    node["children"].append(child_node)
             return node
 
         tree = walk(root_item, max(0, depth))
+        assert tree is not None
         return {
             "status": "ok",
             "target": target,
             "direction": direction,
             "depth": depth,
             "node_count": count,
-            "truncated": count >= limit,
+            "node_limit": limit,
+            "truncated": truncated,
             "root": _call_item_entry(root_item),
             "tree": tree,
         }
@@ -1318,10 +1340,20 @@ class Workspace:
             dedup[(item["name"], item["line"])] = item
         return list(dedup.values())
 
-    def review(self, base: str, limit: int = 20) -> dict[str, Any]:
-        file_changes = git_changed_files(self.root, base)
-        merged = merge_ranges(git_changed_ranges(self.root, base))
+    def review(self, base: str, limit: int = 20, *, merge_base: bool = False) -> dict[str, Any]:
+        resolved_base = git_merge_base(self.root, base) if merge_base else git_resolve_commit(self.root, base)
+        file_changes = git_changed_files(self.root, resolved_base)
+        untracked_changes = git_untracked_files(self.root)
+        tracked_paths = {str(item["path"]) for item in file_changes}
+        file_changes.extend(item for item in untracked_changes if str(item["path"]) not in tracked_paths)
+
+        merged = merge_ranges(git_changed_ranges(self.root, resolved_base))
         ranges_by_path = {item["path"]: item["ranges"] for item in merged}
+        for change in untracked_changes:
+            path = Path(change["path"])
+            if path.is_file():
+                whole = whole_file_range(path)
+                ranges_by_path[str(path)] = [{"start": whole["start"], "end": whole["end"]}]
 
         changed_symbols: list[dict[str, Any]] = []
         unsupported: list[str] = []
@@ -1413,11 +1445,15 @@ class Workspace:
         return {
             "status": "ok",
             "base": base,
+            "requested_base": base,
+            "base_mode": "merge-base" if merge_base else "direct",
+            "resolved_base": resolved_base,
             "file_changes": analyzed_changes,
             "changed_files": changed_files,
             "changed_file_count": len(analyzed_changes),
             "deleted_file_count": deleted_count,
             "renamed_file_count": renamed_count,
+            "untracked_file_count": sum(1 for item in analyzed_changes if item.get("status") == "U"),
             "changed_symbols": details,
             "changed_symbol_count": len(details),
             "impacted_files": sorted(impacted_files)[:limit],

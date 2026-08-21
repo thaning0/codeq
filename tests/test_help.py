@@ -30,7 +30,7 @@ class HelpTests(unittest.TestCase):
             "find": ["QUERY", "--kind KIND", "translate queries", "Examples:", "Typical next step:"],
             "context": ["TARGET", "PATH:LINE[:COLUMN]", "progressive disclosure", "--outline-depth N", "--topology", "Callers", "Examples:"],
             "trace": ["--in", "--out", "--depth N", "--node-limit N", "Examples:"],
-            "review": ["--base REF", "added, modified, deleted, and renamed", "Untracked files", "Examples:"],
+            "review": ["--base REF", "--merge-base", "Untracked files", "merge-base", "Examples:"],
         }
         for name, phrases in expected.items():
             with self.subTest(command=name):
