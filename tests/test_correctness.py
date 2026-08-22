@@ -71,6 +71,107 @@ class CorrectnessGuardTests(unittest.TestCase):
                 workspace.close()
             self.assertEqual(result, exact_failure)
 
+    def test_module_qualified_top_level_symbol_resolves_by_file_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "packages/research-core/src/auto_research_core/domain/models.py"
+            path.parent.mkdir(parents=True)
+            path.write_text("class Candidate:\n    pass\n", encoding="utf-8")
+            candidate = {
+                "name": "Candidate",
+                "kind": "Class",
+                "container": "",
+                "path": str(path.resolve()),
+                "line": 1,
+                "column": 7,
+                "source": "lsp",
+                "origin": "document",
+            }
+            workspace = Workspace(root)
+            try:
+                with patch.object(
+                    workspace,
+                    "_exact_document_candidates",
+                    side_effect=lambda name, **_: [candidate] if name == "Candidate" else [],
+                ):
+                    result = workspace.resolve("auto_research_core.domain.models.Candidate")
+            finally:
+                workspace.close()
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["symbol"]["path"], str(path.resolve()))
+
+    def test_module_qualified_member_resolves_by_semantic_and_file_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "src/pkg/service.py"
+            path.parent.mkdir(parents=True)
+            path.write_text("class Service:\n    def run(self):\n        pass\n", encoding="utf-8")
+            member = {
+                "name": "run",
+                "kind": "Method",
+                "container": "Service",
+                "path": str(path.resolve()),
+                "line": 2,
+                "column": 9,
+                "source": "lsp",
+                "origin": "document",
+            }
+            workspace = Workspace(root)
+            try:
+                with patch.object(
+                    workspace,
+                    "_exact_document_candidates",
+                    side_effect=lambda name, **_: [member] if name == "run" else [],
+                ):
+                    result = workspace.resolve("pkg.service.Service.run")
+                    wrong = workspace.resolve("pkg.other.Service.run")
+            finally:
+                workspace.close()
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(wrong["status"], "not_found")
+
+    def test_semantic_path_constraint_filters_find_and_disambiguates_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "packages/one/src/model.py"
+            second = root / "packages/two/src/model.py"
+            first.parent.mkdir(parents=True)
+            second.parent.mkdir(parents=True)
+            first.write_text("class Thing:\n    pass\n", encoding="utf-8")
+            second.write_text("class Thing:\n    pass\n", encoding="utf-8")
+
+            def candidate(path: Path) -> dict[str, object]:
+                return {
+                    "name": "Thing",
+                    "kind": "Class",
+                    "container": "",
+                    "path": str(path.resolve()),
+                    "line": 1,
+                    "column": 7,
+                    "source": "lsp",
+                    "origin": "document",
+                }
+
+            workspace = Workspace(root)
+            try:
+                with (
+                    patch("codeq.workspace.lexical_hits", return_value=[]),
+                    patch.object(workspace, "_exact_document_candidates", return_value=[candidate(first), candidate(second)]),
+                ):
+                    unscoped = workspace.resolve("Thing")
+                    root_scoped = workspace.find("Thing", semantic_paths=(".",))
+                    scoped_find = workspace.find("Thing", semantic_paths=("packages/two",))
+                    scoped = workspace.resolve("Thing", semantic_paths=("packages/two",))
+            finally:
+                workspace.close()
+            self.assertEqual(unscoped["status"], "ambiguous")
+            self.assertTrue(all(item.get("selection_command") for item in unscoped["candidates"]))
+            self.assertEqual(root_scoped["result_count"], 2)
+            self.assertEqual(scoped_find["result_count"], 1)
+            self.assertEqual(scoped_find["paths"], ["packages/two"])
+            self.assertEqual(scoped["status"], "ok")
+            self.assertEqual(scoped["symbol"]["path"], str(second.resolve()))
+
     def test_exact_definition_scan_is_not_displaced_by_many_references(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

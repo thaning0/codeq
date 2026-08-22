@@ -4,13 +4,43 @@ Validated on 2026-08-22 against the real `~/Quant` repository using the installe
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **99/99 pass**
+- `uv run python -W error -m unittest discover -s tests`: **107/107 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
 - CLI help: plain text, no ANSI color
 - installed module version: **1.0.0rc5**
 - installed distribution metadata: **1.0.0rc5**
+
+## Agent target ergonomics
+
+Historical agent sessions repeatedly attempted full module-qualified targets and
+semantic path scoping. Both workflows are now supported without weakening
+fail-closed resolution.
+
+Real `~/trade` validation:
+
+```text
+codeq context auto_research_core.domain.models.Candidate
+  -> Candidate
+  -> packages/research-core/src/auto_research_core/domain/models.py:65
+
+codeq context validate_discovery_plan \
+  --path packages/research-core/src/auto_research_core/application/research_governance.py
+  -> validate_discovery_plan
+  -> packages/research-core/src/auto_research_core/application/research_governance.py:216
+
+codeq find Candidate --kind class \
+  --path packages/research-core/src/auto_research_core/domain
+  -> 4 results, all inside the requested path prefix
+```
+
+An unscoped ambiguous `validate_discovery_plan` query remains ambiguous and now
+prints one copyable `codeq context PATH:LINE:COLUMN` command for each candidate.
+Module-qualified resolution requires both the semantic suffix and module/file
+suffix to match; a wrong module qualifier returns `not_found` rather than falling
+back to the same-named declaration elsewhere. Daemon protocol version 3 separates
+this request contract from already-running older daemons.
 
 ## Correctness blockers from the 0.2.1 evaluation
 

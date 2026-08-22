@@ -107,7 +107,11 @@ Semantic discovery:
 codeq find RetryPolicy
 codeq find 'request retry policy' --limit 8
 codeq find RetryPolicy --kind class
+codeq find Candidate --kind class --path packages/research-core
 ```
+
+In semantic mode, repeat `--path` to restrict candidates to repository-relative
+path prefixes. This is useful when the same symbol name exists in multiple packages.
 
 Exact working-tree text search:
 
@@ -123,9 +127,19 @@ Text mode searches **tracked plus non-ignored untracked files**, so newly create
 
 ```bash
 codeq context RetryPolicy.should_retry
+codeq context auto_research_core.domain.models.Candidate
+codeq context validate_discovery_plan --path packages/research-core/src
 codeq context src/api/orders.py:84
 codeq context src/api/orders.py:84:21
 ```
+
+Fully module-qualified Python/TypeScript-style targets are resolved fail-closed:
+the semantic suffix must match an LSP-confirmed declaration, the module prefix must
+match the candidate file path, and the result must be unique. For ambiguous bare
+symbols, plain output includes exact `codeq context PATH:LINE:COLUMN` commands that
+can be copied directly. `context --path` scopes symbol resolution; when attaching
+`--lexical-references`, `--path` scopes the text evidence instead and
+`--symbol-path` remains available for symbol resolution.
 
 For symbols and locations, `context` returns bounded definition source, hover/signature, direct callers and callees, implementations, references, tests, and possible dynamic callback/registry evidence.
 
@@ -226,6 +240,9 @@ Language servers remain the semantic authority for definitions, references, impl
 These behaviors are part of the 1.0 compatibility boundary:
 
 - Qualified targets such as `Class.method` are **fail-closed**.
+- Fully module-qualified targets are accepted only when their module/file suffix
+  and semantic declaration suffix match exactly.
+- Semantic `find` and symbolic `context` support repeatable path-prefix scoping.
 - Explicit path-like targets never fall back to fuzzy symbol search.
 - Missing files return `not_found`.
 - Unsupported source-file languages return `unsupported_language` rather than an unrelated symbol.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import threading
 from collections import OrderedDict
@@ -358,6 +359,56 @@ class Workspace:
             for part in relative.parts
         )
 
+    def _matches_path_prefixes(self, path: str | Path, prefixes: tuple[str, ...]) -> bool:
+        if not prefixes:
+            return True
+        try:
+            relative = Path(path).resolve().relative_to(self.root).as_posix()
+        except ValueError:
+            return False
+        for raw_prefix in prefixes:
+            prefix_path = Path(raw_prefix).expanduser()
+            try:
+                if prefix_path.is_absolute():
+                    prefix = prefix_path.resolve().relative_to(self.root).as_posix()
+                else:
+                    prefix = (self.root / prefix_path).resolve().relative_to(self.root).as_posix()
+            except ValueError:
+                continue
+            prefix = prefix.rstrip("/")
+            if prefix in {"", "."}:
+                return True
+            if relative == prefix or relative.startswith(prefix + "/"):
+                return True
+        return False
+
+    def _selection_command(self, item: dict[str, Any]) -> str:
+        path = Path(str(item.get("path") or "")).resolve()
+        try:
+            rendered_path = path.relative_to(self.root).as_posix()
+        except ValueError:
+            rendered_path = str(path)
+        location = f"{rendered_path}:{int(item.get('line') or 1)}:{int(item.get('column') or 1)}"
+        return shlex.join(["codeq", "context", location])
+
+    def _with_selection_commands(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {**item, "selection_command": self._selection_command(item)}
+            for item in items
+        ]
+
+    def _module_qualifier_matches(self, path: str | Path, qualifier: list[str]) -> bool:
+        if not qualifier:
+            return True
+        try:
+            relative = Path(path).resolve().relative_to(self.root).with_suffix("")
+        except ValueError:
+            return False
+        path_parts = list(relative.parts)
+        if path_parts and path_parts[-1] == "__init__":
+            path_parts.pop()
+        return len(path_parts) >= len(qualifier) and path_parts[-len(qualifier):] == qualifier
+
     def _candidate_projects(self, hits: list[dict[str, Any]]) -> list[Project]:
         selected: set[Project] = set()
         for hit in hits:
@@ -412,6 +463,7 @@ class Workspace:
         text_paths: tuple[str, ...] = (),
         text_globs: tuple[str, ...] = (),
         text_exclude_tests: bool = False,
+        semantic_paths: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         if text:
             return git_text_search(
@@ -464,7 +516,11 @@ class Workspace:
                 "reason": "use `codeq context FILE` for a source-file target",
             }
 
-        hits = lexical_hits(self.root, query, limit=max(80, limit * 8))
+        hits = [
+            hit
+            for hit in lexical_hits(self.root, query, limit=max(80, limit * 8))
+            if self._matches_path_prefixes(hit["path"], semantic_paths)
+        ]
         projects = self._candidate_projects(hits)
         tokens = identifier_tokens(query)
         search_terms = tokens[:3] or [query]
@@ -474,7 +530,11 @@ class Workspace:
         # Exact identifiers get a cold-start-safe definition path that does not
         # depend on workspace/symbol having finished background indexing.
         if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", query.strip()):
-            results.extend(self._exact_document_candidates(query.strip(), limit=max(40, limit * 4)))
+            results.extend(
+                item
+                for item in self._exact_document_candidates(query.strip(), limit=max(40, limit * 4))
+                if self._matches_path_prefixes(item["path"], semantic_paths)
+            )
 
         def search_project(project: Project) -> tuple[list[dict[str, Any]], str | None]:
             try:
@@ -509,7 +569,7 @@ class Workspace:
                         raise
                     for item in items:
                         entry = _workspace_symbol_entry(item)
-                        if not entry:
+                        if not entry or not self._matches_path_prefixes(entry["path"], semantic_paths):
                             continue
                         key = (entry["path"], entry["name"], entry["line"])
                         if key in seen:
@@ -640,6 +700,10 @@ class Workspace:
             ),
         )
         ordered = [item for item in ordered if self._is_repo_path(item["path"])]
+        ordered = [
+            item for item in ordered
+            if self._matches_path_prefixes(item["path"], semantic_paths)
+        ]
         if kind:
             requested = kind.strip().lower()
             if requested == "function":
@@ -652,36 +716,55 @@ class Workspace:
                 ordered = [item for item in ordered if is_test_path(item["path"])]
             else:
                 ordered = [item for item in ordered if str(item.get("kind", "")).lower() == requested]
+        returned = self._with_selection_commands(ordered[:limit])
         return {
             "status": "ok",
             "query": query,
             "kind": kind,
-            "results": ordered[:limit],
+            "paths": list(semantic_paths),
+            "results": returned,
             "result_count": min(len(ordered), limit),
             "total_candidates": len(ordered),
             "errors": errors[:4],
         }
 
-    def _resolve_qualified(self, target: str) -> dict[str, Any] | None:
+    def _resolve_qualified(
+        self,
+        target: str,
+        *,
+        semantic_paths: tuple[str, ...] = (),
+    ) -> dict[str, Any] | None:
         parts = [part for part in target.split(".") if part]
         if len(parts) < 2:
             return None
         container_name = parts[-2]
         member_name = parts[-1]
+        matches: list[dict[str, Any]] = []
+
+        # A fully qualified target may end in a top-level class/function rather
+        # than a container/member pair, for example package.domain.models.Candidate.
+        # Accept only LSP-confirmed exact declarations whose semantic suffix and
+        # module/file suffix both match the requested target.
+        for symbol in self._exact_document_candidates(member_name, limit=80):
+            if not self._matches_path_prefixes(symbol["path"], semantic_paths):
+                continue
+            semantic_parts = [
+                *[part for part in str(symbol.get("container") or "").split(".") if part],
+                member_name,
+            ]
+            if len(parts) < len(semantic_parts) or parts[-len(semantic_parts):] != semantic_parts:
+                continue
+            module_parts = parts[:-len(semantic_parts)]
+            if self._module_qualifier_matches(symbol["path"], module_parts):
+                matches.append({**symbol, "score": 10000})
+
         containers = [
             item
             for item in self._exact_document_candidates(container_name, limit=80)
             if item.get("name") == container_name
             and item.get("kind") in {"Class", "Interface", "Struct", "Enum", "Namespace", "Module"}
+            and self._matches_path_prefixes(item["path"], semantic_paths)
         ]
-        if not containers:
-            return {
-                "status": "not_found",
-                "target": target,
-                "reason": f"qualified container not found: {container_name}",
-                "candidates": [],
-            }
-        matches: list[dict[str, Any]] = []
         seen_files: set[str] = set()
         for container in containers:
             path = Path(container["path"])
@@ -701,29 +784,55 @@ class Workspace:
                 combined = ".".join(
                     part for part in (str(symbol.get("container") or ""), member_name) if part
                 )
-                if (
-                    combined == target
-                    or combined.endswith("." + target)
-                    or target.endswith("." + combined)
+                semantic_parts = [part for part in combined.split(".") if part]
+                if not semantic_parts or len(parts) < len(semantic_parts):
+                    continue
+                module_parts = parts[:-len(semantic_parts)]
+                if parts[-len(semantic_parts):] == semantic_parts and self._module_qualifier_matches(
+                    symbol["path"], module_parts
                 ):
                     matches.append({**symbol, "score": 10000})
         if not matches:
+            reason = (
+                f"qualified member not found in {container_name}: {member_name}"
+                if containers
+                else f"qualified target not found: {target}"
+            )
             return {
                 "status": "not_found",
                 "target": target,
-                "reason": f"qualified member not found in {container_name}: {member_name}",
+                "reason": reason,
                 "candidates": [],
             }
+        deduplicated = {
+            (str(item["path"]), int(item["line"]), str(item.get("name") or "")): item
+            for item in matches
+        }
+        matches = list(deduplicated.values())
         matches.sort(key=lambda item: (-_definition_priority(item), item["path"], item["line"]))
         best_priority = _definition_priority(matches[0])
         top = [item for item in matches if _definition_priority(item) == best_priority]
         unique = {(item["path"], item["line"]) for item in top}
         if len(unique) > 1:
-            return {"status": "ambiguous", "target": target, "candidates": top[:8]}
+            return {
+                "status": "ambiguous",
+                "target": target,
+                "candidates": self._with_selection_commands(top[:8]),
+            }
         chosen = top[0]
-        return {"status": "ok", "target": target, "symbol": chosen, "candidates": matches[1:5]}
+        return {
+            "status": "ok",
+            "target": target,
+            "symbol": chosen,
+            "candidates": self._with_selection_commands(matches[1:5]),
+        }
 
-    def resolve(self, target: str) -> dict[str, Any]:
+    def resolve(
+        self,
+        target: str,
+        *,
+        semantic_paths: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
         reference = self._path_reference(target)
         if reference is not None:
             path = Path(reference["path"])
@@ -851,7 +960,7 @@ class Workspace:
                         return {
                             "status": "ambiguous",
                             "target": target,
-                            "candidates": definition_candidates[:8],
+                            "candidates": self._with_selection_commands(definition_candidates[:8]),
                             "requested_location": requested_location,
                             "reason": "multiple definitions found at requested cursor position",
                         }
@@ -917,7 +1026,7 @@ class Workspace:
             re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+", target)
         )
         if qualified_target:
-            qualified = self._resolve_qualified(target)
+            qualified = self._resolve_qualified(target, semantic_paths=semantic_paths)
             if qualified is not None:
                 return qualified
             return {
@@ -927,7 +1036,7 @@ class Workspace:
                 "candidates": [],
             }
 
-        found = self.find(target, limit=12)
+        found = self.find(target, limit=12, semantic_paths=semantic_paths)
         candidates = [r for r in found["results"] if r.get("source") == "lsp"] or found["results"]
         if not candidates:
             return {"status": "not_found", "target": target, "candidates": []}
@@ -939,10 +1048,19 @@ class Workspace:
         if len(top) > 1 and top_score >= 7000:
             unique_paths = {(c["path"], c["line"]) for c in top}
             if len(unique_paths) > 1:
-                return {"status": "ambiguous", "target": target, "candidates": top[:8]}
+                return {
+                    "status": "ambiguous",
+                    "target": target,
+                    "candidates": self._with_selection_commands(top[:8]),
+                }
         chosen = top[0]
         others = [c for c in candidates if c is not chosen]
-        return {"status": "ok", "target": target, "symbol": chosen, "candidates": others[:4]}
+        return {
+            "status": "ok",
+            "target": target,
+            "symbol": chosen,
+            "candidates": self._with_selection_commands(others[:4]),
+        }
 
     def _prewarm_symbol(
         self,
@@ -1328,6 +1446,7 @@ class Workspace:
         lexical_paths: tuple[str, ...] = (),
         lexical_globs: tuple[str, ...] = (),
         lexical_exclude_tests: bool = False,
+        semantic_paths: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         file_target = self._file_target(target)
         if file_target is not None:
@@ -1350,7 +1469,7 @@ class Workspace:
                 )
             return data
 
-        resolved = self.resolve(target)
+        resolved = self.resolve(target, semantic_paths=semantic_paths)
         if resolved["status"] != "ok":
             return resolved
         symbol = resolved["symbol"]

@@ -141,10 +141,10 @@ def _request_daemon_shutdown(endpoint: SocketEndpoint) -> bool:
     try:
         client.settimeout(1.0)
         with client:
-            file = client.makefile("rwb")
-            file.write((json.dumps({"command": "_shutdown"}) + "\n").encode("utf-8"))
-            file.flush()
-            line = file.readline()
+            with client.makefile("rwb") as file:
+                file.write((json.dumps({"command": "_shutdown"}) + "\n").encode("utf-8"))
+                file.flush()
+                line = file.readline()
         if not line:
             return False
         response = json.loads(line)
@@ -188,10 +188,10 @@ def _request(payload: dict[str, Any], timeout: float, *, _allow_restart: bool = 
     }
     client.settimeout(timeout)
     with client:
-        file = client.makefile("rwb")
-        file.write((json.dumps(wire_payload, ensure_ascii=False) + "\n").encode("utf-8"))
-        file.flush()
-        line = file.readline()
+        with client.makefile("rwb") as file:
+            file.write((json.dumps(wire_payload, ensure_ascii=False) + "\n").encode("utf-8"))
+            file.flush()
+            line = file.readline()
     if not line:
         raise RuntimeError("codeq daemon closed connection without a response")
     response = json.loads(line)
@@ -279,6 +279,8 @@ def _render_resolution(data: dict[str, Any]) -> bool:
         for item in data.get("candidates", []):
             container = f"{item.get('container')}." if item.get("container") else ""
             print(f"  {item.get('kind')} {container}{item.get('name')}  {compact_location(item)}", file=sys.stderr)
+            if item.get("selection_command"):
+                print(f"    try: {item['selection_command']}", file=sys.stderr)
         return False
     print(data.get("reason") or data.get("error") or f"Target not found: {data.get('target')}", file=sys.stderr)
     return False
@@ -611,6 +613,9 @@ natural-language description. For concept searches, use vocabulary likely to occ
 in the repository's source/comments (usually the source language); codeq does not
 translate queries between natural languages.
 
+In semantic mode, repeat `--path` to restrict candidates to repository-relative path
+prefixes. In text mode, the same option restricts exact-text matches.
+
 With `--text`, QUERY is an exact literal searched across Git-visible working-tree
 text: tracked files plus untracked files that are not ignored. Text mode is
 intentionally non-semantic and supports optional path/glob/test filtering.
@@ -619,6 +624,7 @@ intentionally non-semantic and supports optional path/glob/test filtering.
 Examples:
   codeq find BacktestService
   codeq find BacktestService --kind class
+  codeq find Candidate --kind class --path packages/research-core
   codeq find 'report summary freshness policy evidence' --limit 8
   codeq find --text 'BACKTEST_QUESTDB_QUERY_TARGET_ROWS' --limit 20
   codeq find --text '/logs/stream' --path frontend --exclude-tests
@@ -647,11 +653,11 @@ Typical next step:
     )
     find.add_argument(
         "--path",
-        dest="text_paths",
+        dest="paths",
         action="append",
         default=[],
         metavar="PREFIX",
-        help="Text mode only: repository-relative path prefix; repeat for OR matching.",
+        help="Repository-relative path prefix for semantic or text results; repeat for OR matching.",
     )
     find.add_argument(
         "--glob",
@@ -691,10 +697,16 @@ the exact repository definition under the cursor when available and also returns
 small request-site snippet; it falls back to enclosing context when no definition is
 available. Explicit paths are exact: missing files return not_found, and unsupported
 languages return unsupported_language rather than falling back to symbol search.
+
+For a symbolic target, `--path` restricts semantic resolution to repository-relative
+path prefixes. With `--lexical-references`, `--path` keeps its existing meaning and
+scopes the attached exact-text search; use `--symbol-path` to scope the symbol too.
 """,
         epilog="""\
 Examples:
   codeq context BacktestService.stream_backtest_logs
+  codeq context validate_discovery_plan --path packages/research-core/src
+  codeq context auto_research_core.domain.models.Candidate
   codeq context backend/src/app/services/backtest_service.py:684
   codeq context backend/src/app/services/backtest_service.py
   codeq context backend/src/app/services/backtest_service.py --container BacktestService
@@ -750,11 +762,19 @@ more than the direct callers/callees, continue with `codeq trace`.
     )
     context.add_argument(
         "--path",
-        dest="lexical_paths",
+        dest="paths",
         action="append",
         default=[],
         metavar="PREFIX",
-        help="Lexical-reference mode only: repository-relative path prefix; repeat for OR matching.",
+        help="Symbol path prefix, or lexical path prefix with --lexical-references; repeat for OR matching.",
+    )
+    context.add_argument(
+        "--symbol-path",
+        dest="semantic_paths",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help="Always restrict symbolic target resolution; useful together with --lexical-references.",
     )
     context.add_argument(
         "--glob",
@@ -911,11 +931,11 @@ def main(argv: list[str] | None = None) -> None:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(_normalize_global_options(raw_argv))
     if args.command == "find":
-        if (args.text_paths or args.text_globs or args.text_exclude_tests) and not args.text:
-            parser.error("--path/--glob/--exclude-tests require find --text")
+        if (args.text_globs or args.text_exclude_tests) and not args.text:
+            parser.error("--glob/--exclude-tests require find --text; --path also supports semantic find")
     elif args.command == "context":
-        if (args.lexical_paths or args.lexical_globs or args.lexical_exclude_tests) and args.lexical_references is None:
-            parser.error("--path/--glob/--exclude-tests require --lexical-references")
+        if (args.lexical_globs or args.lexical_exclude_tests) and args.lexical_references is None:
+            parser.error("--glob/--exclude-tests require --lexical-references; --path also scopes symbol resolution")
     root = git_root(args.root)
     payload: dict[str, Any] = {
         "command": args.command,
@@ -927,10 +947,13 @@ def main(argv: list[str] | None = None) -> None:
         payload["query"] = args.query
         payload["kind"] = args.kind
         payload["text"] = args.text
-        payload["text_paths"] = args.text_paths
+        payload["text_paths"] = args.paths if args.text else []
         payload["text_globs"] = args.text_globs
         payload["text_exclude_tests"] = args.text_exclude_tests
+        payload["semantic_paths"] = [] if args.text else args.paths
     elif args.command == "context":
+        lexical_mode = args.lexical_references is not None
+        semantic_paths = [*args.semantic_paths, *([] if lexical_mode else args.paths)]
         payload.update(
             target=args.target,
             outline_depth=max(0, args.outline_depth),
@@ -939,9 +962,10 @@ def main(argv: list[str] | None = None) -> None:
             include_topology=args.topology,
             lexical_references=args.lexical_references is not None,
             lexical_query=args.lexical_references or None,
-            lexical_paths=args.lexical_paths,
+            lexical_paths=args.paths if lexical_mode else [],
             lexical_globs=args.lexical_globs,
             lexical_exclude_tests=args.lexical_exclude_tests,
+            semantic_paths=semantic_paths,
         )
     elif args.command == "trace":
         payload.update(

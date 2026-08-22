@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from codeq import DAEMON_PROTOCOL_VERSION
 from codeq.cli import _peer_is_trusted, _restart_stale_daemon, _spawn_daemon
 from codeq.daemon import SocketEndpoint, _serve_connection, _trusted_peer, default_socket_endpoint
 from codeq.lsp import _lsp_environment
@@ -28,8 +29,8 @@ class RuntimeStateTests(unittest.TestCase):
         ):
             endpoint = default_socket_endpoint()
         self.assertTrue(endpoint.is_abstract)
-        self.assertEqual(endpoint.value, f"codeq-{os.getuid()}-p2")
-        self.assertEqual(endpoint.address, f"\x00codeq-{os.getuid()}-p2")
+        self.assertEqual(endpoint.value, f"codeq-{os.getuid()}-p{DAEMON_PROTOCOL_VERSION}")
+        self.assertEqual(endpoint.address, f"\x00codeq-{os.getuid()}-p{DAEMON_PROTOCOL_VERSION}")
         prepare.assert_not_called()
 
     def test_explicit_runtime_dir_forces_filesystem_socket_and_is_private(self) -> None:

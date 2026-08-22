@@ -117,6 +117,7 @@ class CodeqService:
                     text_paths=tuple(str(value) for value in (request.get("text_paths") or [])),
                     text_globs=tuple(str(value) for value in (request.get("text_globs") or [])),
                     text_exclude_tests=bool(request.get("text_exclude_tests")),
+                    semantic_paths=tuple(str(value) for value in (request.get("semantic_paths") or [])),
                 )
             elif command == "context":
                 data = ws.context(
@@ -131,6 +132,7 @@ class CodeqService:
                     lexical_paths=tuple(str(value) for value in (request.get("lexical_paths") or [])),
                     lexical_globs=tuple(str(value) for value in (request.get("lexical_globs") or [])),
                     lexical_exclude_tests=bool(request.get("lexical_exclude_tests")),
+                    semantic_paths=tuple(str(value) for value in (request.get("semantic_paths") or [])),
                 )
             elif command == "trace":
                 raw_depth = request.get("depth")

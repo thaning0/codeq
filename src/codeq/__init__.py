@@ -2,4 +2,4 @@
 
 __version__ = "1.0.0rc5"
 
-DAEMON_PROTOCOL_VERSION = 2
+DAEMON_PROTOCOL_VERSION = 3

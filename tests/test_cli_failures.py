@@ -127,15 +127,101 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertTrue(captured["lexical_references"])
         self.assertEqual(captured["lexical_query"], "/logs/stream")
         self.assertEqual(captured["lexical_paths"], ["frontend"])
+        self.assertEqual(captured["semantic_paths"], [])
         self.assertEqual(captured["lexical_globs"], ["*.ts"])
         self.assertTrue(captured["lexical_exclude_tests"])
 
-    def test_text_filters_require_text_mode(self) -> None:
+    def test_find_semantic_path_reaches_request_payload(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "ok", "query": "KEY", "results": [], "result_count": 0, "total_candidates": 0, "errors": []}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main(["find", "KEY", "--path", "frontend", "--json"])
+        self.assertEqual(captured["semantic_paths"], ["frontend"])
+        self.assertEqual(captured["text_paths"], [])
+
+    def test_text_only_filters_still_require_text_mode(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
-            main(["find", "KEY", "--path", "frontend"])
+            main(["find", "KEY", "--glob", "*.ts"])
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("require find --text", stderr.getvalue())
+
+    def test_context_semantic_path_reaches_request_payload(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "ok"}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main(["context", "Foo.run", "--path", "backend", "--json"])
+        self.assertEqual(captured["semantic_paths"], ["backend"])
+        self.assertEqual(captured["lexical_paths"], [])
+
+    def test_symbol_path_and_lexical_path_can_be_combined(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "ok"}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main([
+                "context",
+                "Foo.run",
+                "--symbol-path",
+                "backend",
+                "--lexical-references",
+                "KEY",
+                "--path",
+                "frontend",
+                "--json",
+            ])
+        self.assertEqual(captured["semantic_paths"], ["backend"])
+        self.assertEqual(captured["lexical_paths"], ["frontend"])
+
+    def test_ambiguous_plain_output_contains_copyable_selection_commands(self) -> None:
+        result = {
+            "status": "ambiguous",
+            "target": "Thing",
+            "candidates": [
+                {
+                    "name": "Thing",
+                    "kind": "Class",
+                    "container": "",
+                    "path": "/repo/src/model.py",
+                    "line": 4,
+                    "column": 7,
+                    "selection_command": "codeq context src/model.py:4:7",
+                }
+            ],
+        }
+        stderr = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stderr(stderr),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main(["context", "Thing"])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("try: codeq context src/model.py:4:7", stderr.getvalue())
 
     def test_lexical_filters_require_lexical_reference_mode(self) -> None:
         stderr = io.StringIO()

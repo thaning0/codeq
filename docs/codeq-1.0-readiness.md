@@ -103,7 +103,10 @@ Evidence classes must remain separated. A lexical match must never become an aut
 ### Target-resolution contract
 
 - Path-like input is exact and fail-closed; it never falls through to fuzzy symbol search.
-- Qualified symbols are fail-closed; an unverified container/member relation never degrades to an unrelated same-named symbol.
+- Qualified symbols are fail-closed; an unverified semantic suffix or module/file
+  suffix never degrades to an unrelated same-named symbol.
+- Semantic `find` and symbolic `context` path constraints filter before target
+  selection; ambiguous candidates include copyable exact-location commands.
 - `PATH:LINE` means enclosing semantic context.
 - `PATH:LINE:COLUMN` prefers the exact cursor definition and preserves `requested_location` plus a request-site snippet.
 
