@@ -159,8 +159,8 @@ class CorrectnessGuardTests(unittest.TestCase):
                     patch.object(workspace, "_exact_document_candidates", return_value=[candidate(first), candidate(second)]),
                 ):
                     unscoped = workspace.resolve("Thing")
-                    root_scoped = workspace.find("Thing", semantic_paths=(".",))
-                    scoped_find = workspace.find("Thing", semantic_paths=("packages/two",))
+                    root_scoped = workspace.find("Thing", paths=(".",))
+                    scoped_find = workspace.find("Thing", paths=("packages/two",))
                     scoped = workspace.resolve("Thing", semantic_paths=("packages/two",))
             finally:
                 workspace.close()
@@ -171,6 +171,57 @@ class CorrectnessGuardTests(unittest.TestCase):
             self.assertEqual(scoped_find["paths"], ["packages/two"])
             self.assertEqual(scoped["status"], "ok")
             self.assertEqual(scoped["symbol"]["path"], str(second.resolve()))
+
+    def test_semantic_find_applies_path_glob_and_test_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "packages/core/src/guard.py"
+            test = root / "packages/core/tests/test_guard.py"
+            typescript = root / "packages/core/src/guard.ts"
+            outside = root / "packages/other/src/guard.py"
+            for path in (source, test, typescript, outside):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("class Guard:\n    pass\n", encoding="utf-8")
+
+            def candidate(path: Path) -> dict[str, object]:
+                return {
+                    "name": "Guard",
+                    "kind": "Class",
+                    "container": "",
+                    "path": str(path.resolve()),
+                    "line": 1,
+                    "column": 7,
+                    "source": "lsp",
+                    "origin": "document",
+                }
+
+            workspace = Workspace(root)
+            try:
+                with (
+                    patch("codeq.workspace.lexical_hits", return_value=[]),
+                    patch.object(
+                        workspace,
+                        "_exact_document_candidates",
+                        return_value=[candidate(source), candidate(test), candidate(typescript), candidate(outside)],
+                    ),
+                ):
+                    result = workspace.find(
+                        "Guard",
+                        paths=("packages/core",),
+                        globs=("*.py",),
+                        exclude_tests=True,
+                    )
+            finally:
+                workspace.close()
+
+            self.assertEqual(result["result_count"], 1)
+            self.assertEqual(result["total_candidates"], 1)
+            self.assertEqual(result["results"][0]["path"], str(source.resolve()))
+            self.assertEqual(result["filters"], {
+                "paths": ["packages/core"],
+                "globs": ["*.py"],
+                "exclude_tests": True,
+            })
 
     def test_exact_definition_scan_is_not_displaced_by_many_references(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

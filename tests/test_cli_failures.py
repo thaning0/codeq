@@ -96,9 +96,9 @@ class CliFailureContractTests(unittest.TestCase):
         ):
             main(["find", "KEY", "--text", "--path", "frontend", "--glob", "*.ts", "--exclude-tests", "--json"])
         self.assertTrue(captured["text"])
-        self.assertEqual(captured["text_paths"], ["frontend"])
-        self.assertEqual(captured["text_globs"], ["*.ts"])
-        self.assertTrue(captured["text_exclude_tests"])
+        self.assertEqual(captured["paths"], ["frontend"])
+        self.assertEqual(captured["globs"], ["*.ts"])
+        self.assertTrue(captured["exclude_tests"])
 
     def test_context_lexical_override_reaches_request_payload(self) -> None:
         captured: dict[str, object] = {}
@@ -131,7 +131,34 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(captured["lexical_globs"], ["*.ts"])
         self.assertTrue(captured["lexical_exclude_tests"])
 
-    def test_find_semantic_path_reaches_request_payload(self) -> None:
+    def test_find_semantic_scope_reaches_request_payload(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "ok", "query": "KEY", "results": [], "result_count": 0, "total_candidates": 0, "errors": []}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main([
+                "find",
+                "architecture guard",
+                "--path",
+                "packages",
+                "--glob",
+                "*.py",
+                "--exclude-tests",
+                "--json",
+            ])
+        self.assertFalse(captured["text"])
+        self.assertEqual(captured["paths"], ["packages"])
+        self.assertEqual(captured["globs"], ["*.py"])
+        self.assertTrue(captured["exclude_tests"])
+
+    def test_find_semantic_path_keeps_empty_optional_filters(self) -> None:
         captured: dict[str, object] = {}
 
         def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
@@ -144,15 +171,9 @@ class CliFailureContractTests(unittest.TestCase):
             redirect_stdout(io.StringIO()),
         ):
             main(["find", "KEY", "--path", "frontend", "--json"])
-        self.assertEqual(captured["semantic_paths"], ["frontend"])
-        self.assertEqual(captured["text_paths"], [])
-
-    def test_text_only_filters_still_require_text_mode(self) -> None:
-        stderr = io.StringIO()
-        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
-            main(["find", "KEY", "--glob", "*.ts"])
-        self.assertEqual(raised.exception.code, 2)
-        self.assertIn("require find --text", stderr.getvalue())
+        self.assertEqual(captured["paths"], ["frontend"])
+        self.assertEqual(captured["globs"], [])
+        self.assertFalse(captured["exclude_tests"])
 
     def test_context_semantic_path_reaches_request_payload(self) -> None:
         captured: dict[str, object] = {}

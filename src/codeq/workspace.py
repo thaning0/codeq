@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 import shlex
@@ -382,6 +383,31 @@ class Workspace:
                 return True
         return False
 
+    def _matches_find_scope(
+        self,
+        path: str | Path,
+        *,
+        paths: tuple[str, ...],
+        globs: tuple[str, ...],
+        exclude_tests: bool,
+    ) -> bool:
+        candidate = Path(path).resolve()
+        if exclude_tests and is_test_path(candidate):
+            return False
+        if not self._matches_path_prefixes(candidate, paths):
+            return False
+        if not globs:
+            return True
+        try:
+            relative = candidate.relative_to(self.root).as_posix()
+        except ValueError:
+            return False
+        return any(
+            fnmatch.fnmatchcase(relative, pattern)
+            or fnmatch.fnmatchcase(candidate.name, pattern)
+            for pattern in globs
+        )
+
     def _selection_command(self, item: dict[str, Any]) -> str:
         path = Path(str(item.get("path") or "")).resolve()
         try:
@@ -417,7 +443,13 @@ class Workspace:
                 selected.add(project)
         return sorted(selected or set(self.projects), key=lambda p: (p.family, str(p.root)))
 
-    def _exact_document_candidates(self, name: str, *, limit: int = 80) -> list[dict[str, Any]]:
+    def _exact_document_candidates(
+        self,
+        name: str,
+        *,
+        limit: int = 80,
+        path_filter: Callable[[Path], bool] | None = None,
+    ) -> list[dict[str, Any]]:
         """Map exact declaration-looking hits back to LSP document symbols.
 
         This bypasses workspace/symbol indexing for cold-start correctness while
@@ -425,7 +457,7 @@ class Workspace:
         """
         out: list[dict[str, Any]] = []
         seen: set[tuple[str, int, str]] = set()
-        for hit in exact_definition_hits(self.root, name, limit=limit):
+        for hit in exact_definition_hits(self.root, name, limit=limit, path_filter=path_filter):
             path = Path(hit["path"])
             project = self.project_for_path(path)
             if project is None:
@@ -460,19 +492,28 @@ class Workspace:
         kind: str | None = None,
         *,
         text: bool = False,
-        text_paths: tuple[str, ...] = (),
-        text_globs: tuple[str, ...] = (),
-        text_exclude_tests: bool = False,
-        semantic_paths: tuple[str, ...] = (),
+        paths: tuple[str, ...] = (),
+        globs: tuple[str, ...] = (),
+        exclude_tests: bool = False,
     ) -> dict[str, Any]:
+        path_filters = tuple(value for value in paths if value.strip())
+        glob_filters = tuple(value for value in globs if value.strip())
         if text:
             return git_text_search(
                 self.root,
                 query,
                 limit=limit,
-                paths=text_paths,
-                globs=text_globs,
-                exclude_tests=text_exclude_tests,
+                paths=path_filters,
+                globs=glob_filters,
+                exclude_tests=exclude_tests,
+            )
+
+        def in_scope(path: str | Path) -> bool:
+            return self._matches_find_scope(
+                path,
+                paths=path_filters,
+                globs=glob_filters,
+                exclude_tests=exclude_tests,
             )
 
         reference = self._path_reference(query)
@@ -516,11 +557,12 @@ class Workspace:
                 "reason": "use `codeq context FILE` for a source-file target",
             }
 
-        hits = [
-            hit
-            for hit in lexical_hits(self.root, query, limit=max(80, limit * 8))
-            if self._matches_path_prefixes(hit["path"], semantic_paths)
-        ]
+        hits = lexical_hits(
+            self.root,
+            query,
+            limit=max(80, limit * 8),
+            path_filter=in_scope,
+        )
         projects = self._candidate_projects(hits)
         tokens = identifier_tokens(query)
         search_terms = tokens[:3] or [query]
@@ -532,8 +574,12 @@ class Workspace:
         if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", query.strip()):
             results.extend(
                 item
-                for item in self._exact_document_candidates(query.strip(), limit=max(40, limit * 4))
-                if self._matches_path_prefixes(item["path"], semantic_paths)
+                for item in self._exact_document_candidates(
+                    query.strip(),
+                    limit=max(40, limit * 4),
+                    path_filter=in_scope,
+                )
+                if in_scope(item["path"])
             )
 
         def search_project(project: Project) -> tuple[list[dict[str, Any]], str | None]:
@@ -569,7 +615,7 @@ class Workspace:
                         raise
                     for item in items:
                         entry = _workspace_symbol_entry(item)
-                        if not entry or not self._matches_path_prefixes(entry["path"], semantic_paths):
+                        if not entry or not in_scope(entry["path"]):
                             continue
                         key = (entry["path"], entry["name"], entry["line"])
                         if key in seen:
@@ -700,10 +746,7 @@ class Workspace:
             ),
         )
         ordered = [item for item in ordered if self._is_repo_path(item["path"])]
-        ordered = [
-            item for item in ordered
-            if self._matches_path_prefixes(item["path"], semantic_paths)
-        ]
+        ordered = [item for item in ordered if in_scope(item["path"])]
         if kind:
             requested = kind.strip().lower()
             if requested == "function":
@@ -721,7 +764,12 @@ class Workspace:
             "status": "ok",
             "query": query,
             "kind": kind,
-            "paths": list(semantic_paths),
+            "paths": list(path_filters),
+            "filters": {
+                "paths": list(path_filters),
+                "globs": list(glob_filters),
+                "exclude_tests": exclude_tests,
+            },
             "results": returned,
             "result_count": min(len(ordered), limit),
             "total_candidates": len(ordered),
@@ -1036,7 +1084,7 @@ class Workspace:
                 "candidates": [],
             }
 
-        found = self.find(target, limit=12, semantic_paths=semantic_paths)
+        found = self.find(target, limit=12, paths=semantic_paths)
         candidates = [r for r in found["results"] if r.get("source") == "lsp"] or found["results"]
         if not candidates:
             return {"status": "not_found", "target": target, "candidates": []}

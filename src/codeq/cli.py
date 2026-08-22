@@ -613,8 +613,8 @@ natural-language description. For concept searches, use vocabulary likely to occ
 in the repository's source/comments (usually the source language); codeq does not
 translate queries between natural languages.
 
-In semantic mode, repeat `--path` to restrict candidates to repository-relative path
-prefixes. In text mode, the same option restricts exact-text matches.
+`--path`, `--glob`, and `--exclude-tests` scope the candidate files in either mode.
+Repeat path and glob filters for OR matching within each filter type.
 
 With `--text`, QUERY is an exact literal searched across Git-visible working-tree
 text: tracked files plus untracked files that are not ignored. Text mode is
@@ -625,6 +625,7 @@ Examples:
   codeq find BacktestService
   codeq find BacktestService --kind class
   codeq find Candidate --kind class --path packages/research-core
+  codeq find 'architecture guard' --path packages --glob '*.py' --exclude-tests
   codeq find 'report summary freshness policy evidence' --limit 8
   codeq find --text 'BACKTEST_QUESTDB_QUERY_TARGET_ROWS' --limit 20
   codeq find --text '/logs/stream' --path frontend --exclude-tests
@@ -661,17 +662,17 @@ Typical next step:
     )
     find.add_argument(
         "--glob",
-        dest="text_globs",
+        dest="globs",
         action="append",
         default=[],
         metavar="PATTERN",
-        help="Text mode only: shell-style path glob; repeat for OR matching.",
+        help="Shell-style path glob for semantic or text results; repeat for OR matching.",
     )
     find.add_argument(
         "--exclude-tests",
-        dest="text_exclude_tests",
+        dest="exclude_tests",
         action="store_true",
-        help="Text mode only: exclude test paths from results and counts.",
+        help="Exclude test paths from semantic or text results and counts.",
     )
 
     context = sub.add_parser(
@@ -930,10 +931,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(_normalize_global_options(raw_argv))
-    if args.command == "find":
-        if (args.text_globs or args.text_exclude_tests) and not args.text:
-            parser.error("--glob/--exclude-tests require find --text; --path also supports semantic find")
-    elif args.command == "context":
+    if args.command == "context":
         if (args.lexical_globs or args.lexical_exclude_tests) and args.lexical_references is None:
             parser.error("--glob/--exclude-tests require --lexical-references; --path also scopes symbol resolution")
     root = git_root(args.root)
@@ -947,10 +945,9 @@ def main(argv: list[str] | None = None) -> None:
         payload["query"] = args.query
         payload["kind"] = args.kind
         payload["text"] = args.text
-        payload["text_paths"] = args.paths if args.text else []
-        payload["text_globs"] = args.text_globs
-        payload["text_exclude_tests"] = args.text_exclude_tests
-        payload["semantic_paths"] = [] if args.text else args.paths
+        payload["paths"] = args.paths
+        payload["globs"] = args.globs
+        payload["exclude_tests"] = args.exclude_tests
     elif args.command == "context":
         lexical_mode = args.lexical_references is not None
         semantic_paths = [*args.semantic_paths, *([] if lexical_mode else args.paths)]

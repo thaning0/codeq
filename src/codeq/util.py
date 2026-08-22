@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, unquote, urlparse
 
 
@@ -280,7 +280,13 @@ def run_json_lines(cmd: list[str], cwd: str | Path, timeout: float = 10.0) -> li
     return out
 
 
-def exact_definition_hits(root: str | Path, name: str, limit: int = 80) -> list[dict[str, Any]]:
+def exact_definition_hits(
+    root: str | Path,
+    name: str,
+    limit: int = 80,
+    *,
+    path_filter: Callable[[Path], bool] | None = None,
+) -> list[dict[str, Any]]:
     """Find declaration-looking lines for one exact identifier.
 
     This is a cold-start safety primitive, not a semantic authority: callers map
@@ -318,6 +324,8 @@ def exact_definition_hits(root: str | Path, name: str, limit: int = 80) -> list[
         if not rel or not line:
             continue
         path = (Path(root) / rel).resolve()
+        if path_filter is not None and not path_filter(path):
+            continue
         text = data.get("lines", {}).get("text", "").rstrip()
         hits.append(loc(path, int(line), 1, source="exact_definition", text=text))
         if len(hits) >= limit:
@@ -325,7 +333,13 @@ def exact_definition_hits(root: str | Path, name: str, limit: int = 80) -> list[
     return hits
 
 
-def lexical_hits(root: str | Path, query: str, limit: int = 40) -> list[dict[str, Any]]:
+def lexical_hits(
+    root: str | Path,
+    query: str,
+    limit: int = 40,
+    *,
+    path_filter: Callable[[Path], bool] | None = None,
+) -> list[dict[str, Any]]:
     tokens = identifier_tokens(query)
     if not tokens:
         return []
@@ -356,6 +370,8 @@ def lexical_hits(root: str | Path, query: str, limit: int = 40) -> list[dict[str
         if not rel or not line:
             continue
         path = (Path(root) / rel).resolve()
+        if path_filter is not None and not path_filter(path):
+            continue
         text = data.get("lines", {}).get("text", "").rstrip()
         lowered = text.lower()
         coverage = sum(1 for token in token_lowers if token in lowered)

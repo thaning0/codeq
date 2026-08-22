@@ -4,7 +4,7 @@ Validated on 2026-08-22 against the real `~/Quant` repository using the installe
 
 ## Release gates
 
-- `uv run python -W error -m unittest discover -s tests`: **107/107 pass**
+- `uv run python -W error -m unittest discover -s tests`: **108/108 pass**
 - `basedpyright --level error src/codeq tests`: **0 errors, 0 warnings**
 - `uv build`: **sdist + wheel pass**
 - `git diff --check`: **pass**
@@ -41,6 +41,15 @@ Module-qualified resolution requires both the semantic suffix and module/file
 suffix to match; a wrong module qualifier returns `not_found` rather than falling
 back to the same-named declaration elsewhere. Daemon protocol version 3 separates
 this request contract from already-running older daemons.
+
+`find` scoping is now mode-independent: `--text` selects exact rather than semantic
+matching, while `--path`, `--glob`, and `--exclude-tests` filter candidate files in
+both modes. The historical agent command
+`codeq find 'architecture guard' --path packages --exclude-tests` now completes as
+a semantic query instead of failing argument validation. Semantic and text command-
+level probes both returned the requested filter metadata; excluded-test text search
+reported zero test lines. Daemon protocol version 4 prevents an older background
+process from silently ignoring the unified request fields.
 
 ## Correctness blockers from the 0.2.1 evaluation
 

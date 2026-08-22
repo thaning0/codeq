@@ -39,10 +39,9 @@ class _FakeWorkspace:
         kind: str | None = None,
         *,
         text: bool = False,
-        text_paths: tuple[str, ...] = (),
-        text_globs: tuple[str, ...] = (),
-        text_exclude_tests: bool = False,
-        semantic_paths: tuple[str, ...] = (),
+        paths: tuple[str, ...] = (),
+        globs: tuple[str, ...] = (),
+        exclude_tests: bool = False,
     ):
         return {
             "query": query,
@@ -51,10 +50,9 @@ class _FakeWorkspace:
             "total_candidates": 0,
             "errors": [],
             "text_seen": text,
-            "text_paths_seen": text_paths,
-            "text_globs_seen": text_globs,
-            "text_exclude_tests_seen": text_exclude_tests,
-            "semantic_paths_seen": semantic_paths,
+            "paths_seen": paths,
+            "globs_seen": globs,
+            "exclude_tests_seen": exclude_tests,
         }
 
     def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100):
@@ -83,7 +81,7 @@ class ServiceLifecycleTests(unittest.TestCase):
             self.assertTrue(bool(getattr(workspace, "closed", False)))
             self.assertEqual(service.workspace_count(), 0)
 
-    def test_text_filters_reach_workspace(self) -> None:
+    def test_text_scope_reaches_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
             service = CodeqService()
             result = service.handle({
@@ -91,25 +89,30 @@ class ServiceLifecycleTests(unittest.TestCase):
                 "root": tmp,
                 "query": "TOKEN",
                 "text": True,
-                "text_paths": ["frontend", "quant-cli/src"],
-                "text_globs": ["*.ts"],
-                "text_exclude_tests": True,
+                "paths": ["frontend", "quant-cli/src"],
+                "globs": ["*.ts"],
+                "exclude_tests": True,
             })
             self.assertTrue(result["text_seen"])
-            self.assertEqual(result["text_paths_seen"], ("frontend", "quant-cli/src"))
-            self.assertEqual(result["text_globs_seen"], ("*.ts",))
-            self.assertTrue(result["text_exclude_tests_seen"])
+            self.assertEqual(result["paths_seen"], ("frontend", "quant-cli/src"))
+            self.assertEqual(result["globs_seen"], ("*.ts",))
+            self.assertTrue(result["exclude_tests_seen"])
 
-    def test_semantic_paths_reach_workspace(self) -> None:
+    def test_semantic_scope_reaches_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
             service = CodeqService()
             result = service.handle({
                 "command": "find",
                 "root": tmp,
                 "query": "Candidate",
-                "semantic_paths": ["packages/research-core"],
+                "paths": ["packages/research-core"],
+                "globs": ["*.py"],
+                "exclude_tests": True,
             })
-            self.assertEqual(result["semantic_paths_seen"], ("packages/research-core",))
+            self.assertFalse(result["text_seen"])
+            self.assertEqual(result["paths_seen"], ("packages/research-core",))
+            self.assertEqual(result["globs_seen"], ("*.py",))
+            self.assertTrue(result["exclude_tests_seen"])
 
     def test_trace_node_limit_is_not_raised_by_global_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):

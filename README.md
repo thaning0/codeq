@@ -108,10 +108,13 @@ codeq find RetryPolicy
 codeq find 'request retry policy' --limit 8
 codeq find RetryPolicy --kind class
 codeq find Candidate --kind class --path packages/research-core
+codeq find 'architecture guard' --path packages --glob '*.py' --exclude-tests
 ```
 
-In semantic mode, repeat `--path` to restrict candidates to repository-relative
-path prefixes. This is useful when the same symbol name exists in multiple packages.
+By default, `find` matches symbols and source concepts semantically. `--text` changes
+only the matching strategy to exact literal search. `--path`, `--glob`, and
+`--exclude-tests` scope candidate files in either mode; repeat path and glob filters
+for OR matching within each filter type.
 
 Exact working-tree text search:
 
@@ -121,7 +124,7 @@ codeq find --text '/api/orders' --path frontend --exclude-tests
 codeq find --text 'DEPLOYMENTS' --glob '*.py' --glob '*.yaml'
 ```
 
-Text mode searches **tracked plus non-ignored untracked files**, so newly created YAML, Shell, SQL, and configuration files are visible before `git add`. `--path` and `--glob` are repeatable filters; `--exclude-tests` removes test paths from both results and counts.
+Text mode searches **tracked plus non-ignored untracked files**, so newly created YAML, Shell, SQL, and configuration files are visible before `git add`. `--exclude-tests` removes test paths from both results and counts.
 
 ### `context` — inspect one semantic neighborhood
 
