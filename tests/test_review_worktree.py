@@ -6,7 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from codeq.gitdiff import git_changed_files, git_merge_base, git_untracked_files, whole_file_range
+from codeq.gitdiff import (
+    git_changed_files,
+    git_merge_base,
+    git_resolve_commit,
+    git_untracked_files,
+    whole_file_range,
+)
 from codeq.workspace import Workspace
 
 
@@ -89,6 +95,25 @@ class ReviewWorktreeTests(unittest.TestCase):
             self.assertEqual(review["resolved_base"], merge_base)
             review_names = {Path(item["path"]).name for item in review["file_changes"]}
             self.assertEqual(review_names, {"feature.py"})
+
+    def test_unresolved_review_base_suggests_nearby_refs_and_portable_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init(root)
+            (root / "base.txt").write_text("base\n", encoding="utf-8")
+            self._git(root, "add", ".")
+            self._git(root, "commit", "-qm", "base")
+            self._git(root, "branch", "-M", "master")
+            self._git(root, "update-ref", "refs/remotes/origin/master", "HEAD")
+
+            with self.assertRaisesRegex(RuntimeError, "cannot resolve Git ref 'origin/main'") as raised:
+                git_resolve_commit(root, "origin/main")
+            message = str(raised.exception)
+            self.assertIn("origin/master", message)
+            self.assertIn("HEAD~1", message)
+
+            with self.assertRaisesRegex(RuntimeError, "cannot resolve Git ref 'origin/main'"):
+                git_merge_base(root, "origin/main")
 
 
 if __name__ == "__main__":

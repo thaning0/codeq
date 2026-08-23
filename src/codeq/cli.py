@@ -228,6 +228,9 @@ def _query_exit_code(data: dict[str, Any]) -> int:
 
 def _render_find(data: dict[str, Any]) -> None:
     if data.get("status") and data.get("status") != "ok":
+        if data.get("status") == "ambiguous":
+            _render_resolution(data)
+            return
         print(data.get("reason") or data.get("error") or "find failed", file=sys.stderr)
         return
     if data.get("mode") == "text":
@@ -544,18 +547,21 @@ Common agent loop:
   codeq find 'backtest log streaming' --limit 8
   codeq context BacktestService.stream_backtest_logs
   codeq trace BacktestService.stream_backtest_logs --in --depth 2
-  codeq review --base origin/main
+  codeq review --base HEAD~1
 
 Targets accepted by context/trace:
   Qualified symbol       BacktestService.stream_backtest_logs
   Bare symbol            fetchBars
+  Python module (context) auto_research_core.domain.models
   Source location        backend/src/app/services/backtest_service.py:684
   Source location+column backend/src/app/services/backtest_service.py:684:9
   Source file (context)  backend/src/app/services/backtest_service.py
+  Unique basename (context) backtest_service.py
 
 Agent notes:
   * Prefer qualified symbols when known; qualified resolution is fail-closed.
-  * Explicit path targets are exact; missing files fail closed with status not_found.
+  * Paths containing a separator are exact; missing files fail closed with status not_found.
+  * A bare source basename resolves only when exactly one Git-visible file matches.
   * Existing unsupported source files return unsupported_language instead of fuzzy matches.
   * Query failures exit 1; runtime/tool failures exit 2.
   * Default output is compact plain text with no ANSI colors.
@@ -696,8 +702,10 @@ add --topology only when you need imports/importers.
 PATH:LINE keeps the enclosing function/method/type. PATH:LINE:COLUMN first follows
 the exact repository definition under the cursor when available and also returns a
 small request-site snippet; it falls back to enclosing context when no definition is
-available. Explicit paths are exact: missing files return not_found, and unsupported
-languages return unsupported_language rather than falling back to symbol search.
+available. Paths containing a separator are exact: missing files return not_found,
+and unsupported languages return unsupported_language rather than falling back to
+symbol search. A bare source basename or dotted Python module resolves as a file
+only when its Git-visible match is unique; ambiguous matches return exact commands.
 
 For a symbolic target, `--path` restricts semantic resolution to repository-relative
 path prefixes. With `--lexical-references`, `--path` keeps its existing meaning and
@@ -708,6 +716,8 @@ Examples:
   codeq context BacktestService.stream_backtest_logs
   codeq context validate_discovery_plan --path packages/research-core/src
   codeq context auto_research_core.domain.models.Candidate
+  codeq context auto_research_core.application.research_governance
+  codeq context research_projection.py
   codeq context backend/src/app/services/backtest_service.py:684
   codeq context backend/src/app/services/backtest_service.py
   codeq context backend/src/app/services/backtest_service.py --container BacktestService
@@ -869,7 +879,7 @@ files remain excluded according to Git ignore rules.
         epilog="""\
 Examples:
   codeq review --base HEAD~1
-  codeq review --base origin/main --merge-base
+  codeq review --base origin/HEAD --merge-base
   codeq review --base master --merge-base --limit 15 --json
 
 Use --merge-base for PR/feature-branch review: codeq resolves `git merge-base BASE

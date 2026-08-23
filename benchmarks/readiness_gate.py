@@ -8,6 +8,11 @@ from typing import Any
 from codeq import __version__
 
 
+def default_output_paths() -> tuple[Path, Path]:
+    artifact = f"{__version__}-readiness"
+    return Path(f"benchmarks/results/{artifact}.json"), Path(f"benchmarks/{artifact}.md")
+
+
 def _check(name: str, passed: bool, actual: Any, requirement: str) -> dict[str, Any]:
     return {
         "name": name,
@@ -101,11 +106,12 @@ def render_markdown(result: dict[str, Any]) -> str:
 
 
 def main() -> None:
+    output, markdown = default_output_paths()
     parser = argparse.ArgumentParser()
     parser.add_argument("--performance", type=Path, default=Path("benchmarks/results/0.5.1-quant.json"))
     parser.add_argument("--workflows", type=Path, default=Path("benchmarks/results/0.5.2-workflows.json"))
-    parser.add_argument("--output", type=Path, default=Path("benchmarks/results/0.5.3-readiness.json"))
-    parser.add_argument("--markdown", type=Path, default=Path("benchmarks/0.5.3-readiness.md"))
+    parser.add_argument("--output", type=Path, default=output)
+    parser.add_argument("--markdown", type=Path, default=markdown)
     args = parser.parse_args()
 
     performance = json.loads(args.performance.read_text(encoding="utf-8"))

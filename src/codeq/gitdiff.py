@@ -1,11 +1,52 @@
 from __future__ import annotations
 
+import difflib
 import re
 import subprocess
 from pathlib import Path
 from typing import Any
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
+
+
+def _nearby_git_refs(root: Path, requested: str, limit: int = 3) -> list[str]:
+    proc = subprocess.run(
+        [
+            "git", "-C", str(root), "for-each-ref", "--format=%(refname)",
+            "refs/heads", "refs/remotes",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return []
+    refs: set[str] = set()
+    for value in proc.stdout.splitlines():
+        if value.startswith("refs/heads/"):
+            refs.add(value.removeprefix("refs/heads/"))
+        elif value.startswith("refs/remotes/"):
+            refs.add(value.removeprefix("refs/remotes/"))
+    requested_leaf = requested.rsplit("/", 1)[-1]
+
+    def rank(candidate: str) -> tuple[int, float, str]:
+        candidate_leaf = candidate.rsplit("/", 1)[-1]
+        leaf_match = int(candidate_leaf == requested_leaf)
+        similarity = difflib.SequenceMatcher(None, requested, candidate).ratio()
+        return (-leaf_match, -similarity, candidate)
+
+    return sorted(refs, key=rank)[:limit]
+
+
+def _unresolved_ref_error(root: Path, ref: str, stderr: str) -> RuntimeError:
+    nearby = _nearby_git_refs(root, ref)
+    suggestion = f" Nearby refs: {', '.join(nearby)}." if nearby else ""
+    detail = f" Git reported: {stderr.strip()}" if stderr.strip() else ""
+    return RuntimeError(
+        f"cannot resolve Git ref '{ref}'.{suggestion} "
+        "Choose an existing ref, or use HEAD~1 to review the previous commit."
+        f"{detail}"
+    )
 
 
 def git_resolve_commit(root: Path, ref: str) -> str:
@@ -16,7 +57,7 @@ def git_resolve_commit(root: Path, ref: str) -> str:
         check=False,
     )
     if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or f"cannot resolve Git ref {ref}")
+        raise _unresolved_ref_error(root, ref, proc.stderr)
     return proc.stdout.strip()
 
 
@@ -28,7 +69,13 @@ def git_merge_base(root: Path, base: str, head: str = "HEAD") -> str:
         check=False,
     )
     if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or f"cannot resolve merge base for {base} and {head}")
+        resolved_base = git_resolve_commit(root, base) if base else ""
+        resolved_head = git_resolve_commit(root, head) if head else ""
+        detail = f" Git reported: {proc.stderr.strip()}" if proc.stderr.strip() else ""
+        raise RuntimeError(
+            f"cannot find merge base for '{base}' and '{head}' after resolving "
+            f"{resolved_base[:12]} and {resolved_head[:12]}.{detail}"
+        )
     value = proc.stdout.strip()
     if not value:
         raise RuntimeError(f"no merge base found for {base} and {head}")

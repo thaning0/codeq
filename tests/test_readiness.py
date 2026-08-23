@@ -3,10 +3,16 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
-from benchmarks.readiness_gate import evaluate
+from benchmarks.readiness_gate import default_output_paths, evaluate
+from codeq import __version__
 
 
 class ReadinessGateTests(unittest.TestCase):
+    def test_default_outputs_follow_the_running_version(self) -> None:
+        output, markdown = default_output_paths()
+        self.assertEqual(output.name, f"{__version__}-readiness.json")
+        self.assertEqual(markdown.name, f"{__version__}-readiness.md")
+
     def _performance(self) -> dict[str, Any]:
         sample = [{"duration_ms": 100.0}]
         return {

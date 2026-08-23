@@ -52,6 +52,50 @@ class CorrectnessGuardTests(unittest.TestCase):
             self.assertIsNotNone(path_target_intent("scripts/missing.py", root))
             self.assertIsNotNone(path_target_intent("missing.ts:12", root))
 
+    def test_unique_source_basename_resolves_to_repo_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "packages/core/src/research_projection.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("value = 1\n", encoding="utf-8")
+            workspace = Workspace(root)
+            try:
+                self.assertEqual(workspace._file_target("research_projection.py"), source.resolve())
+            finally:
+                workspace.close()
+
+    def test_ambiguous_source_basename_fails_closed_with_exact_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for package in ("one", "two"):
+                source = root / f"packages/{package}/src/model.py"
+                source.parent.mkdir(parents=True)
+                source.write_text("value = 1\n", encoding="utf-8")
+            workspace = Workspace(root)
+            try:
+                result = workspace.resolve("model.py")
+            finally:
+                workspace.close()
+            self.assertEqual(result["status"], "ambiguous")
+            self.assertEqual(len(result["candidates"]), 2)
+            self.assertTrue(all(item["selection_command"].startswith("codeq context packages/") for item in result["candidates"]))
+
+    def test_dotted_python_module_resolves_to_file_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "packages/core/src/auto_research_core/application/research_governance.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("value = 1\n", encoding="utf-8")
+            workspace = Workspace(root)
+            expected = {"status": "ok", "kind": "file", "file": {"path": str(source.resolve())}}
+            try:
+                with patch.object(workspace, "_file_context", return_value=expected) as file_context:
+                    result = workspace.context("auto_research_core.application.research_governance")
+            finally:
+                workspace.close()
+            self.assertEqual(result, expected)
+            self.assertEqual(file_context.call_args.args[0], source.resolve())
+
     def test_qualified_target_never_falls_back_to_global_fuzzy_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Workspace(Path(tmp))

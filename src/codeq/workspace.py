@@ -38,6 +38,7 @@ from .topology import extract_imports, importer_candidate_hits, resolve_import_s
 from .util import (
     exact_definition_hits,
     fuzzy_score,
+    git_visible_files,
     guess_symbol_column,
     identifier_tokens,
     is_test_path,
@@ -217,6 +218,8 @@ class Workspace:
         self.timeout = timeout
         self.projects = discover_projects(self.root)
         self._sessions: dict[Project, LspProcess] = {}
+        self._session_locks: dict[Project, threading.Lock] = {}
+        self._closed = False
         self._prewarmed: set[tuple[str, str, int]] = set()
         self._document_symbol_cache: OrderedDict[Path, tuple[tuple[int, int], list[dict[str, Any]]]] = OrderedDict()
         self._metrics: dict[str, int] = {
@@ -232,6 +235,7 @@ class Workspace:
 
     def close(self) -> None:
         with self._lock:
+            self._closed = True
             sessions = list(self._sessions.values())
             self._sessions.clear()
             self._document_symbol_cache.clear()
@@ -319,14 +323,32 @@ class Workspace:
             existing = self._sessions.get(project)
             if existing and existing.alive():
                 return existing
+            if self._closed:
+                raise LspError(f"workspace is closed: {self.root}")
+            start_lock = self._session_locks.setdefault(project, threading.Lock())
+
+        # Language-server initialization can take several seconds. Serialize only
+        # the same project so a multi-package find may start independent projects
+        # concurrently instead of paying every cold start in sequence.
+        with start_lock:
+            with self._lock:
+                existing = self._sessions.get(project)
+                if existing and existing.alive():
+                    return existing
+                if self._closed:
+                    raise LspError(f"workspace is closed: {self.root}")
             server = self._server_command(project)
             if server is None:
                 raise LspError(f"no {project.family} language server available for {project.root}")
             command, name = server
             session = LspProcess(command, project.root, name=name, timeout=self.timeout)
-            self._sessions[project] = session
-            self._metrics["sessions_started"] += 1
-            return session
+            with self._lock:
+                if self._closed:
+                    session.close()
+                    raise LspError(f"workspace is closed: {self.root}")
+                self._sessions[project] = session
+                self._metrics["sessions_started"] += 1
+                return session
 
     def project_for_path(self, path: Path) -> Project | None:
         path = path.resolve()
@@ -527,6 +549,13 @@ class Workspace:
                 "total_candidates": 0,
                 "errors": [],
             }
+            ambiguous_paths = [Path(value) for value in reference.get("ambiguous_paths", [])]
+            if ambiguous_paths:
+                ambiguous = self._ambiguous_file_result(query, ambiguous_paths)
+                return {
+                    **common,
+                    **ambiguous,
+                }
             if not reference["inside_repo"]:
                 return {
                     **common,
@@ -884,6 +913,9 @@ class Workspace:
         reference = self._path_reference(target)
         if reference is not None:
             path = Path(reference["path"])
+            ambiguous_paths = [Path(value) for value in reference.get("ambiguous_paths", [])]
+            if ambiguous_paths:
+                return self._ambiguous_file_result(target, ambiguous_paths)
             if not reference["inside_repo"]:
                 return {
                     "status": "not_found",
@@ -1217,12 +1249,71 @@ class Workspace:
         if intent is None:
             return None
         resolved = Path(intent["path"])
+        alternatives: list[Path] = []
+        if not resolved.is_file():
+            alternatives = self._basename_source_candidates(target)
+            if len(alternatives) == 1:
+                resolved = alternatives[0]
         return {
             "path": resolved,
             "line": intent["line"],
             "column": intent["column"],
             "exists": resolved.is_file(),
             "inside_repo": self._is_repo_path(resolved),
+            "ambiguous_paths": [str(path) for path in alternatives] if len(alternatives) > 1 else [],
+        }
+
+    def _basename_source_candidates(self, target: str) -> list[Path]:
+        if Path(target).name != target or "/" in target or "\\" in target or ":" in target:
+            return []
+        if language_for(Path(target)) is None:
+            return []
+        return [path for path in git_visible_files(self.root) if path.name == target]
+
+    def _dotted_module_candidates(
+        self,
+        target: str,
+        *,
+        semantic_paths: tuple[str, ...] = (),
+    ) -> list[Path]:
+        if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+", target):
+            return []
+        requested = target.split(".")
+        matches: list[Path] = []
+        for path in git_visible_files(self.root):
+            if path.suffix not in {".py", ".pyi"} or not self._matches_path_prefixes(path, semantic_paths):
+                continue
+            try:
+                parts = list(path.relative_to(self.root).with_suffix("").parts)
+            except ValueError:
+                continue
+            if parts and parts[-1] == "__init__":
+                parts.pop()
+            if len(parts) >= len(requested) and parts[-len(requested):] == requested:
+                matches.append(path)
+        return matches
+
+    def _ambiguous_file_result(self, target: str, paths: list[Path]) -> dict[str, Any]:
+        candidates: list[dict[str, Any]] = []
+        for path in paths[:8]:
+            try:
+                rendered = path.relative_to(self.root).as_posix()
+            except ValueError:
+                rendered = str(path)
+            candidates.append({
+                "name": path.name,
+                "kind": "File",
+                "container": "",
+                "path": str(path),
+                "line": 1,
+                "column": 1,
+                "selection_command": shlex.join(["codeq", "context", rendered]),
+            })
+        return {
+            "status": "ambiguous",
+            "target": target,
+            "reason": f"multiple source files match: {target}",
+            "candidates": candidates,
         }
 
     def _file_target(self, target: str) -> Path | None:
@@ -1230,6 +1321,7 @@ class Workspace:
         if (
             reference is None
             or reference["line"] is not None
+            or reference.get("ambiguous_paths")
             or not reference["exists"]
             or not reference["inside_repo"]
         ):
@@ -1516,6 +1608,32 @@ class Workspace:
                     exclude_tests=lexical_exclude_tests,
                 )
             return data
+
+        module_candidates = self._dotted_module_candidates(
+            target,
+            semantic_paths=semantic_paths,
+        )
+        if len(module_candidates) == 1:
+            data = self._file_context(
+                module_candidates[0],
+                limit,
+                outline_depth=outline_depth,
+                outline_kind=outline_kind,
+                container=container,
+                include_topology=include_topology,
+            )
+            if data.get("status") == "ok" and lexical_references:
+                data["lexical_references"] = git_text_search(
+                    self.root,
+                    lexical_query or module_candidates[0].name,
+                    limit=limit,
+                    paths=lexical_paths,
+                    globs=lexical_globs,
+                    exclude_tests=lexical_exclude_tests,
+                )
+            return data
+        if len(module_candidates) > 1:
+            return self._ambiguous_file_result(target, module_candidates)
 
         resolved = self.resolve(target, semantic_paths=semantic_paths)
         if resolved["status"] != "ok":

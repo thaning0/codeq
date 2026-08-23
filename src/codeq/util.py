@@ -42,6 +42,41 @@ def git_root(path: str | Path) -> Path:
     return path if path.is_dir() else path.parent
 
 
+def git_visible_files(root: str | Path) -> list[Path]:
+    """Return tracked and non-ignored untracked files in stable path order.
+
+    Source-target recovery should follow the same working-tree visibility contract
+    as exact text search.  Non-Git temporary workspaces use a bounded filesystem
+    fallback so unit tests and ad-hoc directories retain the same behavior.
+    """
+    resolved_root = Path(root).expanduser().resolve()
+    proc = subprocess.run(
+        [
+            "git", "-C", str(resolved_root), "ls-files", "--cached", "--others",
+            "--exclude-standard", "-z",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode == 0:
+        visible_paths = {
+            (resolved_root / raw.decode("utf-8", errors="surrogateescape")).resolve()
+            for raw in proc.stdout.split(b"\0")
+            if raw
+        }
+        return sorted(path for path in visible_paths if path.is_file())
+
+    skipped = {
+        ".git", ".hg", ".svn", ".venv", "venv", "node_modules", ".next",
+        "dist", "build", "coverage", "__pycache__", ".mypy_cache", ".pytest_cache",
+    }
+    paths: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(resolved_root):
+        dirnames[:] = [name for name in dirnames if name not in skipped]
+        paths.extend((Path(dirpath) / name).resolve() for name in filenames)
+    return sorted(path for path in paths if path.is_file())
+
+
 def path_to_uri(path: str | Path) -> str:
     p = Path(path).resolve()
     return "file://" + quote(str(p), safe="/:")

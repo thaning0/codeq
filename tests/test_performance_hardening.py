@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
@@ -31,7 +33,71 @@ class _SymbolSession:
         ]
 
 
+class _LiveSession:
+    pid = 1234
+    request_count = 0
+
+    def alive(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        pass
+
+
 class PerformanceHardeningTests(unittest.TestCase):
+    def test_different_projects_start_language_servers_concurrently(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            projects = [Project(root / name, "python") for name in ("one", "two")]
+            for project in projects:
+                project.root.mkdir()
+            workspace = Workspace(root)
+            barrier = threading.Barrier(2)
+
+            def start(*args: Any, **kwargs: Any) -> _LiveSession:
+                barrier.wait(timeout=1.0)
+                return _LiveSession()
+
+            try:
+                with (
+                    patch.object(workspace, "_server_command", return_value=(["fake-lsp"], "fake")),
+                    patch("codeq.workspace.LspProcess", side_effect=start) as constructor,
+                    ThreadPoolExecutor(max_workers=2) as pool,
+                ):
+                    sessions = list(pool.map(workspace._session, projects))
+                self.assertEqual(constructor.call_count, 2)
+                self.assertEqual(len(sessions), 2)
+            finally:
+                workspace.close()
+
+    def test_same_project_language_server_start_is_serialized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = Project(root, "python")
+            workspace = Workspace(root)
+            entered = threading.Event()
+            release = threading.Event()
+
+            def start(*args: Any, **kwargs: Any) -> _LiveSession:
+                entered.set()
+                self.assertTrue(release.wait(timeout=1.0))
+                return _LiveSession()
+
+            try:
+                with (
+                    patch.object(workspace, "_server_command", return_value=(["fake-lsp"], "fake")),
+                    patch("codeq.workspace.LspProcess", side_effect=start) as constructor,
+                    ThreadPoolExecutor(max_workers=2) as pool,
+                ):
+                    futures = [pool.submit(workspace._session, project) for _ in range(2)]
+                    self.assertTrue(entered.wait(timeout=1.0))
+                    release.set()
+                    sessions = [future.result(timeout=1.0) for future in futures]
+                self.assertEqual(constructor.call_count, 1)
+                self.assertIs(sessions[0], sessions[1])
+            finally:
+                workspace.close()
+
     def test_document_symbol_cache_hits_and_invalidates_on_file_change(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

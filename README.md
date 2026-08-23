@@ -131,18 +131,25 @@ Text mode searches **tracked plus non-ignored untracked files**, so newly create
 ```bash
 codeq context RetryPolicy.should_retry
 codeq context auto_research_core.domain.models.Candidate
+codeq context auto_research_core.application.research_governance
 codeq context validate_discovery_plan --path packages/research-core/src
+codeq context research_projection.py
 codeq context src/api/orders.py:84
 codeq context src/api/orders.py:84:21
 ```
 
-Fully module-qualified Python/TypeScript-style targets are resolved fail-closed:
+Fully module-qualified Python/TypeScript-style symbol targets are resolved fail-closed:
 the semantic suffix must match an LSP-confirmed declaration, the module prefix must
 match the candidate file path, and the result must be unique. For ambiguous bare
 symbols, plain output includes exact `codeq context PATH:LINE:COLUMN` commands that
 can be copied directly. `context --path` scopes symbol resolution; when attaching
 `--lexical-references`, `--path` scopes the text evidence instead and
 `--symbol-path` remains available for symbol resolution.
+
+A dotted Python module or bare source basename can also select a whole file. It is
+accepted only when exactly one Git-visible source file matches; ambiguity returns
+exact path-based commands. Paths containing `/` or `\\` remain exact and missing
+files fail closed.
 
 For symbols and locations, `context` returns bounded definition source, hover/signature, direct callers and callees, implementations, references, tests, and possible dynamic callback/registry evidence.
 
@@ -187,8 +194,8 @@ Traversal is cycle-protected and restricted to repository source.
 
 ```bash
 codeq review --base HEAD~1
-codeq review --base origin/main --merge-base
-codeq review --base origin/main --merge-base --limit 15 --json
+codeq review --base origin/HEAD --merge-base
+codeq review --base origin/HEAD --merge-base --limit 15 --json
 ```
 
 `review` combines Git truth with semantic analysis:
@@ -348,6 +355,7 @@ Dynamic dispatch can still be unknowable statically. Configuration, reflection, 
 git clone https://github.com/thaning0/codeq.git
 cd codeq
 uv sync
+uv run pytest
 uv run python -W error -m unittest discover -s tests
 uv run basedpyright --level error src/codeq tests benchmarks
 uv build

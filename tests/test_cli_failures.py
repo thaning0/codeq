@@ -244,6 +244,33 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 1)
         self.assertIn("try: codeq context src/model.py:4:7", stderr.getvalue())
 
+    def test_ambiguous_find_output_contains_copyable_file_selection_commands(self) -> None:
+        result = {
+            "status": "ambiguous",
+            "target": "model.py",
+            "candidates": [
+                {
+                    "name": "model.py",
+                    "kind": "File",
+                    "container": "",
+                    "path": "/repo/src/model.py",
+                    "line": 1,
+                    "column": 1,
+                    "selection_command": "codeq context src/model.py",
+                }
+            ],
+        }
+        stderr = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stderr(stderr),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main(["find", "model.py"])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("try: codeq context src/model.py", stderr.getvalue())
+
     def test_lexical_filters_require_lexical_reference_mode(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
