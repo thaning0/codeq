@@ -10,6 +10,48 @@ from codeq.cli import main
 
 
 class CliFailureContractTests(unittest.TestCase):
+    def test_search_alias_sends_a_find_request(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {
+                "status": "ok",
+                "query": "Thing",
+                "results": [],
+                "result_count": 0,
+                "total_candidates": 0,
+                "errors": [],
+            }
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main(["search", "Thing", "--json"])
+        self.assertEqual(captured["command"], "find")
+        self.assertEqual(captured["query"], "Thing")
+
+    def test_no_daemon_flag_uses_in_process_request(self) -> None:
+        result = {
+            "status": "ok",
+            "query": "Thing",
+            "results": [],
+            "result_count": 0,
+            "total_candidates": 0,
+            "errors": [],
+        }
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request") as daemon_request,
+            patch("codeq.cli._request_in_process", return_value=result) as in_process,
+            redirect_stdout(io.StringIO()),
+        ):
+            main(["find", "Thing", "--no-daemon", "--json"])
+        daemon_request.assert_not_called()
+        in_process.assert_called_once()
+
     def test_plain_text_query_failure_exits_one(self) -> None:
         result = {
             "status": "not_found",
@@ -270,6 +312,35 @@ class CliFailureContractTests(unittest.TestCase):
             main(["find", "model.py"])
         self.assertEqual(raised.exception.code, 1)
         self.assertIn("try: codeq context src/model.py", stderr.getvalue())
+
+    def test_not_found_plain_output_includes_exact_name_recovery_candidates(self) -> None:
+        result = {
+            "status": "not_found",
+            "target": "pkg.bridge.BridgeSession",
+            "reason": "qualified target not found: pkg.bridge.BridgeSession",
+            "candidates": [
+                {
+                    "name": "BridgeSession",
+                    "kind": "Class",
+                    "container": "",
+                    "path": "/repo/pkg/bridge/session.py",
+                    "line": 4,
+                    "column": 7,
+                    "selection_command": "codeq context pkg/bridge/session.py:4:7",
+                }
+            ],
+        }
+        stderr = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stderr(stderr),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main(["context", "pkg.bridge.BridgeSession"])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("Possible exact-name matches:", stderr.getvalue())
+        self.assertIn("codeq context pkg/bridge/session.py:4:7", stderr.getvalue())
 
     def test_lexical_filters_require_lexical_reference_mode(self) -> None:
         stderr = io.StringIO()

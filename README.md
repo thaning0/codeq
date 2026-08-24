@@ -4,7 +4,7 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc5` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** `1.0.0rc6` is the active release candidate. The four-command surface is feature-frozen for 1.0.
 
 ## Why codeq
 
@@ -69,7 +69,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc5
+codeq 1.0.0rc6
 ```
 
 ## The workflow
@@ -92,7 +92,7 @@ Choose a command by question:
 
 | Question | Command |
 | --- | --- |
-| Where is this code? | `codeq find QUERY` |
+| Where is this code? | `codeq find QUERY` (`codeq search QUERY` is an alias) |
 | What surrounds this symbol/location/file? | `codeq context TARGET` |
 | Who calls it / what does it call across multiple hops? | `codeq trace TARGET --in/--out` |
 | What does this branch or worktree affect? | `codeq review --base REF` |
@@ -282,6 +282,12 @@ Agent / shell
 
 The daemon keeps relevant language servers warm, caches only safe file-local document symbols, and releases inactive workspaces. It does **not** maintain a persistent repository graph or embedding index.
 
+Concurrent semantic `find` requests for the same worktree are queued so one cold
+request initializes the language servers and caches. Document-symbol and prewarm
+fills are single-flight; followers reuse the first request's result instead of
+duplicating LSP work. JSON `_meta` reports `queue_ms` separately from
+`execution_ms` and total `duration_ms`.
+
 ### Runtime state and sandboxing
 
 By default, `codeq` writes no runtime or analysis state into the target repository. On Linux/WSL, daemon discovery uses an **abstract Unix-domain socket** in the kernel namespace rather than a filesystem socket:
@@ -291,6 +297,13 @@ By default, `codeq` writes no runtime or analysis state into the target reposito
 ```
 
 Because the endpoint is not a file, separate shell sandboxes can reuse one daemon even when their `/tmp` mount namespaces differ. Both client and server validate `SO_PEERCRED` UID; peer PID is treated only as optional liveness evidence because cross-PID-namespace peers can legitimately appear as PID `0`.
+
+Some restricted runners prohibit Unix sockets entirely and return `EPERM` or
+`EACCES`. In that case codeq fails over immediately to a one-shot in-process
+request, without spawning a daemon or waiting through the daemon startup timeout.
+Use the global `--no-daemon` flag to select this transport explicitly; semantic
+results are the same, but language-server processes cannot stay warm across CLI
+invocations.
 
 The daemon still needs private scratch space for language servers. Scratch selection is:
 
@@ -330,7 +343,7 @@ Details:
 
 - [Quant cold/warm benchmark](benchmarks/0.5.1-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
-- [RC5 readiness gate](benchmarks/1.0.0rc5-readiness.md)
+- [RC6 readiness gate](benchmarks/1.0.0rc6-readiness.md)
 - [Full validation record](VALIDATION.md)
 
 ## Boundaries

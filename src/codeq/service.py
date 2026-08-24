@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,7 @@ class _WorkspaceEntry:
     workspace: Workspace
     last_used: float
     active: int = 0
+    semantic_find_gate: threading.Lock = field(default_factory=threading.Lock)
 
 
 class CodeqService:
@@ -104,9 +105,20 @@ class CodeqService:
         limit = int(request.get("limit") or 20)
         _, entry = self._acquire_workspace(root, timeout)
         ws = entry.workspace
-        before = ws.session_stats()
-        metrics_before = ws.metrics_snapshot()
+        gate_acquired = False
+        queue_ms = 0.0
         try:
+            if command == "find" and not bool(request.get("text")):
+                queued_at = time.perf_counter()
+                gate_acquired = entry.semantic_find_gate.acquire(timeout=timeout)
+                queue_ms = (time.perf_counter() - queued_at) * 1000
+                if not gate_acquired:
+                    raise TimeoutError(
+                        f"semantic find timed out after {timeout:g}s waiting for another query"
+                    )
+            execution_started = time.perf_counter()
+            before = ws.session_stats()
+            metrics_before = ws.metrics_snapshot()
             data: dict[str, Any]
             if command == "find":
                 data = ws.find(
@@ -158,9 +170,12 @@ class CodeqService:
             def delta(name: str) -> int:
                 return max(0, int(metrics_after.get(name, 0)) - int(metrics_before.get(name, 0)))
 
+            finished = time.perf_counter()
             data["_meta"] = {
                 "root": str(ws.root),
-                "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                "duration_ms": round((finished - started) * 1000, 1),
+                "queue_ms": round(queue_ms, 1),
+                "execution_ms": round((finished - execution_started) * 1000, 1),
                 "lsp_sessions_before": before,
                 "lsp_sessions": after,
                 "lsp_started": delta("sessions_started") > 0,
@@ -171,6 +186,7 @@ class CodeqService:
                 "cache": {
                     "document_symbols_hit": delta("document_symbols_hit"),
                     "document_symbols_miss": delta("document_symbols_miss"),
+                    "document_symbols_waited": delta("document_symbols_waited"),
                     "document_symbols_evicted": delta("document_symbols_evicted"),
                     "document_symbol_entries": int(metrics_after.get("document_symbol_cache_entries", 0)),
                 },
@@ -190,4 +206,6 @@ class CodeqService:
                 }
             return attach_schema(data)
         finally:
+            if gate_acquired:
+                entry.semantic_find_gate.release()
             self._release_workspace(entry)

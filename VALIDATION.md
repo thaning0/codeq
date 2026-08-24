@@ -524,6 +524,43 @@ repository mutation      none
 ACCEPTANCE                PASS
 ```
 
+## 1.0.0rc6 restricted-sandbox and cold-concurrency hardening
+
+RC6 fixes four repeated agent-workflow failures observed after the RC5 rollout:
+
+- Unix-socket `EPERM`/`EACCES` now fails over immediately to a one-shot in-process
+  request instead of spawning and polling a daemon for about ten seconds. The
+  global `--no-daemon` flag exposes the same transport explicitly.
+- Same-worktree semantic `find` requests are queued behind one cold-start owner;
+  document-symbol and prewarm fills are single-flight. Response metadata separates
+  `queue_ms`, `execution_ms`, and total `duration_ms`.
+- Multiple cursor definitions inside one enclosing callable/type now resolve to
+  that shared semantic context with an explanatory note instead of producing
+  duplicate or self-referential ambiguity commands.
+- `search` is an alias for `find`, and qualified fail-closed misses include bounded
+  exact-leaf-name locations as non-binding recovery suggestions.
+
+A real forced-`EPERM` request completed through `transport=in_process` in 10.1 ms.
+An isolated filesystem-daemon acceptance issued four concurrent cold semantic
+finds against this repository. Exactly one response reported `lsp_started=true`;
+the other three reported 545.6-621.2 ms of queue time followed by 42.5-57.3 ms of
+execution time. All four returned `status=ok`, and the daemon acknowledged clean
+shutdown.
+
+The original production cursor case
+`packages/research-core/src/auto_research_core/readmodels/browse.py:1570:5` was
+replayed against `/home/thn/trade`. It returned `status=ok`, selected
+`view_experiment_chain` at line 1532, preserved the requested line-1570 snippet,
+and reported `3 local definitions resolve inside the same enclosing function`.
+
+RC6 passed **126/126 tests** plus **13 subtests**, `python -W error` unittest
+discovery, basedpyright with zero errors/warnings, wheel/sdist build, and the
+**9/9** readiness gate. Regression coverage includes both immediate and post-spawn
+permission denial, in-process selection, cache/prewarm single-flight, semantic-find
+queuing, local-definition collapse, qualified recovery candidates, and the
+`search` alias. Artifacts: `benchmarks/1.0.0rc6-readiness.md` and
+`benchmarks/results/1.0.0rc6-readiness.json`.
+
 ## Remaining boundaries
 
 - Dynamic runtime dispatch can remain unknowable to static analysis. Heuristic callback/registry evidence stays explicitly labeled `possible` and is not promoted to exact call edges.

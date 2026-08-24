@@ -11,12 +11,49 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codeq import DAEMON_PROTOCOL_VERSION
-from codeq.cli import _peer_is_trusted, _restart_stale_daemon, _spawn_daemon
+from codeq.cli import (
+    DaemonUnavailableError,
+    _connect_or_spawn,
+    _peer_is_trusted,
+    _request,
+    _restart_stale_daemon,
+    _spawn_daemon,
+)
 from codeq.daemon import SocketEndpoint, _serve_connection, _trusted_peer, default_socket_endpoint
 from codeq.lsp import _lsp_environment
 
 
 class RuntimeStateTests(unittest.TestCase):
+    def test_permission_denied_socket_falls_back_in_process_without_spawning(self) -> None:
+        endpoint = SocketEndpoint.abstract("codeq-sandbox-test")
+        expected = {"status": "ok", "_meta": {"transport": "in_process"}}
+        denied = PermissionError(1, "Operation not permitted")
+        with (
+            patch("codeq.cli.default_socket_endpoint", return_value=endpoint),
+            patch("codeq.cli._connect", side_effect=denied),
+            patch("codeq.cli._spawn_daemon") as spawn,
+            patch("codeq.cli._request_in_process", return_value=expected) as in_process,
+        ):
+            result = _request({"command": "find", "root": ".", "query": "Thing"}, timeout=25.0)
+        self.assertEqual(result, expected)
+        spawn.assert_not_called()
+        in_process.assert_called_once()
+
+    def test_permission_denied_after_spawn_stops_retrying_immediately(self) -> None:
+        endpoint = SocketEndpoint.abstract("codeq-sandbox-retry-test")
+        with (
+            patch(
+                "codeq.cli._connect",
+                side_effect=[ConnectionRefusedError(), PermissionError(1, "Operation not permitted")],
+            ) as connect,
+            patch("codeq.cli._spawn_daemon") as spawn,
+            patch("codeq.cli.time.sleep"),
+            self.assertRaises(DaemonUnavailableError),
+        ):
+            _connect_or_spawn(endpoint, timeout=25.0)
+        self.assertEqual(connect.call_count, 2)
+        spawn.assert_called_once_with(endpoint)
+
     def test_linux_default_uses_abstract_socket_without_touching_runtime_dirs(self) -> None:
         with (
             patch.dict(

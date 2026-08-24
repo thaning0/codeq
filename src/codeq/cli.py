@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import inspect
 import json
 import os
@@ -18,6 +19,11 @@ from .util import compact_location, git_root
 
 
 _ARGPARSE_PARAMS = inspect.signature(argparse.ArgumentParser).parameters
+_PERMANENT_SOCKET_ERRNOS = {errno.EACCES, errno.EPERM}
+
+
+class DaemonUnavailableError(RuntimeError):
+    """The daemon transport is unavailable in the current execution sandbox."""
 
 
 def _nonnegative_int(value: str) -> int:
@@ -94,8 +100,17 @@ def _spawn_daemon(endpoint: SocketEndpoint) -> None:
 def _connect_or_spawn(endpoint: SocketEndpoint, timeout: float) -> socket.socket:
     try:
         return _connect(endpoint, min(timeout, 1.0))
-    except OSError:
-        _spawn_daemon(endpoint)
+    except OSError as exc:
+        if exc.errno in _PERMANENT_SOCKET_ERRNOS:
+            raise DaemonUnavailableError(f"codeq daemon socket is unavailable: {exc}") from exc
+        try:
+            _spawn_daemon(endpoint)
+        except OSError as spawn_error:
+            if spawn_error.errno in _PERMANENT_SOCKET_ERRNOS:
+                raise DaemonUnavailableError(
+                    f"codeq daemon cannot be started in this sandbox: {spawn_error}"
+                ) from spawn_error
+            raise
         deadline = time.monotonic() + min(max(timeout, 3.0), 10.0)
         last_error: Exception | None = None
         while time.monotonic() < deadline:
@@ -103,6 +118,10 @@ def _connect_or_spawn(endpoint: SocketEndpoint, timeout: float) -> socket.socket
             try:
                 return _connect(endpoint, min(timeout, 1.0))
             except OSError as exc:
+                if exc.errno in _PERMANENT_SOCKET_ERRNOS:
+                    raise DaemonUnavailableError(
+                        f"codeq daemon socket is unavailable: {exc}"
+                    ) from exc
                 last_error = exc
         raise RuntimeError(f"codeq daemon failed to start: {last_error}")
 
@@ -177,9 +196,29 @@ def _restart_stale_daemon(pid: int | None, endpoint: SocketEndpoint) -> None:
     raise RuntimeError("stale codeq daemon did not exit after version mismatch")
 
 
+def _request_in_process(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+    """Execute one request without a daemon when the sandbox forbids Unix sockets."""
+    from .service import CodeqService
+
+    service = CodeqService(max_workspaces=1)
+    try:
+        in_process_payload = dict(payload)
+        in_process_payload.setdefault("timeout", timeout)
+        data = service.handle(in_process_payload)
+        meta = data.get("_meta")
+        if isinstance(meta, dict):
+            meta["transport"] = "in_process"
+        return data
+    finally:
+        service.close()
+
+
 def _request(payload: dict[str, Any], timeout: float, *, _allow_restart: bool = True) -> dict[str, Any]:
     endpoint = default_socket_endpoint()
-    client = _connect_or_spawn(endpoint, timeout)
+    try:
+        client = _connect_or_spawn(endpoint, timeout)
+    except DaemonUnavailableError:
+        return _request_in_process(payload, timeout)
     peer_pid = _peer_pid(client)
     wire_payload = {
         **payload,
@@ -286,6 +325,14 @@ def _render_resolution(data: dict[str, Any]) -> bool:
                 print(f"    try: {item['selection_command']}", file=sys.stderr)
         return False
     print(data.get("reason") or data.get("error") or f"Target not found: {data.get('target')}", file=sys.stderr)
+    candidates = data.get("candidates") or []
+    if candidates:
+        print("Possible exact-name matches:", file=sys.stderr)
+        for item in candidates:
+            container = f"{item.get('container')}." if item.get("container") else ""
+            print(f"  {item.get('kind')} {container}{item.get('name')}  {compact_location(item)}", file=sys.stderr)
+            if item.get("selection_command"):
+                print(f"    try: {item['selection_command']}", file=sys.stderr)
     return False
 
 
@@ -405,6 +452,8 @@ def _render_context(data: dict[str, Any]) -> None:
     if isinstance(requested, dict):
         mode = " -> cursor definition" if data.get("cursor_definition") else ""
         print(f"Requested at: {compact_location(requested)}{mode}")
+    if data.get("definition_note"):
+        print(f"Definition note: {data['definition_note']}")
     if data.get("hover"):
         print("\nHover")
         print(data["hover"].strip())
@@ -537,7 +586,7 @@ Small, read-only code-intelligence CLI for coding agents.
 Use codeq before broad manual exploration when you need to locate code, understand
 one symbol, follow a call chain, or inspect the semantic impact of a Git diff.
 Choose a command:
-  find     You do not yet know the exact symbol/location.
+  find     You do not yet know the exact symbol/location (`search` is an alias).
   context  You know a symbol or file:line and need its local neighborhood.
   trace    You need a multi-hop caller/callee chain.
   review   You need changed symbols, impact, dynamic references, and likely tests.
@@ -601,6 +650,11 @@ Agent notes:
         metavar="SEC",
         help="Language-server request timeout in seconds (default: 20).",
     )
+    parser.add_argument(
+        "--no-daemon",
+        action="store_true",
+        help="Run this query in-process; also selected automatically when sandbox socket access is denied.",
+    )
     sub = parser.add_subparsers(
         dest="command",
         required=True,
@@ -610,6 +664,7 @@ Agent notes:
 
     find = sub.add_parser(
         "find",
+        aliases=["search"],
         help="Find symbols or related source from a name or short description.",
         description="""\
 Find likely code locations before you know an exact target.
@@ -642,6 +697,7 @@ Typical next step:
   Take the best definition from `find`, then run `codeq context TARGET`.
 """,
     )
+    find.set_defaults(command="find")
     find.add_argument(
         "query",
         metavar="QUERY",
@@ -909,7 +965,7 @@ def _normalize_global_options(argv: list[str]) -> list[str]:
     Coding agents naturally emit both `codeq --json find Foo` and
     `codeq find Foo --json`; argparse normally accepts only the former.
     """
-    flags = {"--json", "--version"}
+    flags = {"--json", "--version", "--no-daemon"}
     valued = {"--root", "--limit", "--timeout"}
     front: list[str] = []
     rest: list[str] = []
@@ -986,7 +1042,14 @@ def main(argv: list[str] | None = None) -> None:
         payload["merge_base"] = args.merge_base
 
     try:
-        data = _request(payload, timeout=max(args.timeout + 5.0, 10.0))
+        # A semantic find may spend up to one LSP timeout queued behind the
+        # workspace's cold-start owner, then need another timeout to execute.
+        request_timeout = max(args.timeout * 2.0 + 5.0, 10.0)
+        data = (
+            _request_in_process(payload, timeout=request_timeout)
+            if args.no_daemon
+            else _request(payload, timeout=request_timeout)
+        )
     except Exception as exc:
         print(f"codeq: {exc}", file=sys.stderr)
         raise SystemExit(2)

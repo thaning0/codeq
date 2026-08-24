@@ -125,6 +125,42 @@ class PerformanceHardeningTests(unittest.TestCase):
             finally:
                 workspace.close()
 
+    def test_concurrent_document_symbol_misses_are_single_flight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "module.py"
+            path.write_text("value = 1\n", encoding="utf-8")
+            project = Project(root, "python")
+            session = _SymbolSession()
+            entered = threading.Event()
+            release = threading.Event()
+            original = session.document_symbols
+
+            def blocked(path: Path, timeout: float | None = None):
+                entered.set()
+                self.assertTrue(release.wait(timeout=1.0))
+                return original(path, timeout)
+
+            session.document_symbols = blocked  # type: ignore[method-assign]
+            workspace = Workspace(root)
+            callers = threading.Barrier(6)
+            try:
+                with patch.object(workspace, "_session", return_value=session), ThreadPoolExecutor(max_workers=6) as pool:
+                    def load() -> list[dict[str, Any]]:
+                        callers.wait(timeout=1.0)
+                        return workspace._document_symbols(path, project=project)
+
+                    futures = [pool.submit(load) for _ in range(6)]
+                    self.assertTrue(entered.wait(timeout=1.0))
+                    release.set()
+                    results = [future.result(timeout=1.0) for future in futures]
+                self.assertTrue(all(result[0]["name"] == "value" for result in results))
+                self.assertEqual(session.calls, 1)
+                self.assertGreaterEqual(workspace.metrics_snapshot()["document_symbols_waited"], 1)
+            finally:
+                release.set()
+                workspace.close()
+
     def test_document_symbol_cache_is_bounded_lru(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -217,6 +253,50 @@ class PerformanceHardeningTests(unittest.TestCase):
                 self.assertEqual(len(opened), 5)
                 self.assertEqual(workspace.metrics_snapshot()["prewarm_early_stops"], 0)
             finally:
+                workspace.close()
+
+    def test_concurrent_prewarm_for_same_symbol_is_single_flight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "module.py"
+            path.write_text("HotSymbol\n", encoding="utf-8")
+            project = Project(root, "python")
+            workspace = Workspace(root)
+            entered = threading.Event()
+            release = threading.Event()
+            lexical_calls = 0
+            callers = threading.Barrier(2)
+
+            def lexical(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+                nonlocal lexical_calls
+                lexical_calls += 1
+                entered.set()
+                self.assertTrue(release.wait(timeout=1.0))
+                return [{"path": str(path), "line": 1, "column": 1}]
+
+            try:
+                with (
+                    patch("codeq.workspace.lexical_hits", side_effect=lexical),
+                    patch.object(workspace, "project_for_path", return_value=project),
+                    patch.object(workspace, "_document_symbols", return_value=[]),
+                    ThreadPoolExecutor(max_workers=2) as pool,
+                ):
+                    def prewarm() -> None:
+                        callers.wait(timeout=1.0)
+                        workspace._prewarm_symbol(
+                            project,
+                            cast(Any, object()),
+                            {"name": "HotSymbol", "source": "lsp"},
+                        )
+
+                    futures = [pool.submit(prewarm) for _ in range(2)]
+                    self.assertTrue(entered.wait(timeout=1.0))
+                    release.set()
+                    for future in futures:
+                        future.result(timeout=1.0)
+                self.assertEqual(lexical_calls, 1)
+            finally:
+                release.set()
                 workspace.close()
 
 

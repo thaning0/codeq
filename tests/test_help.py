@@ -18,20 +18,22 @@ class HelpTests(unittest.TestCase):
         )
         return action.choices[name]
 
-    def test_feature_surface_is_frozen_to_four_commands(self):
+    def test_feature_surface_is_four_commands_plus_search_alias(self):
         parser = build_parser()
         action = next(
             item
             for item in parser._actions
             if isinstance(item, argparse._SubParsersAction)
         )
-        self.assertEqual(set(action.choices), {"find", "context", "trace", "review"})
+        self.assertEqual(set(action.choices), {"find", "search", "context", "trace", "review"})
+        self.assertIs(action.choices["search"], action.choices["find"])
 
     def test_top_level_help_is_agent_self_describing(self):
         help_text = build_parser().format_help()
         self.assertIn("Choose a command:", help_text)
         self.assertIn("codeq find 'backtest log streaming'", help_text)
         self.assertIn("codeq COMMAND --help", help_text)
+        self.assertIn("--no-daemon", help_text)
         self.assertNotIn("\x1b[", help_text)
 
     def test_subcommand_help_explains_arguments_and_examples(self):

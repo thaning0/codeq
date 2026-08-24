@@ -174,6 +174,39 @@ class CorrectnessGuardTests(unittest.TestCase):
             self.assertEqual(result["status"], "ok")
             self.assertEqual(wrong["status"], "not_found")
 
+    def test_qualified_miss_offers_exact_leaf_name_locations_without_resolving(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "src/pkg/bridge/session.py"
+            path.parent.mkdir(parents=True)
+            path.write_text("class BridgeSession:\n    pass\n", encoding="utf-8")
+            candidate = {
+                "name": "BridgeSession",
+                "kind": "Class",
+                "container": "",
+                "path": str(path.resolve()),
+                "line": 1,
+                "column": 7,
+                "source": "lsp",
+                "origin": "document",
+            }
+            workspace = Workspace(root)
+            try:
+                with patch.object(
+                    workspace,
+                    "_exact_document_candidates",
+                    side_effect=lambda name, **_: [candidate] if name == "BridgeSession" else [],
+                ):
+                    result = workspace.resolve("pkg.bridge.BridgeSession")
+            finally:
+                workspace.close()
+            self.assertEqual(result["status"], "not_found")
+            self.assertEqual(result["candidates"][0]["path"], str(path.resolve()))
+            self.assertEqual(
+                result["candidates"][0]["selection_command"],
+                "codeq context src/pkg/bridge/session.py:1:7",
+            )
+
     def test_semantic_path_constraint_filters_find_and_disambiguates_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

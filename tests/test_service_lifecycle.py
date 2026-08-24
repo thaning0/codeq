@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -63,6 +65,61 @@ class _FakeWorkspace:
 
 
 class ServiceLifecycleTests(unittest.TestCase):
+    def test_same_workspace_semantic_finds_are_queued(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        calls = 0
+        calls_lock = threading.Lock()
+
+        class _BlockingWorkspace(_FakeWorkspace):
+            def find(self, *args, **kwargs):
+                nonlocal calls
+                with calls_lock:
+                    calls += 1
+                    call_number = calls
+                if call_number == 1:
+                    entered.set()
+                    self.assert_release()
+                return super().find(*args, **kwargs)
+
+            @staticmethod
+            def assert_release() -> None:
+                if not release.wait(timeout=1.0):
+                    raise AssertionError("semantic find was not released")
+
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _BlockingWorkspace):
+            service = CodeqService()
+            second_acquired = threading.Event()
+            original_acquire = service._acquire_workspace
+            acquisitions = 0
+
+            def acquire(root: str, timeout: float):
+                nonlocal acquisitions
+                result = original_acquire(root, timeout)
+                acquisitions += 1
+                if acquisitions == 2:
+                    second_acquired.set()
+                return result
+
+            try:
+                with patch.object(service, "_acquire_workspace", side_effect=acquire), ThreadPoolExecutor(max_workers=2) as pool:
+                    request = {"command": "find", "root": tmp, "query": "Thing", "timeout": 1.0}
+                    first = pool.submit(service.handle, request)
+                    self.assertTrue(entered.wait(timeout=1.0))
+                    second = pool.submit(service.handle, request)
+                    self.assertTrue(second_acquired.wait(timeout=1.0))
+                    with calls_lock:
+                        self.assertEqual(calls, 1)
+                    release.set()
+                    first_result = first.result(timeout=1.0)
+                    second_result = second.result(timeout=1.0)
+                self.assertEqual(calls, 2)
+                self.assertIn("queue_ms", first_result["_meta"])
+                self.assertIn("execution_ms", second_result["_meta"])
+            finally:
+                release.set()
+                service.close()
+
     def test_idle_workspace_is_evicted_and_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
             service = CodeqService()

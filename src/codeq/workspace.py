@@ -221,11 +221,14 @@ class Workspace:
         self._session_locks: dict[Project, threading.Lock] = {}
         self._closed = False
         self._prewarmed: set[tuple[str, str, int]] = set()
+        self._prewarm_flights: dict[tuple[str, str, int], threading.Event] = {}
         self._document_symbol_cache: OrderedDict[Path, tuple[tuple[int, int], list[dict[str, Any]]]] = OrderedDict()
+        self._document_symbol_flights: dict[tuple[Path, tuple[int, int]], threading.Event] = {}
         self._metrics: dict[str, int] = {
             "sessions_started": 0,
             "document_symbols_hit": 0,
             "document_symbols_miss": 0,
+            "document_symbols_waited": 0,
             "document_symbols_evicted": 0,
             "prewarm_files": 0,
             "prewarm_probes": 0,
@@ -239,6 +242,11 @@ class Workspace:
             sessions = list(self._sessions.values())
             self._sessions.clear()
             self._document_symbol_cache.clear()
+            flights = [*self._document_symbol_flights.values(), *self._prewarm_flights.values()]
+            self._document_symbol_flights.clear()
+            self._prewarm_flights.clear()
+        for flight in flights:
+            flight.set()
         for session in sessions:
             session.close()
 
@@ -279,26 +287,46 @@ class Workspace:
         timeout: float | None = None,
     ) -> list[dict[str, Any]]:
         resolved = path.resolve()
-        marker = self._file_marker(resolved)
-        with self._lock:
-            cached = self._document_symbol_cache.get(resolved)
-            if cached is not None and cached[0] == marker:
+        wait_timeout = max(1.0, timeout if timeout is not None else self.timeout)
+        while True:
+            marker = self._file_marker(resolved)
+            flight_key = (resolved, marker)
+            with self._lock:
+                cached = self._document_symbol_cache.get(resolved)
+                if cached is not None and cached[0] == marker:
+                    self._document_symbol_cache.move_to_end(resolved)
+                    self._metrics["document_symbols_hit"] += 1
+                    return [dict(item) for item in cached[1]]
+                flight = self._document_symbol_flights.get(flight_key)
+                if flight is None:
+                    flight = threading.Event()
+                    self._document_symbol_flights[flight_key] = flight
+                    self._metrics["document_symbols_miss"] += 1
+                    break
+                self._metrics["document_symbols_waited"] += 1
+            if not flight.wait(timeout=wait_timeout):
+                raise LspError(f"timed out waiting for document symbols: {resolved}")
+
+        try:
+            selected = project or self.project_for_path(resolved)
+            if selected is None:
+                return []
+            raw = self._session(selected).document_symbols(resolved, timeout=timeout)
+            flattened = _flatten_document_symbols(raw, resolved)
+            with self._lock:
+                if self._closed:
+                    raise LspError(f"workspace is closed: {self.root}")
+                self._document_symbol_cache[resolved] = (marker, flattened)
                 self._document_symbol_cache.move_to_end(resolved)
-                self._metrics["document_symbols_hit"] += 1
-                return [dict(item) for item in cached[1]]
-            self._metrics["document_symbols_miss"] += 1
-        selected = project or self.project_for_path(resolved)
-        if selected is None:
-            return []
-        raw = self._session(selected).document_symbols(resolved, timeout=timeout)
-        flattened = _flatten_document_symbols(raw, resolved)
-        with self._lock:
-            self._document_symbol_cache[resolved] = (marker, flattened)
-            self._document_symbol_cache.move_to_end(resolved)
-            while len(self._document_symbol_cache) > 256:
-                self._document_symbol_cache.popitem(last=False)
-                self._metrics["document_symbols_evicted"] += 1
-        return [dict(item) for item in flattened]
+                while len(self._document_symbol_cache) > 256:
+                    self._document_symbol_cache.popitem(last=False)
+                    self._metrics["document_symbols_evicted"] += 1
+            return [dict(item) for item in flattened]
+        finally:
+            with self._lock:
+                completed = self._document_symbol_flights.pop(flight_key, None)
+                if completed is not None:
+                    completed.set()
 
     def _server_command(self, project: Project) -> tuple[list[str], str] | None:
         if project.family == "python":
@@ -817,14 +845,17 @@ class Workspace:
         container_name = parts[-2]
         member_name = parts[-1]
         matches: list[dict[str, Any]] = []
+        exact_leaf_candidates = [
+            symbol
+            for symbol in self._exact_document_candidates(member_name, limit=80)
+            if self._matches_path_prefixes(symbol["path"], semantic_paths)
+        ]
 
         # A fully qualified target may end in a top-level class/function rather
         # than a container/member pair, for example package.domain.models.Candidate.
         # Accept only LSP-confirmed exact declarations whose semantic suffix and
         # module/file suffix both match the requested target.
-        for symbol in self._exact_document_candidates(member_name, limit=80):
-            if not self._matches_path_prefixes(symbol["path"], semantic_paths):
-                continue
+        for symbol in exact_leaf_candidates:
             semantic_parts = [
                 *[part for part in str(symbol.get("container") or "").split(".") if part],
                 member_name,
@@ -879,7 +910,19 @@ class Workspace:
                 "status": "not_found",
                 "target": target,
                 "reason": reason,
-                "candidates": [],
+                # Stay fail-closed, but retain exact-name locations so a missing
+                # module segment or wrong owner is recoverable without broad grep.
+                "candidates": self._with_selection_commands(
+                    sorted(
+                        exact_leaf_candidates,
+                        key=lambda item: (
+                            str(item.get("container") or "").split(".")[-1:] != [container_name],
+                            -_definition_priority(item),
+                            item["path"],
+                            int(item["line"]),
+                        ),
+                    )[:4]
+                ),
             }
         deduplicated = {
             (str(item["path"]), int(item["line"]), str(item.get("name") or "")): item
@@ -1007,6 +1050,8 @@ class Workspace:
                 containing = [symbol for symbol in symbols if contains(symbol)]
                 if explicit_column:
                     definition_candidates: list[dict[str, Any]] = []
+                    definition_enclosures: list[dict[str, Any] | None] = []
+                    seen_raw_definitions: set[tuple[str, int, int]] = set()
                     seen_definitions: set[tuple[str, int, int, str]] = set()
                     try:
                         definitions = self._session(project).definitions(path, line, column)
@@ -1016,6 +1061,15 @@ class Workspace:
                         location = lsp_location(raw_definition)
                         if not location or not self._is_repo_path(location["path"]):
                             continue
+                        raw_key = (
+                            str(location.get("path") or ""),
+                            int(location.get("line") or 1),
+                            int(location.get("column") or 1),
+                        )
+                        if raw_key in seen_raw_definitions:
+                            continue
+                        seen_raw_definitions.add(raw_key)
+                        definition_enclosures.append(self._semantic_symbol_at_location(location))
                         mapped = self._symbol_at_location(location)
                         key = (
                             str(mapped.get("path") or ""),
@@ -1027,6 +1081,31 @@ class Workspace:
                             continue
                         seen_definitions.add(key)
                         definition_candidates.append(mapped)
+                    if len(seen_raw_definitions) > 1:
+                        enclosing = [item for item in definition_enclosures if item is not None]
+                        enclosing_keys = {
+                            (
+                                str(item.get("path") or ""),
+                                int(item.get("line") or 1),
+                                str(item.get("name") or ""),
+                                str(item.get("kind") or ""),
+                            )
+                            for item in enclosing
+                        }
+                        if len(enclosing) == len(definition_enclosures) and len(enclosing_keys) == 1:
+                            return {
+                                "status": "ok",
+                                "target": target,
+                                "symbol": enclosing[0],
+                                "candidates": [],
+                                "requested_location": requested_location,
+                                "cursor_definition": True,
+                                "cursor_definition_count": len(seen_raw_definitions),
+                                "definition_note": (
+                                    f"{len(seen_raw_definitions)} local definitions resolve inside "
+                                    f"the same enclosing {str(enclosing[0].get('kind') or 'symbol').lower()}"
+                                ),
+                            }
                     if len(definition_candidates) == 1:
                         return {
                             "status": "ok",
@@ -1037,10 +1116,19 @@ class Workspace:
                             "cursor_definition": True,
                         }
                     if len(definition_candidates) > 1:
+                        actionable = [
+                            item
+                            for item in definition_candidates
+                            if not (
+                                Path(str(item.get("path") or "")).resolve() == path.resolve()
+                                and int(item.get("line") or 1) == line
+                                and int(item.get("column") or 1) == column
+                            )
+                        ]
                         return {
                             "status": "ambiguous",
                             "target": target,
-                            "candidates": self._with_selection_commands(definition_candidates[:8]),
+                            "candidates": self._with_selection_commands((actionable or definition_candidates)[:8]),
                             "requested_location": requested_location,
                             "reason": "multiple definitions found at requested cursor position",
                         }
@@ -1157,37 +1245,60 @@ class Workspace:
             return
         desired = max(1, desired_results)
         key = (str(project.root), name, desired)
-        if key in self._prewarmed:
+        with self._lock:
+            if key in self._prewarmed:
+                return
+            flight = self._prewarm_flights.get(key)
+            if flight is None:
+                flight = threading.Event()
+                self._prewarm_flights[key] = flight
+                owns_flight = True
+            else:
+                owns_flight = False
+        if not owns_flight:
+            # Prewarming is optional. Do not launch duplicate lexical/LSP work if
+            # another request is already filling the same symbol budget.
+            flight.wait(timeout=max(1.0, self.timeout))
             return
-        hits = lexical_hits(project.root, name, limit=max(40, max_files * 3))
-        files: list[Path] = []
-        seen: set[Path] = set()
-        for hit in hits:
-            path = Path(hit["path"]).resolve()
-            if path in seen or self.project_for_path(path) != project:
-                continue
-            seen.add(path)
-            files.append(path)
-            if len(files) >= max_files:
-                break
 
-        exhausted = True
-        for index, path in enumerate(files, start=1):
-            try:
-                self._document_symbols(path, project=project, timeout=min(self.timeout, 6.0))
-                self._metrics["prewarm_files"] += 1
-            except (LspError, OSError):
-                continue
-            if probe is None or index % 2 != 0:
-                continue
-            self._metrics["prewarm_probes"] += 1
-            current = probe()
-            if len(current) >= desired:
-                self._metrics["prewarm_early_stops"] += 1
-                exhausted = False
-                break
-        if exhausted:
-            self._prewarmed.add(key)
+        completed = False
+        try:
+            hits = lexical_hits(project.root, name, limit=max(40, max_files * 3))
+            files: list[Path] = []
+            seen: set[Path] = set()
+            for hit in hits:
+                path = Path(hit["path"]).resolve()
+                if path in seen or self.project_for_path(path) != project:
+                    continue
+                seen.add(path)
+                files.append(path)
+                if len(files) >= max_files:
+                    break
+
+            for index, path in enumerate(files, start=1):
+                try:
+                    self._document_symbols(path, project=project, timeout=min(self.timeout, 6.0))
+                    with self._lock:
+                        self._metrics["prewarm_files"] += 1
+                except (LspError, OSError):
+                    continue
+                if probe is None or index % 2 != 0:
+                    continue
+                with self._lock:
+                    self._metrics["prewarm_probes"] += 1
+                current = probe()
+                if len(current) >= desired:
+                    with self._lock:
+                        self._metrics["prewarm_early_stops"] += 1
+                    break
+            completed = True
+        finally:
+            with self._lock:
+                if completed:
+                    self._prewarmed.add(key)
+                finished = self._prewarm_flights.pop(key, None)
+                if finished is not None:
+                    finished.set()
 
     def _session_and_position(self, symbol: dict[str, Any]) -> tuple[LspProcess, Project, Path, int, int]:
         path = Path(symbol["path"]).resolve()
@@ -1369,12 +1480,46 @@ class Workspace:
             return max(0, line_span), max(0, char_span)
 
         chosen = min(candidates, key=lambda symbol: (span(symbol), -_definition_priority(symbol)))
-        return {
-            **location,
-            "name": chosen.get("name", ""),
-            "kind": chosen.get("kind", ""),
-            "container": chosen.get("container", ""),
+        return dict(chosen)
+
+    def _semantic_symbol_at_location(self, location: dict[str, Any]) -> dict[str, Any] | None:
+        """Return the smallest enclosing callable/type for a raw LSP location."""
+        path = Path(location["path"]).resolve()
+        project = self.project_for_path(path)
+        if project is None:
+            return None
+        try:
+            symbols = self._document_symbols(path, project=project)
+        except (LspError, OSError):
+            return None
+        line = int(location.get("line") or 1)
+        semantic_kinds = {
+            "Function", "Method", "Constructor", "Class", "Interface", "Struct", "Enum"
         }
+
+        def bounds(symbol: dict[str, Any]) -> tuple[int, int]:
+            rng = symbol.get("range") or {}
+            start = int((rng.get("start") or {}).get("line", symbol["line"] - 1)) + 1
+            end = int((rng.get("end") or {}).get("line", start - 1)) + 1
+            return start, end
+
+        candidates = [
+            symbol
+            for symbol in symbols
+            if symbol.get("kind") in semantic_kinds
+            and bounds(symbol)[0] <= line <= bounds(symbol)[1]
+        ]
+        if not candidates:
+            return None
+        return dict(
+            min(
+                candidates,
+                key=lambda symbol: (
+                    bounds(symbol)[1] - bounds(symbol)[0],
+                    -_definition_priority(symbol),
+                ),
+            )
+        )
 
     def _definition_paths(
         self,
@@ -1753,6 +1898,10 @@ class Workspace:
         if requested_location is not None:
             data["requested_location"] = requested_location
             data["cursor_definition"] = bool(resolved.get("cursor_definition"))
+            if resolved.get("definition_note"):
+                data["definition_note"] = resolved["definition_note"]
+            if resolved.get("cursor_definition_count"):
+                data["cursor_definition_count"] = int(resolved["cursor_definition_count"])
         if request_source is not None:
             data["request_source"] = request_source
         if lexical_data is not None:

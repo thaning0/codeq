@@ -101,6 +101,94 @@ class CursorContextTests(unittest.TestCase):
             self.assertEqual(result["symbol"]["name"], "endpoint")
             self.assertFalse(result["cursor_definition"])
 
+    def test_multiple_local_definitions_collapse_to_shared_enclosing_function(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pyproject.toml").write_text("[project]\nname='cursor-test'\nversion='0'\n", encoding="utf-8")
+            source = root / "choose.py"
+            source.write_text(
+                "def choose(flag):\n"
+                "    if flag:\n"
+                "        value = 1\n"
+                "    else:\n"
+                "        value = 2\n"
+                "    return value\n",
+                encoding="utf-8",
+            )
+
+            class _MultipleDefinitionSession:
+                def document_symbols(self, path: Path, timeout: float | None = None):
+                    return [
+                        {
+                            "name": "choose",
+                            "kind": 12,
+                            "range": {
+                                "start": {"line": 0, "character": 0},
+                                "end": {"line": 5, "character": 16},
+                            },
+                            "selectionRange": {
+                                "start": {"line": 0, "character": 4},
+                                "end": {"line": 0, "character": 10},
+                            },
+                            "children": [
+                                {
+                                    "name": "value",
+                                    "kind": 13,
+                                    "range": {
+                                        "start": {"line": 2, "character": 8},
+                                        "end": {"line": 2, "character": 17},
+                                    },
+                                    "selectionRange": {
+                                        "start": {"line": 2, "character": 8},
+                                        "end": {"line": 2, "character": 13},
+                                    },
+                                },
+                                {
+                                    "name": "value",
+                                    "kind": 13,
+                                    "range": {
+                                        "start": {"line": 4, "character": 8},
+                                        "end": {"line": 4, "character": 17},
+                                    },
+                                    "selectionRange": {
+                                        "start": {"line": 4, "character": 8},
+                                        "end": {"line": 4, "character": 13},
+                                    },
+                                },
+                            ],
+                        }
+                    ]
+
+                def definitions(self, path: Path, line: int, column: int):
+                    return [
+                        {
+                            "uri": source.as_uri(),
+                            "range": {
+                                "start": {"line": 2, "character": 8},
+                                "end": {"line": 2, "character": 13},
+                            },
+                        },
+                        {
+                            "uri": source.as_uri(),
+                            "range": {
+                                "start": {"line": 4, "character": 8},
+                                "end": {"line": 4, "character": 13},
+                            },
+                        },
+                    ]
+
+            workspace = Workspace(root)
+            fake = _MultipleDefinitionSession()
+            cast(Any, workspace)._session = lambda project: fake
+            try:
+                result = workspace.resolve("choose.py:6:12")
+            finally:
+                workspace.close()
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["symbol"]["name"], "choose")
+            self.assertEqual(result["cursor_definition_count"], 2)
+            self.assertIn("same enclosing function", result["definition_note"])
+
 
 if __name__ == "__main__":
     unittest.main()
