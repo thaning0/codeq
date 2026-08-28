@@ -876,7 +876,7 @@ source bounded; external library nodes are omitted.
 Examples:
   codeq trace BacktestService.stream_backtest_logs --in --depth 2
   codeq trace fetchBars --out --depth 3
-  codeq trace fetchBars --in --depth 2 --node-limit 50 --json
+  codeq trace fetchBars --in --depth 2 --limit 50 --json
 
 Use --in when asking "what can this change affect?" and --out when asking "what
 happens after this entry point?".
@@ -914,7 +914,7 @@ happens after this entry point?".
         type=int,
         default=100,
         metavar="N",
-        help="Hard cap on emitted call-tree nodes to bound agent context (default: 100).",
+        help="Backward-compatible trace-specific alias for --limit (default: 100).",
     )
 
     review = sub.add_parser(
@@ -993,10 +993,17 @@ def _normalize_global_options(argv: list[str]) -> list[str]:
     return front + rest
 
 
+def _option_was_supplied(argv: list[str], option: str) -> bool:
+    """Return whether an option appeared explicitly, including --option=value."""
+    return any(arg == option or arg.startswith(option + "=") for arg in argv)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(_normalize_global_options(raw_argv))
+    limit_was_supplied = _option_was_supplied(raw_argv, "--limit")
+    node_limit_was_supplied = _option_was_supplied(raw_argv, "--node-limit")
     if args.command == "context":
         if (args.lexical_globs or args.lexical_exclude_tests) and args.lexical_references is None:
             parser.error("--glob/--exclude-tests require --lexical-references; --path also scopes symbol resolution")
@@ -1031,11 +1038,22 @@ def main(argv: list[str] | None = None) -> None:
             semantic_paths=semantic_paths,
         )
     elif args.command == "trace":
+        if limit_was_supplied and node_limit_was_supplied and args.limit != args.node_limit:
+            parser.error(
+                "conflicting trace limits: --limit and --node-limit must have the same value when both are supplied"
+            )
+        trace_node_limit = (
+            args.node_limit
+            if node_limit_was_supplied
+            else args.limit
+            if limit_was_supplied
+            else args.node_limit
+        )
         payload.update(
             target=args.target,
             direction=args.direction,
             depth=args.depth,
-            node_limit=max(1, args.node_limit),
+            node_limit=max(1, trace_node_limit),
         )
     elif args.command == "review":
         payload["base"] = args.base

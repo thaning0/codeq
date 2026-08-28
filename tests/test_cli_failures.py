@@ -117,6 +117,70 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(captured["depth"], 0)
         self.assertEqual(json.loads(stdout.getvalue())["depth"], 0)
 
+    def test_trace_limit_alias_bounds_emitted_nodes(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {
+                "status": "ok",
+                "target": "Foo.run",
+                "direction": "out",
+                "depth": 2,
+                "node_count": 1,
+                "node_limit": payload["node_limit"],
+                "truncated": False,
+                "root": {"name": "run", "path": "/repo/foo.py", "line": 1, "column": 1},
+                "tree": {"node": {"name": "run", "path": "/repo/foo.py", "line": 1, "column": 1}, "children": []},
+            }
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main(["trace", "Foo.run", "--out", "--depth", "2", "--limit", "3", "--json"])
+        self.assertEqual(captured["node_limit"], 3)
+
+    def test_trace_keeps_default_node_limit_when_limit_is_omitted(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "not_found", "target": "Foo.run", "reason": "not found"}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            main(["trace", "Foo.run", "--out", "--json"])
+        self.assertEqual(captured["node_limit"], 100)
+
+    def test_trace_rejects_conflicting_limit_aliases(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            main(["trace", "Foo.run", "--out", "--limit", "3", "--node-limit", "4"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("conflicting trace limits", stderr.getvalue())
+
+    def test_trace_accepts_matching_limit_aliases(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "not_found", "target": "Foo.run", "reason": "not found"}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            main(["trace", "Foo.run", "--out", "--limit", "3", "--node-limit", "3", "--json"])
+        self.assertEqual(captured["node_limit"], 3)
+
     def test_negative_trace_depth_is_rejected(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:

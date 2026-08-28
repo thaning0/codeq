@@ -186,7 +186,7 @@ codeq trace OrderService.submit --out --depth 3
 - `--in` walks toward callers and entry points.
 - `--out` walks toward callees and implementation.
 - `--depth 0` returns the root only.
-- `--node-limit N` is a hard cap on emitted nodes.
+- `--limit N` is a hard cap on emitted nodes; `--node-limit N` remains as a backward-compatible alias.
 
 Traversal is cycle-protected and restricted to repository source.
 
