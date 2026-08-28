@@ -15,7 +15,7 @@ from typing import Any
 
 from . import DAEMON_PROTOCOL_VERSION, __version__
 from .daemon import SocketEndpoint, default_socket_endpoint
-from .util import compact_location, git_root
+from .util import git_root
 
 
 _ARGPARSE_PARAMS = inspect.signature(argparse.ArgumentParser).parameters
@@ -249,7 +249,37 @@ def _request(payload: dict[str, Any], timeout: float, *, _allow_restart: bool = 
     return response["data"]
 
 
-def _print_locations(title: str, items: list[dict[str, Any]], indent: str = "  ") -> None:
+def _display_path(path: object, root: str | Path) -> str:
+    """Render paths under the repository relative to its root for plain output."""
+    text = str(path or "")
+    candidate = Path(text)
+    if not candidate.is_absolute():
+        return text
+    try:
+        return candidate.relative_to(Path(root)).as_posix()
+    except ValueError:
+        return text
+
+
+def _display_location(item: dict[str, Any], root: str | Path) -> str:
+    return (
+        f"{_display_path(item['path'], root)}:{item['line']}:{item.get('column', 1)}"
+    )
+
+
+def _display_message(message: object, root: str | Path) -> str:
+    """Shorten repository path prefixes embedded in plain diagnostic messages."""
+    text = str(message or "")
+    prefix = str(Path(root)) + os.sep
+    return text.replace(prefix, "")
+
+
+def _print_locations(
+    title: str,
+    items: list[dict[str, Any]],
+    root: str | Path,
+    indent: str = "  ",
+) -> None:
     print(f"{title} ({len(items)})")
     if not items:
         print(f"{indent}-")
@@ -257,7 +287,7 @@ def _print_locations(title: str, items: list[dict[str, Any]], indent: str = "  "
     for item in items:
         name = item.get("name")
         prefix = f"{name}  " if name else ""
-        print(f"{indent}{prefix}{compact_location(item)}")
+        print(f"{indent}{prefix}{_display_location(item, root)}")
 
 
 def _query_exit_code(data: dict[str, Any]) -> int:
@@ -265,12 +295,15 @@ def _query_exit_code(data: dict[str, Any]) -> int:
     return 0 if status in (None, "ok") else 1
 
 
-def _render_find(data: dict[str, Any]) -> None:
+def _render_find(data: dict[str, Any], root: str | Path) -> None:
     if data.get("status") and data.get("status") != "ok":
         if data.get("status") == "ambiguous":
-            _render_resolution(data)
+            _render_resolution(data, root)
             return
-        print(data.get("reason") or data.get("error") or "find failed", file=sys.stderr)
+        print(
+            _display_message(data.get("reason") or data.get("error") or "find failed", root),
+            file=sys.stderr,
+        )
         return
     if data.get("mode") == "text":
         for item in data.get("results", []):
@@ -283,7 +316,7 @@ def _render_find(data: dict[str, Any]) -> None:
             occurrences = int(item.get("occurrences") or 1)
             repeat = f" x{occurrences}" if occurrences > 1 else ""
             print(
-                f"{item['path']}:{item['line']}:{item.get('column',1)}{marker}{repeat}  "
+                f"{_display_location(item, root)}{marker}{repeat}  "
                 f"{str(item.get('text') or '').strip()}"
             )
         if not data.get("results"):
@@ -303,7 +336,7 @@ def _render_find(data: dict[str, Any]) -> None:
         container = f"{item.get('container')}." if item.get("container") else ""
         print(
             f"{item.get('kind','?'):<12} {container}{item.get('name','')}  "
-            f"{item['path']}:{item['line']}:{item.get('column',1)}"
+            f"{_display_location(item, root)}"
             f"  [{item.get('source','?')}]"
         )
     if not data.get("results"):
@@ -312,31 +345,53 @@ def _render_find(data: dict[str, Any]) -> None:
     print(f"\n[{data.get('result_count',0)} results; {meta.get('duration_ms','?')} ms]")
 
 
-def _render_resolution(data: dict[str, Any]) -> bool:
+def _render_resolution(data: dict[str, Any], root: str | Path) -> bool:
     status = data.get("status")
     if status == "ok":
         return True
     if status == "ambiguous":
-        print(f"Ambiguous target: {data.get('target')}", file=sys.stderr)
+        print(
+            f"Ambiguous target: {_display_message(data.get('target'), root)}",
+            file=sys.stderr,
+        )
         for item in data.get("candidates", []):
             container = f"{item.get('container')}." if item.get("container") else ""
-            print(f"  {item.get('kind')} {container}{item.get('name')}  {compact_location(item)}", file=sys.stderr)
+            print(
+                f"  {item.get('kind')} {container}{item.get('name')}  "
+                f"{_display_location(item, root)}",
+                file=sys.stderr,
+            )
             if item.get("selection_command"):
                 print(f"    try: {item['selection_command']}", file=sys.stderr)
         return False
-    print(data.get("reason") or data.get("error") or f"Target not found: {data.get('target')}", file=sys.stderr)
+    print(
+        _display_message(
+            data.get("reason") or data.get("error") or f"Target not found: {data.get('target')}",
+            root,
+        ),
+        file=sys.stderr,
+    )
     candidates = data.get("candidates") or []
     if candidates:
         print("Possible exact-name matches:", file=sys.stderr)
         for item in candidates:
             container = f"{item.get('container')}." if item.get("container") else ""
-            print(f"  {item.get('kind')} {container}{item.get('name')}  {compact_location(item)}", file=sys.stderr)
+            print(
+                f"  {item.get('kind')} {container}{item.get('name')}  "
+                f"{_display_location(item, root)}",
+                file=sys.stderr,
+            )
             if item.get("selection_command"):
                 print(f"    try: {item['selection_command']}", file=sys.stderr)
     return False
 
 
-def _print_text_search(title: str, data: dict[str, Any] | None, indent: str = "  ") -> None:
+def _print_text_search(
+    title: str,
+    data: dict[str, Any] | None,
+    root: str | Path,
+    indent: str = "  ",
+) -> None:
     if not data:
         return
     query = str(data.get("query") or "")
@@ -358,14 +413,18 @@ def _print_text_search(title: str, data: dict[str, Any] | None, indent: str = " 
         repeat = f" x{occurrences}" if occurrences > 1 else ""
         text = str(item.get("text") or "").strip()
         print(
-            f"{indent}{item['path']}:{item['line']}:{item.get('column',1)}"
+            f"{indent}{_display_location(item, root)}"
             f"{marker}{repeat}  {text}"
         )
     if data.get("truncated"):
         print(f"{indent}... more matching lines available; increase --limit")
 
 
-def _print_dynamic_references(items: list[dict[str, Any]], indent: str = "  ") -> None:
+def _print_dynamic_references(
+    items: list[dict[str, Any]],
+    root: str | Path,
+    indent: str = "  ",
+) -> None:
     print(f"Possible dynamic references ({len(items)})")
     if not items:
         print(f"{indent}-")
@@ -374,12 +433,12 @@ def _print_dynamic_references(items: list[dict[str, Any]], indent: str = "  ") -
         reason = item.get("reason") or "possible"
         text = str(item.get("text") or "").strip()
         suffix = f"  {text}" if text else ""
-        print(f"{indent}[{reason}] {compact_location(item)}{suffix}")
+        print(f"{indent}[{reason}] {_display_location(item, root)}{suffix}")
 
 
-def _render_file_context(data: dict[str, Any]) -> None:
+def _render_file_context(data: dict[str, Any], root: str | Path) -> None:
     file_info = data.get("file") or {}
-    print(f"File {file_info.get('path', data.get('target', ''))}")
+    print(f"File {_display_path(file_info.get('path', data.get('target', '')), root)}")
     if file_info.get("language"):
         print(f"Language: {file_info['language']}")
 
@@ -401,7 +460,7 @@ def _render_file_context(data: dict[str, Any]) -> None:
         print(f"\nTopology: hidden ({data.get('import_count', 0)} direct imports; use --topology to disclose imports/importers)")
         if data.get("lexical_references"):
             print()
-            _print_text_search("Lexical references", data.get("lexical_references"))
+            _print_text_search("Lexical references", data.get("lexical_references"), root)
         meta = data.get("_meta", {})
         print(f"\n[{meta.get('duration_ms','?')} ms]")
         return
@@ -414,7 +473,11 @@ def _render_file_context(data: dict[str, Any]) -> None:
         names = ", ".join(str(name) for name in item.get("names", []))
         suffix = f" [{names}]" if names else ""
         resolved = item.get("resolved_paths", [])
-        resolved_text = f" -> {', '.join(resolved)}" if resolved else ""
+        resolved_text = (
+            f" -> {', '.join(_display_path(path, root) for path in resolved)}"
+            if resolved
+            else ""
+        )
         print(f"  {item.get('specifier','')}:{item.get('line',1)}{suffix}{resolved_text}")
 
     if data.get("imports_truncated"):
@@ -428,32 +491,32 @@ def _render_file_context(data: dict[str, Any]) -> None:
     for item in importers:
         text = str(item.get("text") or "").strip()
         suffix = f"  {text}" if text else ""
-        print(f"  {item['path']}:{item['line']}:{item.get('column',1)}{suffix}")
+        print(f"  {_display_location(item, root)}{suffix}")
 
     if data.get("lexical_references"):
         print()
-        _print_text_search("Lexical references", data.get("lexical_references"))
+        _print_text_search("Lexical references", data.get("lexical_references"), root)
 
     meta = data.get("_meta", {})
     print(f"\n[{meta.get('duration_ms','?')} ms]")
 
 
-def _render_context(data: dict[str, Any]) -> None:
-    if not _render_resolution(data):
+def _render_context(data: dict[str, Any], root: str | Path) -> None:
+    if not _render_resolution(data, root):
         return
     if data.get("kind") == "file":
-        _render_file_context(data)
+        _render_file_context(data, root)
         return
     s = data["symbol"]
     container = f"{s.get('container')}." if s.get("container") else ""
     print(f"{s.get('kind','?')} {container}{s.get('name','')}")
-    print(compact_location(s))
+    print(_display_location(s, root))
     requested = data.get("requested_location")
     if isinstance(requested, dict):
         mode = " -> cursor definition" if data.get("cursor_definition") else ""
-        print(f"Requested at: {compact_location(requested)}{mode}")
+        print(f"Requested at: {_display_location(requested, root)}{mode}")
     if data.get("definition_note"):
-        print(f"Definition note: {data['definition_note']}")
+        print(f"Definition note: {_display_message(data['definition_note'], root)}")
     if data.get("hover"):
         print("\nHover")
         print(data["hover"].strip())
@@ -466,43 +529,51 @@ def _render_context(data: dict[str, Any]) -> None:
         print("\nDefinition source" if request_snippet else "\nSource")
         print(snippet)
     print()
-    _print_locations("Callers", data.get("callers", []))
-    _print_locations("Callees", data.get("callees", []))
-    _print_locations("Implementations", data.get("implementations", []))
-    _print_locations("Tests", data.get("tests", []))
-    _print_locations("References", data.get("references", []))
-    _print_dynamic_references(data.get("possible_dynamic_references", []))
+    _print_locations("Callers", data.get("callers", []), root)
+    _print_locations("Callees", data.get("callees", []), root)
+    _print_locations("Implementations", data.get("implementations", []), root)
+    _print_locations("Tests", data.get("tests", []), root)
+    _print_locations("References", data.get("references", []), root)
+    _print_dynamic_references(data.get("possible_dynamic_references", []), root)
     if data.get("lexical_references"):
         print()
-        _print_text_search("Lexical references", data.get("lexical_references"))
+        _print_text_search("Lexical references", data.get("lexical_references"), root)
     meta = data.get("_meta", {})
     print(f"\n[{meta.get('duration_ms','?')} ms]")
 
 
-def _render_trace(data: dict[str, Any]) -> None:
-    if not _render_resolution(data):
+def _render_trace(data: dict[str, Any], root: str | Path) -> None:
+    if not _render_resolution(data, root):
         return
 
-    def visit(node: dict[str, Any], prefix: str = "", last: bool = True, root: bool = False) -> None:
+    def visit(
+        node: dict[str, Any],
+        prefix: str = "",
+        last: bool = True,
+        is_root: bool = False,
+    ) -> None:
         item = node["node"]
-        connector = "" if root else ("└─ " if last else "├─ ")
+        connector = "" if is_root else ("└─ " if last else "├─ ")
         cycle = " [cycle]" if node.get("cycle") else ""
-        print(f"{prefix}{connector}{item.get('name','?')}  {item['path']}:{item['line']}{cycle}")
+        print(
+            f"{prefix}{connector}{item.get('name','?')}  "
+            f"{_display_path(item['path'], root)}:{item['line']}{cycle}"
+        )
         children = node.get("children", [])
-        next_prefix = prefix + ("" if root else ("   " if last else "│  "))
+        next_prefix = prefix + ("" if is_root else ("   " if last else "│  "))
         for index, child in enumerate(children):
             visit(child, next_prefix, index == len(children) - 1, False)
 
-    visit(data["tree"], root=True)
+    visit(data["tree"], is_root=True)
     if data.get("note"):
-        print(f"\nNote: {data['note']}")
+        print(f"\nNote: {_display_message(data['note'], root)}")
     meta = data.get("_meta", {})
     print(
         f"\n[{data.get('node_count',1)} nodes; depth={data.get('depth')}; {meta.get('duration_ms','?')} ms]"
     )
 
 
-def _render_review(data: dict[str, Any]) -> None:
+def _render_review(data: dict[str, Any], root: str | Path) -> None:
     print(f"Base: {data.get('requested_base', data.get('base'))}")
     print(f"Base mode: {data.get('base_mode', 'direct')}")
     if data.get("resolved_base"):
@@ -512,10 +583,10 @@ def _render_review(data: dict[str, Any]) -> None:
     if file_changes:
         for change in file_changes:
             status = str(change.get("status") or "?")
-            path = str(change.get("path") or "")
+            path = _display_path(change.get("path"), root)
             old_path = change.get("old_path")
             if status in {"R", "C"} and old_path:
-                print(f"  {status} {old_path} -> {path}")
+                print(f"  {status} {_display_path(old_path, root)} -> {path}")
             else:
                 print(f"  {status} {path}")
             if change.get("semantic_status") in {"deleted_base_analyzed", "deleted_base_unavailable"}:
@@ -545,30 +616,38 @@ def _render_review(data: dict[str, Any]) -> None:
                     )
     else:
         for path in data.get("changed_files", []):
-            print(f"  {path}")
+            print(f"  {_display_path(path, root)}")
     print(f"\nChanged symbols: {data.get('changed_symbol_count', 0)}")
     for detail in data.get("changed_symbols", []):
         symbol = detail["symbol"]
         container = f"{symbol.get('container')}." if symbol.get("container") else ""
-        print(f"  {symbol.get('kind')} {container}{symbol.get('name')}  {symbol['path']}:{symbol['line']}")
+        print(
+            f"  {symbol.get('kind')} {container}{symbol.get('name')}  "
+            f"{_display_path(symbol['path'], root)}:{symbol['line']}"
+        )
         for caller in detail.get("callers", [])[:5]:
-            print(f"    <- {caller.get('name')}  {caller['path']}:{caller['line']}")
+            print(
+                f"    <- {caller.get('name')}  "
+                f"{_display_path(caller['path'], root)}:{caller['line']}"
+            )
         for dynamic in detail.get("possible_dynamic_references", [])[:5]:
             print(
                 f"    ? {dynamic.get('reason','possible')}  "
-                f"{dynamic['path']}:{dynamic['line']}"
+                f"{_display_path(dynamic['path'], root)}:{dynamic['line']}"
             )
         for test in detail.get("tests", [])[:5]:
-            print(f"    test {test['path']}:{test['line']}")
+            print(f"    test {_display_path(test['path'], root)}:{test['line']}")
     print(f"\nAffected files: {data.get('impacted_file_count', 0)}")
     for path in data.get("impacted_files", []):
-        print(f"  {path}")
+        print(f"  {_display_path(path, root)}")
     if data.get("impacted_files_truncated"):
         print("  ... more affected files available; increase --limit")
     print(f"\nPossible dynamic references: {data.get('possible_dynamic_reference_count', 0)}")
     print(f"\nLikely tests: {data.get('test_count', 0)}")
     for test in data.get("tests", []):
-        print(f"  {test.get('name','')}  {test['path']}:{test['line']}")
+        print(
+            f"  {test.get('name','')}  {_display_path(test['path'], root)}:{test['line']}"
+        )
     if data.get("tests_truncated"):
         print("  ... more likely tests available; increase --limit")
     if data.get("truncated"):
@@ -1079,13 +1158,13 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(exit_code)
         return
     if args.command == "find":
-        _render_find(data)
+        _render_find(data, root)
     elif args.command == "context":
-        _render_context(data)
+        _render_context(data, root)
     elif args.command == "trace":
-        _render_trace(data)
+        _render_trace(data, root)
     elif args.command == "review":
-        _render_review(data)
+        _render_review(data, root)
     if exit_code:
         raise SystemExit(exit_code)
 
