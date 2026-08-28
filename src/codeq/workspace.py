@@ -47,6 +47,7 @@ from .util import (
     lexical_hits,
     lsp_location,
     parse_target,
+    path_to_uri,
     path_target_intent,
     source_snippet,
     symbol_kind,
@@ -211,6 +212,14 @@ def _call_item_entry(item: dict[str, Any]) -> dict[str, Any]:
         "column": int(start.get("character", 0)) + 1,
         "detail": item.get("detail") or "",
     }
+
+
+_CALL_HIERARCHY_KIND_CODES = {
+    "Class": 5,
+    "Method": 6,
+    "Constructor": 9,
+    "Function": 12,
+}
 
 
 class Workspace:
@@ -1351,11 +1360,48 @@ class Workspace:
             for item in self._call_neighbors(session, path, line, column, direction)
         }
 
-    def _call_neighbors(self, session: LspProcess, path: Path, line: int, column: int, direction: str) -> list[dict[str, Any]]:
-        roots = session.prepare_call_hierarchy(path, line, column)
-        if not roots:
-            return []
-        raw = session.incoming_calls(roots[0]) if direction == "in" else session.outgoing_calls(roots[0])
+    @staticmethod
+    def _call_hierarchy_item(symbol: dict[str, Any]) -> dict[str, Any] | None:
+        path = Path(str(symbol.get("path") or ""))
+        if path.suffix not in {".py", ".pyi"}:
+            return None
+        name = str(symbol.get("name") or "")
+        kind = _CALL_HIERARCHY_KIND_CODES.get(str(symbol.get("kind") or ""))
+        line = int(symbol.get("line") or 0)
+        column = int(symbol.get("column") or 0)
+        if not name or kind is None or line <= 0 or column <= 0:
+            return None
+        start = {"line": line - 1, "character": column - 1}
+        # LSP columns count UTF-16 code units, not Python code points.
+        name_units = len(name.encode("utf-16-le")) // 2
+        selection = {
+            "start": start,
+            "end": {"line": line - 1, "character": column - 1 + name_units},
+        }
+        return {
+            "name": name,
+            "kind": kind,
+            "uri": path_to_uri(path.resolve()),
+            "range": selection,
+            "selectionRange": selection,
+        }
+
+    def _call_neighbors(
+        self,
+        session: LspProcess,
+        path: Path,
+        line: int,
+        column: int,
+        direction: str,
+        *,
+        root_item: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        if root_item is None:
+            roots = session.prepare_call_hierarchy(path, line, column)
+            if not roots:
+                return []
+            root_item = roots[0]
+        raw = session.incoming_calls(root_item) if direction == "in" else session.outgoing_calls(root_item)
         key = "from" if direction == "in" else "to"
         out: list[dict[str, Any]] = []
         for edge in raw:
@@ -2281,7 +2327,14 @@ class Workspace:
                 self._prewarm_symbol(project, session, symbol, max_files=8)
             except LspError:
                 continue
-            callers = self._call_neighbors(session, path, line, column, "in")
+            callers = self._call_neighbors(
+                session,
+                path,
+                line,
+                column,
+                "in",
+                root_item=self._call_hierarchy_item(symbol),
+            )
             try:
                 refs = [
                     x

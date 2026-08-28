@@ -45,7 +45,82 @@ class _LiveSession:
         pass
 
 
+class _CallSession:
+    def __init__(self) -> None:
+        self.prepared = 0
+        self.incoming_items: list[dict[str, Any]] = []
+
+    def prepare_call_hierarchy(self, path: Path, line: int, column: int):
+        self.prepared += 1
+        return [{"name": "prepared"}]
+
+    def incoming_calls(self, item: dict[str, Any]):
+        self.incoming_items.append(item)
+        return []
+
+    def outgoing_calls(self, item: dict[str, Any]):
+        return []
+
+
 class PerformanceHardeningTests(unittest.TestCase):
+    def test_python_review_call_item_skips_prepare_call_hierarchy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "service.py"
+            path.write_text("def run():\n    pass\n", encoding="utf-8")
+            symbol = {
+                "name": "run",
+                "kind": "Function",
+                "path": str(path),
+                "line": 1,
+                "column": 5,
+            }
+            workspace = Workspace(root)
+            session = _CallSession()
+            try:
+                item = workspace._call_hierarchy_item(symbol)
+                self.assertIsNotNone(item)
+                workspace._call_neighbors(cast(Any, session), path, 1, 5, "in", root_item=item)
+                self.assertEqual(session.prepared, 0)
+                self.assertEqual(
+                    session.incoming_items,
+                    [
+                        {
+                            "name": "run",
+                            "kind": 12,
+                            "uri": path.resolve().as_uri(),
+                            "range": {
+                                "start": {"line": 0, "character": 4},
+                                "end": {"line": 0, "character": 7},
+                            },
+                            "selectionRange": {
+                                "start": {"line": 0, "character": 4},
+                                "end": {"line": 0, "character": 7},
+                            },
+                        }
+                    ],
+                )
+            finally:
+                workspace.close()
+
+    def test_unsupported_call_item_falls_back_to_prepare(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "module.ts"
+            path.write_text("export function run() {}\n", encoding="utf-8")
+            workspace = Workspace(root)
+            session = _CallSession()
+            try:
+                item = workspace._call_hierarchy_item(
+                    {"name": "run", "kind": "Function", "path": str(path), "line": 1, "column": 17}
+                )
+                self.assertIsNone(item)
+                workspace._call_neighbors(cast(Any, session), path, 1, 17, "in", root_item=item)
+                self.assertEqual(session.prepared, 1)
+                self.assertEqual(session.incoming_items, [{"name": "prepared"}])
+            finally:
+                workspace.close()
+
     def test_workspace_navigation_is_serialized_within_one_lsp_process(self) -> None:
         session = cast(Any, LspProcess.__new__(LspProcess))
         underlying = threading.Lock()
