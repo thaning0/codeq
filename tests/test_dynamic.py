@@ -3,8 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from codeq.dynamic import classify_dynamic_reference
+from codeq.dynamic import _python_index, classify_dynamic_reference
 
 
 class DynamicReferenceTests(unittest.TestCase):
@@ -71,6 +72,26 @@ class DynamicReferenceTests(unittest.TestCase):
         )
         result = self._classify(".py", source, "Runner", 6, 17)
         self.assertIsNone(result)
+
+    def test_python_cached_index_avoids_repeated_ast_walks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.py"
+            path.write_text("handlers = {'one': handler, 'two': handler}\n", encoding="utf-8")
+            _python_index.cache_clear()
+            with patch("codeq.dynamic.ast.walk", wraps=__import__("ast").walk) as walk:
+                first = classify_dynamic_reference(
+                    {"path": str(path), "line": 1, "column": 20},
+                    "handler",
+                )
+                second = classify_dynamic_reference(
+                    {"path": str(path), "line": 1, "column": 36},
+                    "handler",
+                )
+            self.assertEqual(first and first["reason"], "mapping_value")
+            self.assertEqual(second and second["reason"], "mapping_value")
+            # One full walk builds the cached candidate index; the remaining
+            # walks are bounded ancestor-subtree checks for the two results.
+            self.assertEqual(walk.call_count, 4)
 
     def test_typescript_event_callback(self):
         result = self._classify(

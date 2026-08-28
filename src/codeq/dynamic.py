@@ -22,18 +22,35 @@ def _read_lines(path_text: str, mtime_ns: int) -> tuple[str, ...]:
 
 
 @lru_cache(maxsize=128)
-def _python_index(path_text: str, mtime_ns: int) -> tuple[ast.AST | None, dict[ast.AST, ast.AST]]:
+def _python_index(
+    path_text: str,
+    mtime_ns: int,
+) -> tuple[
+    ast.AST | None,
+    dict[ast.AST, ast.AST],
+    dict[tuple[int, str], tuple[tuple[ast.AST, int], ...]],
+]:
     del mtime_ns
     try:
         source = Path(path_text).read_text(encoding="utf-8", errors="replace")
         tree = ast.parse(source, filename=path_text)
     except (OSError, SyntaxError, UnicodeError):
-        return None, {}
+        return None, {}, {}
     parents: dict[ast.AST, ast.AST] = {}
+    uses: dict[tuple[int, str], list[tuple[ast.AST, int]]] = {}
     for parent in ast.walk(tree):
         for child in ast.iter_child_nodes(parent):
             parents[child] = parent
-    return tree, parents
+        if isinstance(parent, ast.Name) and isinstance(parent.ctx, ast.Load):
+            key = (int(getattr(parent, "lineno", -1)), parent.id)
+            uses.setdefault(key, []).append((parent, int(getattr(parent, "col_offset", 0))))
+        elif isinstance(parent, ast.Attribute) and isinstance(parent.ctx, ast.Load):
+            line = int(getattr(parent, "end_lineno", getattr(parent, "lineno", -1)))
+            end_col = int(getattr(parent, "end_col_offset", 0))
+            uses.setdefault((line, parent.attr), []).append(
+                (parent, max(0, end_col - len(parent.attr)))
+            )
+    return tree, parents, {key: tuple(value) for key, value in uses.items()}
 
 
 def _file_version(path: Path) -> int:
@@ -54,26 +71,6 @@ def _node_contains(root: ast.AST, target: ast.AST) -> bool:
     return any(node is target for node in ast.walk(root))
 
 
-def _python_symbol_start(node: ast.AST, line: int, symbol_name: str) -> int | None:
-    if isinstance(node, ast.Name):
-        if (
-            node.id == symbol_name
-            and isinstance(node.ctx, ast.Load)
-            and getattr(node, "lineno", -1) == line
-        ):
-            return int(getattr(node, "col_offset", 0))
-        return None
-    if isinstance(node, ast.Attribute):
-        if (
-            node.attr == symbol_name
-            and isinstance(node.ctx, ast.Load)
-            and getattr(node, "end_lineno", getattr(node, "lineno", -1)) == line
-        ):
-            end_col = int(getattr(node, "end_col_offset", 0))
-            return max(0, end_col - len(symbol_name))
-    return None
-
-
 def _call_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -83,15 +80,11 @@ def _call_name(node: ast.AST) -> str:
 
 
 def _python_reason(path: Path, line: int, column: int, symbol_name: str) -> str | None:
-    tree, parents = _python_index(str(path.resolve()), _file_version(path))
+    tree, parents, uses = _python_index(str(path.resolve()), _file_version(path))
     if tree is None:
         return None
     target_col = max(0, column - 1)
-    candidates: list[tuple[ast.AST, int]] = []
-    for candidate in ast.walk(tree):
-        start = _python_symbol_start(candidate, line, symbol_name)
-        if start is not None:
-            candidates.append((candidate, start))
+    candidates = uses.get((line, symbol_name), ())
     if not candidates:
         return None
     node, start_col = min(candidates, key=lambda item: abs(item[1] - target_col))
