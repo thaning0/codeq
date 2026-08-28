@@ -467,6 +467,14 @@ class Workspace:
         location = f"{rendered_path}:{int(item.get('line') or 1)}:{int(item.get('column') or 1)}"
         return shlex.join(["codeq", "context", location])
 
+    def _file_context_command(self, path: str | Path, *options: str) -> str:
+        resolved = Path(path).resolve()
+        try:
+            rendered_path = resolved.relative_to(self.root).as_posix()
+        except ValueError:
+            rendered_path = str(resolved)
+        return shlex.join(["codeq", "context", rendered_path, *options])
+
     def _with_selection_commands(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [
             {**item, "selection_command": self._selection_command(item)}
@@ -1784,6 +1792,14 @@ class Workspace:
         if resolved["status"] != "ok":
             return resolved
         symbol = resolved["symbol"]
+        if include_topology:
+            return {
+                "status": "invalid_query",
+                "target": target,
+                "reason": "--topology applies only to whole-file context; the target resolved to a symbol",
+                "symbol": symbol,
+                "recovery_command": self._file_context_command(symbol["path"], "--topology"),
+            }
         budget = QueryBudget.from_limit(limit)
         try:
             session, project, path, line, column = self._session_and_position(symbol)

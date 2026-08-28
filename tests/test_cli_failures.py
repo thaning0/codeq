@@ -406,6 +406,25 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertIn("Possible exact-name matches:", stderr.getvalue())
         self.assertIn("codeq context pkg/bridge/session.py:4:7", stderr.getvalue())
 
+    def test_invalid_topology_plain_output_includes_whole_file_recovery(self) -> None:
+        result = {
+            "status": "invalid_query",
+            "target": "Service.run",
+            "reason": "--topology applies only to whole-file context; the target resolved to a symbol",
+            "recovery_command": "codeq context src/service.py --topology",
+        }
+        stderr = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stderr(stderr),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main(["context", "Service.run", "--topology"])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("whole-file context", stderr.getvalue())
+        self.assertIn("try: codeq context src/service.py --topology", stderr.getvalue())
+
     def test_lexical_filters_require_lexical_reference_mode(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:

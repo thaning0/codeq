@@ -371,6 +371,8 @@ def _render_resolution(data: dict[str, Any], root: str | Path) -> bool:
         ),
         file=sys.stderr,
     )
+    if data.get("recovery_command"):
+        print(f"  try: {data['recovery_command']}", file=sys.stderr)
     candidates = data.get("candidates") or []
     if candidates:
         print("Possible exact-name matches:", file=sys.stderr)

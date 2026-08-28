@@ -112,6 +112,49 @@ class FileContextDisclosureTests(unittest.TestCase):
             self.assertEqual(result["import_count"], 1)
             self.assertEqual(len(result["imports"]), 1)
 
+    def test_topology_on_symbol_is_rejected_with_whole_file_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sample.py"
+            source.write_text("class Service:\n    def run(self):\n        pass\n", encoding="utf-8")
+            workspace = self._workspace(root)
+            symbol = {
+                "name": "run",
+                "kind": "Method",
+                "container": "Service",
+                "path": str(source),
+                "line": 2,
+                "column": 9,
+            }
+            with (
+                patch.object(workspace, "resolve", return_value={"status": "ok", "symbol": symbol}),
+                patch.object(
+                    workspace,
+                    "_session_and_position",
+                    side_effect=AssertionError("invalid topology must fail before neighborhood queries"),
+                ),
+            ):
+                result = workspace.context("Service.run", include_topology=True)
+            self.assertEqual(result["status"], "invalid_query")
+            self.assertIn("whole-file", result["reason"])
+            self.assertEqual(result["recovery_command"], "codeq context sample.py --topology")
+
+    def test_dotted_module_keeps_file_topology_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sample.py"
+            source.write_text("class Service:\n    pass\n", encoding="utf-8")
+            workspace = self._workspace(root)
+            with (
+                patch.object(workspace, "_file_target", return_value=None),
+                patch.object(workspace, "_dotted_module_candidates", return_value=[source]),
+                patch("codeq.workspace.extract_imports", return_value=[]),
+                patch("codeq.workspace.importer_candidate_hits", return_value=[]),
+            ):
+                result = workspace.context("pkg.sample", include_topology=True)
+            self.assertEqual(result["status"], "ok")
+            self.assertTrue(result["topology_loaded"])
+
 
 if __name__ == "__main__":
     unittest.main()
