@@ -6,8 +6,9 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from codeq.lsp import LspProcess
 from codeq.workspace import Project, Workspace
 
 
@@ -45,6 +46,20 @@ class _LiveSession:
 
 
 class PerformanceHardeningTests(unittest.TestCase):
+    def test_ensure_open_does_not_reread_unchanged_document(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "service.py"
+            path.write_text("value = 1\n", encoding="utf-8")
+            session = cast(Any, LspProcess.__new__(LspProcess))
+            session._open_docs = {}
+            session.notify = Mock()
+            with patch("pathlib.Path.read_text", autospec=True, return_value="value = 1\n") as read_text:
+                session.ensure_open(path)
+                session.ensure_open(path)
+            self.assertEqual(read_text.call_count, 1)
+            session.notify.assert_called_once()
+
     def test_different_projects_start_language_servers_concurrently(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

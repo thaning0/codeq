@@ -252,11 +252,16 @@ class LspProcess:
         try:
             stat = path.stat()
             marker = (stat.st_mtime_ns, stat.st_size)
-            text = path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             raise LspError(f"cannot open {path}: {exc}") from exc
         uri = path_to_uri(path)
         old = self._open_docs.get(uri)
+        if old == marker:
+            return
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise LspError(f"cannot open {path}: {exc}") from exc
         if old is None:
             self.notify(
                 "textDocument/didOpen",
