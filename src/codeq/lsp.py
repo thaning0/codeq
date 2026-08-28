@@ -57,6 +57,7 @@ class LspProcess:
         if self._proc.stdin is None or self._proc.stdout is None or self._proc.stderr is None:
             raise LspError(f"failed to create stdio pipes for {name}")
         self._write_lock = threading.Lock()
+        self._navigation_lock = threading.Lock()
         self._next_id = 1
         self.request_count = 0
         self._pending: dict[int, queue.Queue[dict[str, Any]]] = {}
@@ -303,7 +304,8 @@ class LspProcess:
         }
 
     def workspace_symbols(self, query: str, timeout: float | None = None) -> list[dict[str, Any]]:
-        return self.request("workspace/symbol", {"query": query}, timeout=timeout) or []
+        with self._navigation_lock:
+            return self.request("workspace/symbol", {"query": query}, timeout=timeout) or []
 
     def document_symbols(self, path: Path, timeout: float | None = None) -> list[dict[str, Any]]:
         self.ensure_open(path)
@@ -332,7 +334,8 @@ class LspProcess:
     def references(self, path: Path, line: int, column: int) -> list[dict[str, Any]]:
         params = self.position_params(path, line, column)
         params["context"] = {"includeDeclaration": False}
-        return self.request("textDocument/references", params) or []
+        with self._navigation_lock:
+            return self.request("textDocument/references", params) or []
 
     def implementations(self, path: Path, line: int, column: int) -> list[dict[str, Any]]:
         try:
@@ -348,7 +351,8 @@ class LspProcess:
 
     def incoming_calls(self, item: dict[str, Any]) -> list[dict[str, Any]]:
         try:
-            return self.request("callHierarchy/incomingCalls", {"item": item}) or []
+            with self._navigation_lock:
+                return self.request("callHierarchy/incomingCalls", {"item": item}) or []
         except LspError:
             return []
 

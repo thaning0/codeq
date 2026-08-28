@@ -46,6 +46,55 @@ class _LiveSession:
 
 
 class PerformanceHardeningTests(unittest.TestCase):
+    def test_workspace_navigation_is_serialized_within_one_lsp_process(self) -> None:
+        session = cast(Any, LspProcess.__new__(LspProcess))
+        underlying = threading.Lock()
+        guard = threading.Lock()
+        contended = threading.Event()
+        release = threading.Event()
+        attempts = 0
+        owners = 0
+        max_owners = 0
+        request_methods: list[str] = []
+
+        class _ObservedLock:
+            def __enter__(self):
+                nonlocal attempts, owners, max_owners
+                with guard:
+                    attempts += 1
+                    if attempts == 2:
+                        contended.set()
+                underlying.acquire()
+                with guard:
+                    owners += 1
+                    max_owners = max(max_owners, owners)
+
+            def __exit__(self, *args: Any):
+                nonlocal owners
+                with guard:
+                    owners -= 1
+                underlying.release()
+
+        def request(method: str, params: dict[str, Any], timeout: float | None = None):
+            request_methods.append(method)
+            if method == "workspace/symbol":
+                self.assertTrue(release.wait(timeout=1.0))
+            return []
+
+        session._navigation_lock = _ObservedLock()
+        session.request = request
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(session.workspace_symbols, "Thing")
+            second = pool.submit(session.incoming_calls, {})
+            self.assertTrue(contended.wait(timeout=1.0))
+            self.assertEqual(request_methods, ["workspace/symbol"])
+            release.set()
+            first.result(timeout=1.0)
+            second.result(timeout=1.0)
+
+        self.assertEqual(request_methods, ["workspace/symbol", "callHierarchy/incomingCalls"])
+        self.assertEqual(max_owners, 1)
+
     def test_basedpyright_configuration_requests_receive_effective_settings(self) -> None:
         session = cast(Any, LspProcess.__new__(LspProcess))
         session.root = Path("/workspace")
