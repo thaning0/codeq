@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import threading
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -15,12 +16,16 @@ class _FakeWorkspace:
         self.root = root
         self.timeout = timeout
         self.closed = False
+        self.lsp_active = False
 
     def close(self) -> None:
         self.closed = True
 
     def session_stats(self):
         return []
+
+    def has_active_lsp(self) -> bool:
+        return self.lsp_active
 
     def metrics_snapshot(self):
         return {
@@ -169,6 +174,19 @@ class ServiceLifecycleTests(unittest.TestCase):
             self.assertEqual(evicted, [str(Path(tmp).resolve())])
             self.assertTrue(bool(getattr(workspace, "closed", False)))
             self.assertEqual(service.workspace_count(), 0)
+
+    def test_idle_workspace_with_live_lsp_uses_longer_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            service.handle({"command": "find", "root": tmp, "query": "Foo"})
+            entry = next(iter(service._workspaces.values()))
+            setattr(entry.workspace, "lsp_active", True)
+            entry.last_used = time.monotonic() - 1.0
+
+            self.assertEqual(service.evict_idle(0.01, lsp_idle_seconds=3600), [])
+            self.assertFalse(bool(getattr(entry.workspace, "closed", False)))
+            self.assertEqual(service.evict_idle(0.01, lsp_idle_seconds=0.01), [str(Path(tmp).resolve())])
+            self.assertTrue(bool(getattr(entry.workspace, "closed", False)))
 
     def test_text_scope_reaches_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):

@@ -41,14 +41,16 @@ class CodeqService:
         with self._lock:
             return max(0.0, time.monotonic() - self._last_activity)
 
-    def evict_idle(self, max_idle_seconds: float) -> list[str]:
+    def evict_idle(self, max_idle_seconds: float, *, lsp_idle_seconds: float | None = None) -> list[str]:
         """Close inactive workspaces without exposing lifecycle controls to the CLI."""
         now = time.monotonic()
+        warm_limit = max_idle_seconds if lsp_idle_seconds is None else lsp_idle_seconds
         evicted: list[Workspace] = []
         roots: list[str] = []
         with self._lock:
             for root, entry in list(self._workspaces.items()):
-                if entry.active != 0 or now - entry.last_used < max_idle_seconds:
+                idle_limit = warm_limit if entry.workspace.has_active_lsp() else max_idle_seconds
+                if entry.active != 0 or now - entry.last_used < idle_limit:
                     continue
                 self._workspaces.pop(root, None)
                 evicted.append(entry.workspace)

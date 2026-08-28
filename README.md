@@ -279,7 +279,7 @@ Agent / shell
   └─ git
 ```
 
-The daemon keeps relevant language servers warm, caches only safe file-local document symbols, and releases inactive workspaces. It does **not** maintain a persistent repository graph or embedding index.
+The daemon keeps relevant language servers warm, caches only safe file-local document symbols, and releases inactive workspaces. Workspaces without a live language server expire after five minutes; workspaces retaining an LSP process expire after 30 minutes. Override those limits with `CODEQ_WORKSPACE_IDLE_SECONDS` and `CODEQ_LSP_IDLE_SECONDS`. It does **not** maintain a persistent repository graph or embedding index.
 
 Concurrent semantic `find` requests for the same worktree are queued so one cold
 request initializes the language servers and caches. Document-symbol and prewarm

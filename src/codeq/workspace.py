@@ -265,6 +265,10 @@ class Workspace:
                 for project, session in self._sessions.items()
             ]
 
+    def has_active_lsp(self) -> bool:
+        with self._lock:
+            return any(session.alive() for session in self._sessions.values())
+
     def metrics_snapshot(self) -> dict[str, int]:
         with self._lock:
             metrics = dict(self._metrics)

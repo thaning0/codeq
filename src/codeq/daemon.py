@@ -19,6 +19,7 @@ from . import DAEMON_PROTOCOL_VERSION, __version__
 from .service import CodeqService
 
 _WORKSPACE_IDLE_SECONDS = float(os.environ.get("CODEQ_WORKSPACE_IDLE_SECONDS", "300"))
+_LSP_IDLE_SECONDS = float(os.environ.get("CODEQ_LSP_IDLE_SECONDS", "1800"))
 _DAEMON_IDLE_SECONDS = float(os.environ.get("CODEQ_DAEMON_IDLE_SECONDS", "900"))
 _MAX_WORKSPACES = int(os.environ.get("CODEQ_MAX_WORKSPACES", "4"))
 _MAINTENANCE_INTERVAL_SECONDS = 5.0
@@ -250,7 +251,7 @@ def run(endpoint: SocketEndpoint) -> int:
             try:
                 conn, _ = server.accept()
             except TimeoutError:
-                service.evict_idle(_WORKSPACE_IDLE_SECONDS)
+                service.evict_idle(_WORKSPACE_IDLE_SECONDS, lsp_idle_seconds=_LSP_IDLE_SECONDS)
                 if service.workspace_count() == 0 and service.idle_seconds() >= _DAEMON_IDLE_SECONDS:
                     break
                 continue
