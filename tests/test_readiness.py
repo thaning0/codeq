@@ -19,19 +19,25 @@ class ReadinessGateTests(unittest.TestCase):
             "codeq_version": "0.5.1",
             "cold": {
                 "context_symbol": {"p95_ms": 4000.0, "samples": sample},
+                "context_reference_store": {"p95_ms": 4500.0, "samples": sample},
                 "trace_in": {"p95_ms": 4200.0, "samples": sample},
                 "find_exact": {"p95_ms": 1000.0, "samples": sample},
                 "find_concept": {"p95_ms": 1200.0, "samples": sample},
                 "context_cursor": {"p95_ms": 4100.0, "samples": sample},
                 "context_lexical": {"p95_ms": 4300.0, "samples": sample},
+                "review": {"p95_ms": 2000.0, "samples": sample},
+                "review_broad": {"p95_ms": 5000.0, "samples": sample},
             },
             "warm": {
                 "context_symbol": {"p95_ms": 200.0, "samples": sample},
+                "context_reference_store": {"p95_ms": 300.0, "samples": sample},
                 "trace_in": {"p95_ms": 400.0, "samples": sample},
                 "find_exact": {"p95_ms": 300.0, "samples": sample},
                 "find_concept": {"p95_ms": 900.0, "samples": sample},
                 "context_cursor": {"p95_ms": 250.0, "samples": sample},
                 "context_lexical": {"p95_ms": 500.0, "samples": sample},
+                "review": {"p95_ms": 200.0, "samples": sample},
+                "review_broad": {"p95_ms": 600.0, "samples": sample},
             },
         }
 
@@ -72,6 +78,16 @@ class ReadinessGateTests(unittest.TestCase):
         failed = {item["name"] for item in result["checks"] if not item["passed"]}
         self.assertIn("cold_context_p95", failed)
         self.assertIn("navigation_fallback_free", failed)
+
+    def test_gate_fails_when_live_cases_are_missing_or_review_has_a_10s_outlier(self) -> None:
+        performance = self._performance()
+        del performance["warm"]["context_reference_store"]
+        performance["cold"]["review_broad"]["samples"] = [{"duration_ms": 10000.0}]
+        result = evaluate(performance, self._workflows())
+        self.assertEqual(result["status"], "FAIL")
+        failed = {item["name"] for item in result["checks"] if not item["passed"]}
+        self.assertIn("live_workload_cases", failed)
+        self.assertIn("no_10s_semantic_outlier", failed)
 
 
 if __name__ == "__main__":

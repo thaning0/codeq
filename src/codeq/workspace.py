@@ -6,6 +6,7 @@ import re
 import shlex
 import shutil
 import threading
+import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -1741,8 +1742,31 @@ class Workspace:
         lexical_exclude_tests: bool = False,
         semantic_paths: tuple[str, ...] = (),
     ) -> dict[str, Any]:
+        context_started = time.perf_counter()
+
+        def with_phase_timing(
+            data: dict[str, Any],
+            *,
+            resolution_finished: float,
+            prewarm_ms: float = 0.0,
+            neighborhood_started: float | None = None,
+        ) -> dict[str, Any]:
+            finished = time.perf_counter()
+            data["_phase_ms"] = {
+                "resolution": round(max(0.0, resolution_finished - context_started) * 1000, 1),
+                "prewarm": round(max(0.0, prewarm_ms), 1),
+                "semantic_neighborhood": round(
+                    max(0.0, finished - neighborhood_started) * 1000,
+                    1,
+                )
+                if neighborhood_started is not None
+                else 0.0,
+            }
+            return data
+
         file_target = self._file_target(target)
         if file_target is not None:
+            resolution_finished = time.perf_counter()
             data = self._file_context(
                 file_target,
                 limit,
@@ -1760,13 +1784,18 @@ class Workspace:
                     globs=lexical_globs,
                     exclude_tests=lexical_exclude_tests,
                 )
-            return data
+            return with_phase_timing(
+                data,
+                resolution_finished=resolution_finished,
+                neighborhood_started=resolution_finished,
+            )
 
         module_candidates = self._dotted_module_candidates(
             target,
             semantic_paths=semantic_paths,
         )
         if len(module_candidates) == 1:
+            resolution_finished = time.perf_counter()
             data = self._file_context(
                 module_candidates[0],
                 limit,
@@ -1784,23 +1813,36 @@ class Workspace:
                     globs=lexical_globs,
                     exclude_tests=lexical_exclude_tests,
                 )
-            return data
+            return with_phase_timing(
+                data,
+                resolution_finished=resolution_finished,
+                neighborhood_started=resolution_finished,
+            )
         if len(module_candidates) > 1:
-            return self._ambiguous_file_result(target, module_candidates)
+            resolution_finished = time.perf_counter()
+            return with_phase_timing(
+                self._ambiguous_file_result(target, module_candidates),
+                resolution_finished=resolution_finished,
+            )
 
         resolved = self.resolve(target, semantic_paths=semantic_paths)
+        resolution_finished = time.perf_counter()
         if resolved["status"] != "ok":
-            return resolved
+            return with_phase_timing(resolved, resolution_finished=resolution_finished)
         symbol = resolved["symbol"]
         if include_topology:
-            return {
-                "status": "invalid_query",
-                "target": target,
-                "reason": "--topology applies only to whole-file context; the target resolved to a symbol",
-                "symbol": symbol,
-                "recovery_command": self._file_context_command(symbol["path"], "--topology"),
-            }
+            return with_phase_timing(
+                {
+                    "status": "invalid_query",
+                    "target": target,
+                    "reason": "--topology applies only to whole-file context; the target resolved to a symbol",
+                    "symbol": symbol,
+                    "recovery_command": self._file_context_command(symbol["path"], "--topology"),
+                },
+                resolution_finished=resolution_finished,
+            )
         budget = QueryBudget.from_limit(limit)
+        prewarm_started = time.perf_counter()
         try:
             session, project, path, line, column = self._session_and_position(symbol)
             self._prewarm_symbol(
@@ -1811,7 +1853,13 @@ class Workspace:
                 probe=lambda: self._reference_probe(session, path, line, column),
             )
         except LspError as exc:
-            return {"status": "error", "target": target, "error": str(exc), "symbol": symbol}
+            prewarm_finished = time.perf_counter()
+            return with_phase_timing(
+                {"status": "error", "target": target, "error": str(exc), "symbol": symbol},
+                resolution_finished=resolution_finished,
+                prewarm_ms=(prewarm_finished - prewarm_started) * 1000,
+            )
+        prewarm_finished = time.perf_counter()
 
         hover: Any = None
         try:
@@ -1889,7 +1937,7 @@ class Workspace:
                 exclude_tests=lexical_exclude_tests,
             )
 
-        data = {
+        data: dict[str, Any] = {
             "status": "ok",
             "evidence": EVIDENCE_SEMANTIC,
             "target": target,
@@ -1922,7 +1970,12 @@ class Workspace:
             data["request_source"] = request_source
         if lexical_data is not None:
             data["lexical_references"] = lexical_data
-        return data
+        return with_phase_timing(
+            data,
+            resolution_finished=resolution_finished,
+            prewarm_ms=(prewarm_finished - prewarm_started) * 1000,
+            neighborhood_started=prewarm_finished,
+        )
 
     def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100) -> dict[str, Any]:
         resolved = self.resolve(target)
@@ -2151,6 +2204,7 @@ class Workspace:
         }
 
     def review(self, base: str, limit: int = 20, *, merge_base: bool = False) -> dict[str, Any]:
+        review_started = time.perf_counter()
         budget = QueryBudget.from_limit(limit)
         resolved_base = git_merge_base(self.root, base) if merge_base else git_resolve_commit(self.root, base)
         file_changes = git_changed_files(self.root, resolved_base)
@@ -2165,6 +2219,7 @@ class Workspace:
             if path.is_file():
                 whole = whole_file_range(path)
                 ranges_by_path[str(path)] = [{"start": whole["start"], "end": whole["end"]}]
+        change_discovery_finished = time.perf_counter()
 
         changed_symbols: list[dict[str, Any]] = []
         unsupported: list[str] = []
@@ -2260,7 +2315,7 @@ class Workspace:
         )
         deleted_count = sum(1 for item in analyzed_changes if item.get("status") == "D")
         renamed_count = sum(1 for item in analyzed_changes if item.get("status") == "R")
-        return {
+        data: dict[str, Any] = {
             "status": "ok",
             "base": base,
             "requested_base": base,
@@ -2291,3 +2346,15 @@ class Workspace:
                 "test discovery uses semantic references/callers plus test-path classification",
             ],
         }
+        review_finished = time.perf_counter()
+        data["_phase_ms"] = {
+            "change_discovery": round(
+                max(0.0, change_discovery_finished - review_started) * 1000,
+                1,
+            ),
+            "review_analysis": round(
+                max(0.0, review_finished - change_discovery_finished) * 1000,
+                1,
+            ),
+        }
+        return data

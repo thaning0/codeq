@@ -90,6 +90,11 @@ current_semantic
 
 Evidence classes must remain separated. A lexical match must never become an authoritative semantic reference merely because it appears plausible.
 
+Symbol/file `context` and `review` JSON responses also expose diagnostic phase
+timing under `_meta.phase_ms`. Context separates `resolution`, `prewarm`, and
+`semantic_neighborhood`; review separates `change_discovery` and
+`review_analysis`. These additive diagnostics do not expand default plain output.
+
 ### Exit codes
 
 ```text
@@ -127,25 +132,28 @@ The CLI should continue favoring progressive disclosure over eager repository du
 
 ## Performance baseline
 
-Source: `benchmarks/results/0.5.1-quant.json` (`~/Quant`, two measured runs).
+Source: `benchmarks/results/1.0.0rc6-quant.json` (`~/Quant`, two measured runs).
 
 | Query | Cold P95 | Warm P95 |
 | --- | ---: | ---: |
-| context symbol | 3825.9 ms | 172.3 ms |
-| context cursor | 3958.1 ms | 127.5 ms |
-| context + lexical | 3938.6 ms | 311.0 ms |
-| trace incoming depth 2 | 3872.3 ms | 329.8 ms |
-| find concept | 1179.0 ms | 1021.7 ms |
+| context symbol | 3950.4 ms | 362.2 ms |
+| context reference store | 3452.1 ms | 675.1 ms |
+| context cursor | 3242.7 ms | 152.2 ms |
+| context + lexical | 3231.7 ms | 339.0 ms |
+| trace incoming depth 2 | 3557.1 ms | 410.1 ms |
+| find concept | 1074.6 ms | 1621.3 ms |
+| broad review (`HEAD~4`, 28 files) | 7476.3 ms | 3243.3 ms |
 
 Readiness thresholds:
 
 - warm context/trace P95 <= 3 s;
 - cold context/trace P95 <= 5 s;
-- no representative semantic sample >= 10 s.
+- no representative semantic/review sample >= 10 s;
+- live-workload-shaped complex context and broad review cases must be present in both cold and warm samples.
 
 Current baseline passes all thresholds.
 
-The warmed representative Workspace reached roughly 1.36 GB combined LSP RSS. This is primarily basedpyright/typescript-language-server memory. codeq's document-symbol cache is bounded to 256 entries per Workspace, and existing workspace idle eviction remains the process-memory boundary.
+An earlier fully warmed baseline reached roughly 1.36 GB combined LSP RSS. This is primarily basedpyright/typescript-language-server memory. codeq's document-symbol cache is bounded to 256 entries per Workspace, and existing workspace idle eviction remains the process-memory boundary.
 
 ## Historical Agent workflow evidence
 
@@ -231,6 +239,6 @@ Run:
 uv run python benchmarks/readiness_gate.py
 ```
 
-The gate consumes the committed 0.5.1 performance artifact and 0.5.2 historical replay artifact. At 0.5.3 all readiness checks passed, and `1.0.0rc6` is now the active release candidate. RC6 keeps the shared abstract daemon when allowed, automatically falls back to one-shot execution when a sandbox denies Unix sockets, and coalesces concurrent cold semantic work.
+The gate consumes the committed active-version performance artifact and the 0.5.2 historical replay artifact. The refreshed `1.0.0rc6` gate passes all ten checks, including mandatory live-workload cases and the no-10-second semantic/review limit. RC6 keeps the shared abstract daemon when allowed, automatically falls back to one-shot execution when a sandbox denies Unix sockets, and coalesces concurrent cold semantic work.
 
 During the RC period, only release blockers should change analysis/runtime behavior: silent correctness bugs, compatibility-contract regressions, or repeated severe performance/lifecycle failures. New analysis capabilities stay deferred. If the RC workload remains clean, the next stable release is `1.0.0`.

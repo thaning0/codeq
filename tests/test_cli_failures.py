@@ -534,6 +534,43 @@ class CliFailureContractTests(unittest.TestCase):
                 self.assertIn(summary, stdout.getvalue())
                 self.assertEqual(stderr.getvalue(), "")
 
+    def test_plain_context_does_not_expand_phase_diagnostics(self) -> None:
+        result = {
+            "status": "ok",
+            "symbol": {
+                "name": "run",
+                "kind": "Method",
+                "container": "Foo",
+                "path": "/repo/foo.py",
+                "line": 2,
+                "column": 5,
+            },
+            "callers": [],
+            "callees": [],
+            "implementations": [],
+            "tests": [],
+            "references": [],
+            "possible_dynamic_references": [],
+            "_meta": {
+                "duration_ms": 6.8,
+                "phase_ms": {
+                    "resolution": 1.2,
+                    "prewarm": 2.3,
+                    "semantic_neighborhood": 3.3,
+                },
+            },
+        }
+        stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(stdout),
+        ):
+            main(["context", "Foo.run"])
+        self.assertIn("[6.8 ms]", stdout.getvalue())
+        self.assertNotIn("resolution", stdout.getvalue())
+        self.assertNotIn("semantic_neighborhood", stdout.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -561,6 +561,39 @@ queuing, local-definition collapse, qualified recovery candidates, and the
 `search` alias. Artifacts: `benchmarks/1.0.0rc6-readiness.md` and
 `benchmarks/results/1.0.0rc6-readiness.json`.
 
+## 1.0.0rc6 post-rollout performance diagnostics
+
+Post-RC6 Agent sessions exposed a **10771.0 ms** `DuckDbReferenceStore` context
+and an **11591.0 ms** review over 21 changed files. Total duration alone could not
+separate cold resolution/prewarm cost from semantic-neighborhood or review-analysis
+cost, while the active readiness gate still consumed the old 0.5.1 performance
+artifact.
+
+Context and review results now carry internal phase timings that the service
+promotes to JSON `_meta.phase_ms`; default plain output is unchanged. Context
+reports `resolution`, `prewarm`, and `semantic_neighborhood`. Review reports
+`change_discovery` and `review_analysis`.
+
+The two-run RC6 Quant benchmark adds live-workload-shaped cases:
+
+```text
+                                  cold P95   warm P95
+context DuckDbReferenceStore        3452.1       675.1 ms
+review HEAD~4 (28 changed files)     7476.3      3243.3 ms
+```
+
+The slowest measured sample was **7476.3 ms**, below the enforceable 10-second
+limit. Phase data attributes the two cold broad-review samples almost entirely to
+`review_analysis` (7439.3 / 7383.9 ms), while complex cold context spent about
+2.4 s in resolution, 64-67 ms in prewarm, and 0.86-0.98 s in semantic-neighborhood
+work.
+
+The readiness gate now requires both live cases in cold and warm data, includes
+review samples in the no-10-second check, and defaults to the active-version
+performance artifact. The refreshed RC6 gate passed **10/10** checks. Performance
+samples: `benchmarks/results/1.0.0rc6-quant.json`; human reports:
+`benchmarks/1.0.0rc6-quant.md` and `benchmarks/1.0.0rc6-readiness.md`.
+
 ## Remaining boundaries
 
 - Dynamic runtime dispatch can remain unknowable to static analysis. Heuristic callback/registry evidence stays explicitly labeled `possible` and is not promoted to exact call edges.

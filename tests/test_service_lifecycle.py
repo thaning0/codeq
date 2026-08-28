@@ -60,8 +60,40 @@ class _FakeWorkspace:
     def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100):
         return {"status": "ok", "target": target, "direction": direction, "depth": depth, "node_count": 1, "node_limit": limit, "tree": {}, "root": {}}
 
+    def context(
+        self,
+        target: str,
+        limit: int = 20,
+        *,
+        outline_depth: int = 1,
+        outline_kind: str | None = None,
+        container: str | None = None,
+        include_topology: bool = False,
+        lexical_references: bool = False,
+        lexical_query: str | None = None,
+        lexical_paths: tuple[str, ...] = (),
+        lexical_globs: tuple[str, ...] = (),
+        lexical_exclude_tests: bool = False,
+        semantic_paths: tuple[str, ...] = (),
+    ):
+        return {
+            "status": "ok",
+            "target": target,
+            "_phase_ms": {
+                "resolution": 1.24,
+                "prewarm": 2.26,
+                "semantic_neighborhood": 3.28,
+            },
+        }
+
     def review(self, base: str, limit: int = 20, *, merge_base: bool = False):
-        return {"status": "ok", "base": base, "limit_seen": limit, "merge_base_seen": merge_base}
+        return {
+            "status": "ok",
+            "base": base,
+            "limit_seen": limit,
+            "merge_base_seen": merge_base,
+            "_phase_ms": {"change_discovery": 4.44, "review_analysis": 5.55},
+        }
 
 
 class ServiceLifecycleTests(unittest.TestCase):
@@ -215,6 +247,22 @@ class ServiceLifecycleTests(unittest.TestCase):
             service = CodeqService()
             result = service.handle({"command": "review", "root": tmp, "base": "main", "merge_base": True})
             self.assertTrue(result["merge_base_seen"])
+
+    def test_workspace_phase_timings_are_promoted_to_json_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            context = service.handle({"command": "context", "root": tmp, "target": "Service.run"})
+            review = service.handle({"command": "review", "root": tmp, "base": "HEAD~4"})
+            self.assertEqual(
+                context["_meta"]["phase_ms"],
+                {"resolution": 1.2, "prewarm": 2.3, "semantic_neighborhood": 3.3},
+            )
+            self.assertEqual(
+                review["_meta"]["phase_ms"],
+                {"change_discovery": 4.4, "review_analysis": 5.5},
+            )
+            self.assertNotIn("_phase_ms", context)
+            self.assertNotIn("_phase_ms", review)
 
     def test_workspace_cap_evicts_least_recently_used_inactive_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):

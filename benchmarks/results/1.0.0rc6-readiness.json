@@ -5,32 +5,41 @@
     {
       "name": "warm_context_p95",
       "passed": true,
-      "actual": 172.3,
+      "actual": 362.2,
       "requirement": "<= 3000 ms"
     },
     {
       "name": "warm_trace_p95",
       "passed": true,
-      "actual": 329.8,
+      "actual": 410.1,
       "requirement": "<= 3000 ms"
     },
     {
       "name": "cold_context_p95",
       "passed": true,
-      "actual": 3825.9,
+      "actual": 3950.4,
       "requirement": "<= 5000 ms"
     },
     {
       "name": "cold_trace_p95",
       "passed": true,
-      "actual": 3872.3,
+      "actual": 3557.1,
       "requirement": "<= 5000 ms"
     },
     {
       "name": "no_10s_semantic_outlier",
       "passed": true,
-      "actual": 3958.1,
+      "actual": 7476.3,
       "requirement": "< 10000 ms"
+    },
+    {
+      "name": "live_workload_cases",
+      "passed": true,
+      "actual": [
+        "context_reference_store",
+        "review_broad"
+      ],
+      "requirement": "context_reference_store and review_broad in cold and warm samples"
     },
     {
       "name": "historical_sample_size",
@@ -63,6 +72,6 @@
       "requirement": ">= 30 queries and >= 95% ok"
     }
   ],
-  "performance_version": "0.5.1",
+  "performance_version": "1.0.0rc6",
   "workflow_version": "0.5.2"
 }

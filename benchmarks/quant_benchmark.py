@@ -41,6 +41,7 @@ def _one(workspace: Workspace, action: Callable[[Workspace], dict[str, Any]]) ->
     return {
         "status": result.get("status"),
         "duration_ms": round(duration_ms, 1),
+        "phase_ms": result.get("_phase_ms", {}),
         "lsp_requests": _delta(after, before, "lsp_request_count"),
         "sessions_started": _delta(after, before, "sessions_started"),
         "prewarm_files": _delta(after, before, "prewarm_files"),
@@ -73,6 +74,7 @@ def benchmark(root: Path, reps: int) -> dict[str, Any]:
         "find_exact": lambda ws: ws.find("BacktestService", limit=8),
         "find_concept": lambda ws: ws.find("SSE backtest logs", limit=8),
         "context_symbol": lambda ws: ws.context("BacktestService.stream_backtest_logs", limit=10),
+        "context_reference_store": lambda ws: ws.context("DuckDbReferenceStore", limit=12),
         "context_cursor": lambda ws: ws.context("backend/src/app/api/backtest.py:175:17", limit=10),
         "context_lexical": lambda ws: ws.context(
             "backend/src/app/api/backtest.py:175:17",
@@ -85,6 +87,7 @@ def benchmark(root: Path, reps: int) -> dict[str, Any]:
         "trace_in": lambda ws: ws.trace("BacktestService.stream_backtest_logs", "in", depth=2, limit=20),
         "text_env": lambda ws: ws.find("BACKTEST_QUESTDB_QUERY_TARGET_ROWS", limit=12, text=True),
         "review": lambda ws: ws.review("HEAD~1", limit=10),
+        "review_broad": lambda ws: ws.review("HEAD~4", limit=30),
     }
 
     cold: dict[str, Any] = {}

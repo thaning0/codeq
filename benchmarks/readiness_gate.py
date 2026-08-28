@@ -40,7 +40,17 @@ def evaluate(performance: dict[str, Any], workflows: dict[str, Any]) -> dict[str
         ]
     )
 
-    semantic_names = {"find_exact", "find_concept", "context_symbol", "context_cursor", "context_lexical", "trace_in"}
+    semantic_names = {
+        "find_exact",
+        "find_concept",
+        "context_symbol",
+        "context_reference_store",
+        "context_cursor",
+        "context_lexical",
+        "trace_in",
+        "review",
+        "review_broad",
+    }
     semantic_samples: list[float] = []
     for phase in (cold, warm):
         for name, result in phase.items():
@@ -49,6 +59,18 @@ def evaluate(performance: dict[str, Any], workflows: dict[str, Any]) -> dict[str
             semantic_samples.extend(float(item.get("duration_ms", 0.0)) for item in result.get("samples", []))
     semantic_max = max(semantic_samples, default=0.0)
     checks.append(_check("no_10s_semantic_outlier", semantic_max < 10000.0, round(semantic_max, 1), "< 10000 ms"))
+    live_cases = {"context_reference_store", "review_broad"}
+    covered_live_cases = sorted(
+        name for name in live_cases if name in cold and name in warm
+    )
+    checks.append(
+        _check(
+            "live_workload_cases",
+            len(covered_live_cases) == len(live_cases),
+            covered_live_cases,
+            "context_reference_store and review_broad in cold and warm samples",
+        )
+    )
 
     sample = workflows.get("sample") or {}
     validation = workflows.get("current_validation") or {}
@@ -108,7 +130,11 @@ def render_markdown(result: dict[str, Any]) -> str:
 def main() -> None:
     output, markdown = default_output_paths()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--performance", type=Path, default=Path("benchmarks/results/0.5.1-quant.json"))
+    parser.add_argument(
+        "--performance",
+        type=Path,
+        default=Path(f"benchmarks/results/{__version__}-quant.json"),
+    )
     parser.add_argument("--workflows", type=Path, default=Path("benchmarks/results/0.5.2-workflows.json"))
     parser.add_argument("--output", type=Path, default=output)
     parser.add_argument("--markdown", type=Path, default=markdown)

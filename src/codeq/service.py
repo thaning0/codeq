@@ -164,6 +164,7 @@ class CodeqService:
                 )
             else:
                 raise ValueError(f"unknown command: {command}")
+            phase_ms = data.pop("_phase_ms", None)
             after = ws.session_stats()
             metrics_after = ws.metrics_snapshot()
 
@@ -171,7 +172,7 @@ class CodeqService:
                 return max(0, int(metrics_after.get(name, 0)) - int(metrics_before.get(name, 0)))
 
             finished = time.perf_counter()
-            data["_meta"] = {
+            meta: dict[str, Any] = {
                 "root": str(ws.root),
                 "duration_ms": round((finished - started) * 1000, 1),
                 "queue_ms": round(queue_ms, 1),
@@ -191,15 +192,21 @@ class CodeqService:
                     "document_symbol_entries": int(metrics_after.get("document_symbol_cache_entries", 0)),
                 },
             }
+            data["_meta"] = meta
+            if isinstance(phase_ms, dict):
+                meta["phase_ms"] = {
+                    str(name): round(max(0.0, float(value)), 1)
+                    for name, value in phase_ms.items()
+                }
             if data.get("mode") == "text":
-                data["_meta"]["text"] = {
+                meta["text"] = {
                     "matching_file_count": int(data.get("matching_file_count", 0)),
                     "tracked_matching_lines": int(data.get("tracked_line_count", 0)),
                     "untracked_matching_lines": int(data.get("untracked_line_count", 0)),
                 }
             elif isinstance(data.get("lexical_references"), dict):
                 lexical = data["lexical_references"]
-                data["_meta"]["text"] = {
+                meta["text"] = {
                     "matching_file_count": int(lexical.get("matching_file_count", 0)),
                     "tracked_matching_lines": int(lexical.get("tracked_line_count", 0)),
                     "untracked_matching_lines": int(lexical.get("untracked_line_count", 0)),

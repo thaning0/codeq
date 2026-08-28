@@ -330,9 +330,11 @@ The release candidate is validated against a large Python/TypeScript monorepo an
 
 Representative committed results:
 
-- warm semantic `context` P95: **172.3 ms**
-- warm incoming `trace` P95: **329.8 ms**
+- warm semantic `context` P95: **362.2 ms**
+- warm incoming `trace` P95: **410.1 ms**
 - cold semantic context/trace P95: **< 4 s**
+- live-workload-shaped broad review cold P95: **7.48 s**
+- maximum representative semantic/review sample: **7.48 s**
 - historical actionable CRG-call mapping: **93.3%**
 - sampled navigation workflows with unsupported fallback: **0 / 50**
 - anonymized historical concrete query validation: **30 / 30 `ok`**
@@ -341,7 +343,7 @@ These are project-specific benchmark results, not universal latency guarantees.
 
 Details:
 
-- [Quant cold/warm benchmark](benchmarks/0.5.1-quant.md)
+- [RC6 Quant cold/warm benchmark](benchmarks/1.0.0rc6-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
 - [RC6 readiness gate](benchmarks/1.0.0rc6-readiness.md)
 - [Full validation record](VALIDATION.md)
