@@ -46,6 +46,40 @@ class _LiveSession:
 
 
 class PerformanceHardeningTests(unittest.TestCase):
+    def test_basedpyright_configuration_requests_receive_effective_settings(self) -> None:
+        session = cast(Any, LspProcess.__new__(LspProcess))
+        session.root = Path("/workspace")
+        session._server_settings = LspProcess._settings_for_server("basedpyright-langserver")
+        session._send = Mock()
+
+        session._handle_server_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "workspace/configuration",
+                "params": {
+                    "items": [
+                        {"section": "basedpyright.analysis"},
+                        {"section": "basedpyright"},
+                        {},
+                        {"section": "python.analysis"},
+                    ]
+                },
+            }
+        )
+
+        response = session._send.call_args.args[0]
+        self.assertEqual(response["result"][0], {"diagnosticMode": "openFilesOnly"})
+        self.assertEqual(response["result"][1], {"analysis": {"diagnosticMode": "openFilesOnly"}})
+        self.assertEqual(response["result"][2], session._server_settings)
+        self.assertIsNone(response["result"][3])
+
+    def test_plain_pyright_keeps_python_configuration_namespace(self) -> None:
+        self.assertEqual(
+            LspProcess._settings_for_server("pyright-langserver"),
+            {"python": {"analysis": {"diagnosticMode": "openFilesOnly"}}},
+        )
+
     def test_ensure_open_does_not_reread_unchanged_document(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

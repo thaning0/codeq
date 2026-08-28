@@ -44,6 +44,7 @@ class LspProcess:
         self.root = root.resolve()
         self.name = name
         self.timeout = timeout
+        self._server_settings = self._settings_for_server(name)
         self._proc = subprocess.Popen(
             command,
             cwd=str(self.root),
@@ -148,7 +149,10 @@ class LspProcess:
         method = message.get("method", "")
         params = message.get("params") or {}
         if method == "workspace/configuration":
-            result = [{} for _ in params.get("items", [])]
+            result = [
+                self._configuration_value(item.get("section")) if isinstance(item, dict) else None
+                for item in params.get("items", [])
+            ]
         elif method == "workspace/workspaceFolders":
             result = [{"uri": path_to_uri(self.root), "name": self.root.name}]
         elif method in {
@@ -164,6 +168,26 @@ class LspProcess:
         else:
             result = None
         self._send({"jsonrpc": "2.0", "id": message["id"], "result": result})
+
+    @staticmethod
+    def _settings_for_server(name: str) -> dict[str, Any]:
+        analysis = {"diagnosticMode": "openFilesOnly"}
+        lowered = name.lower()
+        if "basedpyright" in lowered:
+            return {"basedpyright": {"analysis": analysis}}
+        if "pyright" in lowered:
+            return {"python": {"analysis": analysis}}
+        return {}
+
+    def _configuration_value(self, section: Any) -> Any:
+        if not isinstance(section, str) or not section:
+            return self._server_settings
+        value: Any = self._server_settings
+        for part in section.split("."):
+            if not isinstance(value, dict) or part not in value:
+                return None
+            value = value[part]
+        return value
 
     def _send(self, message: dict[str, Any]) -> None:
         assert self._proc.stdin is not None
@@ -227,21 +251,13 @@ class LspProcess:
         )
         self.server_capabilities = (result or {}).get("capabilities", {})
         self.notify("initialized", {})
-        # Pyright/BasedPyright defers workspace configuration requests and
-        # document analysis until it receives this standard notification.
-        if "pyright" in self.name.lower():
+        # Pyright/BasedPyright requests the effective settings after this
+        # notification. Keep the payload consistent with our configuration
+        # responses instead of advertising settings that the server cannot read.
+        if self._server_settings:
             self.notify(
                 "workspace/didChangeConfiguration",
-                {
-                    "settings": {
-                        "python": {
-                            "analysis": {
-                                "indexing": True,
-                                "diagnosticMode": "openFilesOnly",
-                            }
-                        }
-                    }
-                },
+                {"settings": self._server_settings},
             )
 
     def ensure_open(self, path: Path) -> None:
