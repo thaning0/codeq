@@ -219,13 +219,12 @@ Deleted source files receive conservative **base-side lexical** residual-referen
 A repository can opt in with one line in `AGENTS.md`:
 
 ```text
-When exploring, understanding, tracing, or reviewing code, use the `codeq` CLI first; run `codeq --help` for usage.
+When exploring, understanding, tracing, or reviewing code, use the `codeq` CLI first; if a command is unfamiliar, run `codeq COMMAND --help`.
 ```
 
-Agents can discover the rest from:
+If a command is unfamiliar, use its focused help:
 
 ```bash
-codeq --help
 codeq find --help
 codeq context --help
 codeq trace --help

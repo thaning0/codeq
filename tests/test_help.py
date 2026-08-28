@@ -4,6 +4,7 @@ import argparse
 import io
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 
 from codeq.cli import PlainArgumentParser, build_parser
 
@@ -35,6 +36,15 @@ class HelpTests(unittest.TestCase):
         self.assertIn("codeq COMMAND --help", help_text)
         self.assertIn("--no-daemon", help_text)
         self.assertNotIn("\x1b[", help_text)
+
+    def test_agent_opt_in_makes_command_help_conditional(self):
+        readme = (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")
+        agent_setup = readme.split("## Agent setup", 1)[1].split("## Supported analysis", 1)[0]
+        self.assertIn(
+            "if a command is unfamiliar, run `codeq COMMAND --help`",
+            agent_setup,
+        )
+        self.assertNotIn("run `codeq --help` for usage", agent_setup)
 
     def test_subcommand_help_explains_arguments_and_examples(self):
         expected = {
