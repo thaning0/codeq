@@ -58,6 +58,7 @@ class LspProcess:
             raise LspError(f"failed to create stdio pipes for {name}")
         self._write_lock = threading.Lock()
         self._navigation_lock = threading.Lock()
+        self.semantic_navigation_warmed = False
         self._next_id = 1
         self.request_count = 0
         self._pending: dict[int, queue.Queue[dict[str, Any]]] = {}
@@ -335,7 +336,9 @@ class LspProcess:
         params = self.position_params(path, line, column)
         params["context"] = {"includeDeclaration": False}
         with self._navigation_lock:
-            return self.request("textDocument/references", params) or []
+            result = self.request("textDocument/references", params) or []
+            self.semantic_navigation_warmed = True
+            return result
 
     def implementations(self, path: Path, line: int, column: int) -> list[dict[str, Any]]:
         try:
@@ -352,7 +355,9 @@ class LspProcess:
     def incoming_calls(self, item: dict[str, Any]) -> list[dict[str, Any]]:
         try:
             with self._navigation_lock:
-                return self.request("callHierarchy/incomingCalls", {"item": item}) or []
+                result = self.request("callHierarchy/incomingCalls", {"item": item}) or []
+                self.semantic_navigation_warmed = True
+                return result
         except LspError:
             return []
 

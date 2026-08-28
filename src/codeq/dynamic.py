@@ -48,7 +48,12 @@ def _python_index(
             line = int(getattr(parent, "end_lineno", getattr(parent, "lineno", -1)))
             end_col = int(getattr(parent, "end_col_offset", 0))
             uses.setdefault((line, parent.attr), []).append(
-                (parent, max(0, end_col - len(parent.attr)))
+                (parent, max(0, end_col - len(parent.attr.encode("utf-8"))))
+            )
+        elif isinstance(parent, ast.alias):
+            imported_name = parent.name.rsplit(".", 1)[-1]
+            uses.setdefault((int(getattr(parent, "lineno", -1)), imported_name), []).append(
+                (parent, int(getattr(parent, "col_offset", 0)))
             )
     return tree, parents, {key: tuple(value) for key, value in uses.items()}
 
@@ -71,6 +76,110 @@ def _node_contains(root: ast.AST, target: ast.AST) -> bool:
     return any(node is target for node in ast.walk(root))
 
 
+def _lsp_column_to_utf8_offset(path: Path, line: int, column: int) -> int | None:
+    lines = _read_lines(str(path.resolve()), _file_version(path))
+    if not (1 <= line <= len(lines)):
+        return None
+    target_units = max(0, column - 1)
+    units = 0
+    prefix: list[str] = []
+    for char in lines[line - 1]:
+        if units == target_units:
+            break
+        char_units = 2 if ord(char) > 0xFFFF else 1
+        if units + char_units > target_units:
+            return None
+        prefix.append(char)
+        units += char_units
+    if units != target_units:
+        return None
+    return len("".join(prefix).encode("utf-8"))
+
+
+def _python_reference_node(
+    path: Path,
+    line: int,
+    column: int,
+    symbol_name: str,
+) -> tuple[ast.AST, dict[ast.AST, ast.AST]] | None:
+    tree, parents, uses = _python_index(str(path.resolve()), _file_version(path))
+    if tree is None:
+        return None
+    target_col = _lsp_column_to_utf8_offset(path, line, column)
+    if target_col is None:
+        return None
+    exact = [node for node, start_col in uses.get((line, symbol_name), ()) if start_col == target_col]
+    if len(exact) != 1:
+        return None
+    return exact[0], parents
+
+
+def _call_is_in_scope_body(call: ast.Call, parents: dict[ast.AST, ast.AST]) -> bool:
+    current: ast.AST = call
+    while current in parents:
+        child = current
+        current = parents[child]
+        if isinstance(current, ast.Lambda):
+            return False
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return child in current.body
+    return True
+
+
+def classify_python_call_reference(
+    reference: dict[str, Any],
+    symbol_name: str,
+) -> bool | None:
+    """Return True for a direct call, False for a safe non-call, or None to fall back."""
+    path = Path(str(reference.get("path") or "")).resolve()
+    if path.suffix.lower() not in {".py", ".pyi"}:
+        return None
+    line = int(reference.get("line") or 0)
+    column = int(reference.get("column") or 1)
+    matched = _python_reference_node(path, line, column, symbol_name)
+    if matched is None:
+        return None
+    node, parents = matched
+    if isinstance(node, ast.alias):
+        return False
+    parent = parents.get(node)
+    if isinstance(parent, ast.Call) and parent.func is node:
+        return True if _call_is_in_scope_body(parent, parents) else None
+    # Passing, assigning, returning, or decorating with a callable can create
+    # aliases that a later call-hierarchy scan may resolve. Preserve the server
+    # result for these cases rather than claiming the reference is a non-call.
+    if _python_reason_for_node(node, parents) is not None:
+        return None
+    return False
+
+
+@lru_cache(maxsize=512)
+def _is_python_property_definition(
+    path_text: str,
+    mtime_ns: int,
+    line: int,
+    symbol_name: str,
+) -> bool:
+    tree, _, _ = _python_index(path_text, mtime_ns)
+    if tree is None:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != symbol_name or int(getattr(node, "lineno", -1)) != line:
+            continue
+        for decorator in node.decorator_list:
+            name = _call_name(decorator.func) if isinstance(decorator, ast.Call) else _call_name(decorator)
+            if name in {"property", "cached_property", "setter", "getter", "deleter"}:
+                return True
+    return False
+
+
+def is_python_property_definition(path: Path, line: int, symbol_name: str) -> bool:
+    resolved = path.resolve()
+    return _is_python_property_definition(str(resolved), _file_version(resolved), line, symbol_name)
+
+
 def _call_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -79,18 +188,7 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
-def _python_reason(path: Path, line: int, column: int, symbol_name: str) -> str | None:
-    tree, parents, uses = _python_index(str(path.resolve()), _file_version(path))
-    if tree is None:
-        return None
-    target_col = max(0, column - 1)
-    candidates = uses.get((line, symbol_name), ())
-    if not candidates:
-        return None
-    node, start_col = min(candidates, key=lambda item: abs(item[1] - target_col))
-    if not (start_col <= target_col <= start_col + len(symbol_name)) and abs(start_col - target_col) > 1:
-        return None
-
+def _python_reason_for_node(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> str | None:
     non_callback_calls = {
         "Annotated",
         "Literal",
@@ -143,6 +241,14 @@ def _python_reason(path: Path, line: int, column: int, symbol_name: str) -> str 
                 return None
         current = parent
     return None
+
+
+def _python_reason(path: Path, line: int, column: int, symbol_name: str) -> str | None:
+    matched = _python_reference_node(path, line, column, symbol_name)
+    if matched is None:
+        return None
+    node, parents = matched
+    return _python_reason_for_node(node, parents)
 
 
 def _typescript_reason(path: Path, line: int, column: int, symbol_name: str) -> str | None:

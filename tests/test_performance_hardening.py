@@ -63,6 +63,79 @@ class _CallSession:
 
 
 class PerformanceHardeningTests(unittest.TestCase):
+    def test_python_callers_are_deduplicated_from_semantic_references(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target.py"
+            caller_path = root / "caller.py"
+            target.write_text("def run():\n    pass\n", encoding="utf-8")
+            caller_path.write_text(
+                "def caller():\n    run()\n    run()\n",
+                encoding="utf-8",
+            )
+            workspace = Workspace(root)
+            caller = {
+                "name": "caller",
+                "kind": "Function",
+                "path": str(caller_path.resolve()),
+                "line": 1,
+                "column": 5,
+            }
+            references = [
+                {"path": str(caller_path.resolve()), "line": 2, "column": 5},
+                {"path": str(caller_path.resolve()), "line": 3, "column": 5},
+            ]
+            symbol = {
+                "name": "run",
+                "kind": "Function",
+                "path": str(target.resolve()),
+                "line": 1,
+                "column": 5,
+            }
+            try:
+                with patch.object(workspace, "_semantic_symbol_at_location", return_value=caller):
+                    callers = workspace._python_callers_from_references(references, symbol)
+                self.assertEqual(
+                    callers,
+                    [
+                        {
+                            "name": "caller",
+                            "kind": "Function",
+                            "path": str(caller_path.resolve()),
+                            "line": 1,
+                            "column": 5,
+                            "detail": "",
+                        }
+                    ],
+                )
+            finally:
+                workspace.close()
+
+    def test_python_callers_fall_back_for_dynamic_aliases_and_properties(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "module.py"
+            path.write_text("alias = run\n", encoding="utf-8")
+            workspace = Workspace(root)
+            function = {
+                "name": "run",
+                "kind": "Function",
+                "path": str(path),
+                "line": 1,
+                "column": 9,
+            }
+            prop = {**function, "kind": "Property"}
+            try:
+                self.assertIsNone(
+                    workspace._python_callers_from_references(
+                        [{"path": str(path), "line": 1, "column": 9}],
+                        function,
+                    )
+                )
+                self.assertIsNone(workspace._python_callers_from_references([], prop))
+            finally:
+                workspace.close()
+
     def test_python_review_call_item_skips_prepare_call_hierarchy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

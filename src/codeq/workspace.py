@@ -22,7 +22,11 @@ from .contracts import (
     QueryBudget,
     bounded_text,
 )
-from .dynamic import classify_dynamic_references
+from .dynamic import (
+    classify_dynamic_references,
+    classify_python_call_reference,
+    is_python_property_definition,
+)
 from .gitdiff import (
     git_changed_files,
     git_changed_ranges,
@@ -1413,6 +1417,59 @@ class Workspace:
                 out.append(entry)
         return out
 
+    @staticmethod
+    def _can_derive_python_callers(symbol: dict[str, Any]) -> bool:
+        path = Path(str(symbol.get("path") or ""))
+        line = int(symbol.get("line") or 0)
+        name = str(symbol.get("name") or "")
+        return (
+            path.suffix in {".py", ".pyi"}
+            and str(symbol.get("kind") or "") in _CALL_HIERARCHY_KIND_CODES
+            and bool(name)
+            and not is_python_property_definition(path, line, name)
+        )
+
+    def _python_callers_from_references(
+        self,
+        references: list[dict[str, Any]],
+        symbol: dict[str, Any],
+    ) -> list[dict[str, Any]] | None:
+        if not self._can_derive_python_callers(symbol):
+            return None
+        name = str(symbol["name"])
+        callers: list[dict[str, Any]] = []
+        seen: set[tuple[str, int, str]] = set()
+        for reference in references:
+            classification = classify_python_call_reference(reference, name)
+            if classification is None:
+                return None
+            if not classification:
+                continue
+            caller = self._semantic_symbol_at_location(reference)
+            if caller is None:
+                return None
+            key = (str(caller["path"]), int(caller["line"]), str(caller["name"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            callers.append(
+                {
+                    "name": caller.get("name", ""),
+                    # BasedPyright represents Python def/async def callers as
+                    # Function even when documentSymbol nests them as Method.
+                    "kind": (
+                        "Function"
+                        if caller.get("kind") in {"Function", "Method", "Constructor"}
+                        else caller.get("kind", "Unknown")
+                    ),
+                    "path": str(caller["path"]),
+                    "line": int(caller["line"]),
+                    "column": int(caller.get("column") or 1),
+                    "detail": "",
+                }
+            )
+        return callers
+
     def _path_reference(self, target: str) -> dict[str, Any] | None:
         """Resolve explicit path intent, preserving missing-path information."""
         intent = path_target_intent(target, self.root)
@@ -2327,14 +2384,20 @@ class Workspace:
                 self._prewarm_symbol(project, session, symbol, max_files=8)
             except LspError:
                 continue
-            callers = self._call_neighbors(
-                session,
-                path,
-                line,
-                column,
-                "in",
-                root_item=self._call_hierarchy_item(symbol),
+            can_derive_callers = self._can_derive_python_callers(symbol)
+            use_warm_reference_path = can_derive_callers and bool(
+                getattr(session, "semantic_navigation_warmed", False)
             )
+            callers: list[dict[str, Any]] | None = None
+            if not use_warm_reference_path:
+                callers = self._call_neighbors(
+                    session,
+                    path,
+                    line,
+                    column,
+                    "in",
+                    root_item=self._call_hierarchy_item(symbol),
+                )
             try:
                 refs = [
                     x
@@ -2343,6 +2406,17 @@ class Workspace:
                 ]
             except LspError:
                 refs = []
+            if callers is None:
+                callers = self._python_callers_from_references(refs, symbol)
+                if callers is None:
+                    callers = self._call_neighbors(
+                        session,
+                        path,
+                        line,
+                        column,
+                        "in",
+                        root_item=self._call_hierarchy_item(symbol),
+                    )
             direct_tests = [r for r in refs if is_test_path(r["path"])]
             possible_dynamic = classify_dynamic_references(
                 [r for r in refs if not is_test_path(r["path"])],

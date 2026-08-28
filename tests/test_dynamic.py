@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from codeq.dynamic import _python_index, classify_dynamic_reference
+from codeq.dynamic import (
+    _python_index,
+    classify_dynamic_reference,
+    classify_python_call_reference,
+    is_python_property_definition,
+)
 
 
 class DynamicReferenceTests(unittest.TestCase):
@@ -17,6 +22,65 @@ class DynamicReferenceTests(unittest.TestCase):
                 {"path": str(path), "line": line, "column": column},
                 symbol,
             )
+
+    def _classify_python_call(self, source: str, symbol: str, line: int, column: int):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.py"
+            path.write_text(source, encoding="utf-8")
+            return classify_python_call_reference(
+                {"path": str(path), "line": line, "column": column},
+                symbol,
+            )
+
+    def test_python_direct_call_is_reusable_as_call_edge(self):
+        result = self._classify_python_call(
+            "def run():\n    pass\n\ndef caller():\n    run()\n",
+            "run",
+            5,
+            5,
+        )
+        self.assertIs(result, True)
+
+    def test_python_import_reference_is_a_safe_non_call(self):
+        result = self._classify_python_call("from service import run\n", "run", 1, 21)
+        self.assertIs(result, False)
+
+    def test_python_callable_alias_requires_call_hierarchy_fallback(self):
+        result = self._classify_python_call(
+            "def run():\n    pass\n\nalias = run\n",
+            "run",
+            4,
+            9,
+        )
+        self.assertIsNone(result)
+
+    def test_python_decorator_reference_requires_call_hierarchy_fallback(self):
+        result = self._classify_python_call(
+            "def decorate(fn):\n    return fn\n\n@decorate\ndef run():\n    pass\n",
+            "decorate",
+            4,
+            2,
+        )
+        self.assertIsNone(result)
+
+    def test_python_call_in_default_value_requires_call_hierarchy_fallback(self):
+        result = self._classify_python_call(
+            "def factory():\n    return 1\n\ndef run(value=factory()):\n    return value\n",
+            "factory",
+            4,
+            15,
+        )
+        self.assertIsNone(result)
+
+    def test_python_property_definition_is_detected_from_cached_ast(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.py"
+            path.write_text(
+                "class Service:\n    @property\n    def value(self):\n        return 1\n",
+                encoding="utf-8",
+            )
+            self.assertTrue(is_python_property_definition(path, 3, "value"))
+            self.assertFalse(is_python_property_definition(path, 3, "missing"))
 
     def test_python_callback_argument(self):
         result = self._classify(
