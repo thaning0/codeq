@@ -468,7 +468,7 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(captured["semantic_paths"], ["backend"])
         self.assertEqual(captured["lexical_paths"], ["frontend"])
 
-    def test_ambiguous_plain_output_contains_copyable_selection_commands(self) -> None:
+    def test_ambiguous_plain_output_keeps_each_copyable_selection_on_one_line(self) -> None:
         result = {
             "status": "ambiguous",
             "target": "Thing",
@@ -481,7 +481,16 @@ class CliFailureContractTests(unittest.TestCase):
                     "line": 4,
                     "column": 7,
                     "selection_command": "codeq context src/model.py:4:7",
-                }
+                },
+                {
+                    "name": "Thing",
+                    "kind": "Class",
+                    "container": "nested",
+                    "path": "/repo/src/nested.py",
+                    "line": 8,
+                    "column": 3,
+                    "selection_command": "codeq context src/nested.py:8:3",
+                },
             ],
         }
         stderr = io.StringIO()
@@ -493,7 +502,12 @@ class CliFailureContractTests(unittest.TestCase):
         ):
             main(["context", "Thing"])
         self.assertEqual(raised.exception.code, 1)
-        self.assertIn("try: codeq context src/model.py:4:7", stderr.getvalue())
+        output = stderr.getvalue()
+        self.assertIn("  Class Thing  try: codeq context src/model.py:4:7", output)
+        self.assertIn("  Class nested.Thing  try: codeq context src/nested.py:8:3", output)
+        self.assertEqual(output.count("src/model.py:4:7"), 1)
+        self.assertEqual(output.count("src/nested.py:8:3"), 1)
+        self.assertNotIn("\n    try:", output)
 
     def test_ambiguous_find_output_contains_copyable_file_selection_commands(self) -> None:
         result = {
@@ -520,7 +534,9 @@ class CliFailureContractTests(unittest.TestCase):
         ):
             main(["find", "model.py"])
         self.assertEqual(raised.exception.code, 1)
-        self.assertIn("try: codeq context src/model.py", stderr.getvalue())
+        output = stderr.getvalue()
+        self.assertIn("  File model.py  try: codeq context src/model.py", output)
+        self.assertEqual(output.count("src/model.py"), 1)
 
     def test_not_found_plain_output_includes_exact_name_recovery_candidates(self) -> None:
         result = {
@@ -548,8 +564,13 @@ class CliFailureContractTests(unittest.TestCase):
         ):
             main(["context", "pkg.bridge.BridgeSession"])
         self.assertEqual(raised.exception.code, 1)
-        self.assertIn("Possible exact-name matches:", stderr.getvalue())
-        self.assertIn("codeq context pkg/bridge/session.py:4:7", stderr.getvalue())
+        output = stderr.getvalue()
+        self.assertIn("Possible exact-name matches:", output)
+        self.assertIn(
+            "  Class BridgeSession  try: codeq context pkg/bridge/session.py:4:7",
+            output,
+        )
+        self.assertEqual(output.count("pkg/bridge/session.py:4:7"), 1)
 
     def test_lexical_filters_require_lexical_reference_mode(self) -> None:
         stderr = io.StringIO()

@@ -428,20 +428,23 @@ def _render_resolution(data: dict[str, Any], root: str | Path) -> bool:
     status = data.get("status")
     if status == "ok":
         return True
+
+    def render_candidate(item: dict[str, Any]) -> None:
+        container = f"{item.get('container')}." if item.get("container") else ""
+        command = item.get("selection_command")
+        selection = f"try: {command}" if command else _display_location(item, root)
+        print(
+            f"  {item.get('kind')} {container}{item.get('name')}  {selection}",
+            file=sys.stderr,
+        )
+
     if status == "ambiguous":
         print(
             f"Ambiguous target: {_display_message(data.get('target'), root)}",
             file=sys.stderr,
         )
         for item in data.get("candidates", []):
-            container = f"{item.get('container')}." if item.get("container") else ""
-            print(
-                f"  {item.get('kind')} {container}{item.get('name')}  "
-                f"{_display_location(item, root)}",
-                file=sys.stderr,
-            )
-            if item.get("selection_command"):
-                print(f"    try: {item['selection_command']}", file=sys.stderr)
+            render_candidate(item)
         return False
     print(
         _display_message(
@@ -456,14 +459,7 @@ def _render_resolution(data: dict[str, Any], root: str | Path) -> bool:
     if candidates:
         print("Possible exact-name matches:", file=sys.stderr)
         for item in candidates:
-            container = f"{item.get('container')}." if item.get("container") else ""
-            print(
-                f"  {item.get('kind')} {container}{item.get('name')}  "
-                f"{_display_location(item, root)}",
-                file=sys.stderr,
-            )
-            if item.get("selection_command"):
-                print(f"    try: {item['selection_command']}", file=sys.stderr)
+            render_candidate(item)
     return False
 
 
@@ -793,8 +789,6 @@ def _render_review(data: dict[str, Any], root: str | Path) -> None:
                 f"    ? {dynamic.get('reason','possible')}  "
                 f"{_display_path(dynamic['path'], root)}:{dynamic['line']}"
             )
-        for test in detail.get("tests", [])[:5]:
-            print(f"    test {_display_path(test['path'], root)}:{test['line']}")
     print(f"\nAffected files: {data.get('impacted_file_count', 0)}")
     for path in data.get("impacted_files", []):
         print(f"  {_display_path(path, root)}")

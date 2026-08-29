@@ -229,6 +229,7 @@ class PlainPathRenderingTests(unittest.TestCase):
             "tests/test_new.py:4",
         ):
             self.assertIn(expected, stdout)
+        self.assertEqual(stdout.count("tests/test_new.py:4"), 1)
         self.assertNotIn("/repo/", stdout)
 
     def test_json_keeps_absolute_paths_and_outside_paths_stay_absolute(self) -> None:
