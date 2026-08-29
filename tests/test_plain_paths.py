@@ -139,8 +139,12 @@ class PlainPathRenderingTests(unittest.TestCase):
     def test_trace_and_review_plain_paths_are_repository_relative(self) -> None:
         trace = {
             "status": "ok",
+            "target": "Thing.run",
+            "direction": "out",
             "depth": 1,
             "node_count": 2,
+            "node_limit": 100,
+            "truncated": False,
             "tree": {
                 "node": {"name": "run", "path": "/repo/src/model.py", "line": 4},
                 "children": [

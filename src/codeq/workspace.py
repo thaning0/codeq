@@ -2171,19 +2171,19 @@ class Workspace:
                 )
         except LspError as exc:
             return {"status": "error", "target": target, "error": str(exc), "symbol": symbol}
+        limit = max(1, limit)
         roots = session.prepare_call_hierarchy(path, line, column)
         if not roots:
             return {
                 "status": "ok", "evidence": EVIDENCE_SEMANTIC, "target": target, "direction": direction, "depth": depth,
                 "root": symbol, "tree": {"node": symbol, "children": []}, "node_count": 1,
+                "node_limit": limit, "truncated": False,
                 "note": "language server returned no call hierarchy for this position",
             }
         root_item = roots[0]
         seen: set[tuple[str, int, str]] = set()
         count = 0
         truncated = False
-        limit = max(1, limit)
-
         def walk(item: dict[str, Any], remaining: int) -> dict[str, Any] | None:
             nonlocal count, truncated
             if count >= limit:

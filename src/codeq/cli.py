@@ -5,6 +5,7 @@ import errno
 import inspect
 import json
 import os
+import shlex
 import signal
 import socket
 import struct
@@ -611,9 +612,36 @@ def _render_trace(data: dict[str, Any], root: str | Path) -> None:
     visit(data["tree"], is_root=True)
     if data.get("note"):
         print(f"\nNote: {_display_message(data['note'], root)}")
+    node_count = int(data.get("node_count", 1))
+    node_limit = int(data.get("node_limit", node_count))
+    truncated = bool(data.get("truncated"))
+    if truncated:
+        print(
+            f"\n... emitted call tree is incomplete; traversal reached node_limit={node_limit}."
+        )
+        target = _display_message(data.get("target"), root)
+        direction = data.get("direction")
+        if target and direction in {"in", "out"}:
+            next_limit = max(node_limit + 1, node_limit * 2)
+            print(
+                "next: "
+                + shlex.join(
+                    [
+                        "codeq",
+                        "trace",
+                        target,
+                        f"--{direction}",
+                        "--depth",
+                        str(data.get("depth", 3)),
+                        "--limit",
+                        str(next_limit),
+                    ]
+                )
+            )
     meta = data.get("_meta", {})
     print(
-        f"\n[{data.get('node_count',1)} nodes; depth={data.get('depth')}; {meta.get('duration_ms','?')} ms]"
+        f"\n[{node_count} nodes; depth={data.get('depth')}; node_limit={node_limit}; "
+        f"truncated={str(truncated).lower()}; {meta.get('duration_ms','?')} ms]"
     )
 
 

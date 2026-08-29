@@ -118,6 +118,130 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(captured["depth"], 0)
         self.assertEqual(json.loads(stdout.getvalue())["depth"], 0)
 
+    def test_trace_plain_complete_reports_limit_and_completion(self) -> None:
+        result = {
+            "status": "ok",
+            "target": "Foo.run",
+            "direction": "out",
+            "depth": 2,
+            "node_count": 2,
+            "node_limit": 5,
+            "truncated": False,
+            "tree": {
+                "node": {"name": "run", "path": "/repo/foo.py", "line": 1},
+                "children": [
+                    {
+                        "node": {"name": "helper", "path": "/repo/helper.py", "line": 2},
+                        "children": [],
+                    }
+                ],
+            },
+            "_meta": {"duration_ms": 1.5},
+        }
+        stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(stdout),
+        ):
+            main(["trace", "Foo.run", "--out", "--depth", "2", "--limit", "5"])
+        output = stdout.getvalue()
+        self.assertIn(
+            "[2 nodes; depth=2; node_limit=5; truncated=false; 1.5 ms]",
+            output,
+        )
+        self.assertNotIn("incomplete", output)
+        self.assertNotIn("next:", output)
+
+    def test_trace_plain_truncated_reports_incomplete_tree_and_recovery(self) -> None:
+        result = {
+            "status": "ok",
+            "target": "Foo worker",
+            "direction": "in",
+            "depth": 3,
+            "node_count": 3,
+            "node_limit": 3,
+            "truncated": True,
+            "tree": {
+                "node": {"name": "worker", "path": "/repo/foo.py", "line": 1},
+                "children": [],
+            },
+            "_meta": {"duration_ms": 2.5},
+        }
+        stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(stdout),
+        ):
+            main(["trace", "Foo worker", "--in", "--depth", "3", "--limit", "3"])
+        output = stdout.getvalue()
+        self.assertIn("emitted call tree is incomplete", output)
+        self.assertIn("traversal reached node_limit=3", output)
+        self.assertIn(
+            "next: codeq trace 'Foo worker' --in --depth 3 --limit 6",
+            output,
+        )
+        self.assertNotIn("--node-limit", output)
+        self.assertIn(
+            "[3 nodes; depth=3; node_limit=3; truncated=true; 2.5 ms]",
+            output,
+        )
+
+    def test_trace_plain_depth_zero_is_explicitly_complete(self) -> None:
+        result = {
+            "status": "ok",
+            "target": "Foo.run",
+            "direction": "in",
+            "depth": 0,
+            "node_count": 1,
+            "node_limit": 20,
+            "truncated": False,
+            "tree": {
+                "node": {"name": "run", "path": "/repo/foo.py", "line": 1},
+                "children": [],
+            },
+        }
+        stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(stdout),
+        ):
+            main(["trace", "Foo.run", "--in", "--depth", "0", "--limit", "20"])
+        output = stdout.getvalue()
+        self.assertIn("depth=0; node_limit=20; truncated=false", output)
+        self.assertNotIn("incomplete", output)
+
+    def test_trace_plain_no_call_hierarchy_preserves_note_and_limit(self) -> None:
+        note = "language server returned no call hierarchy for this position"
+        result = {
+            "status": "ok",
+            "target": "Foo.run",
+            "direction": "out",
+            "depth": 2,
+            "node_count": 1,
+            "node_limit": 4,
+            "truncated": False,
+            "root": {"name": "run", "path": "/repo/foo.py", "line": 1},
+            "tree": {
+                "node": {"name": "run", "path": "/repo/foo.py", "line": 1},
+                "children": [],
+            },
+            "note": note,
+        }
+        stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(stdout),
+        ):
+            main(["trace", "Foo.run", "--out", "--depth", "2", "--limit", "4"])
+        output = stdout.getvalue()
+        self.assertIn(f"Note: {note}", output)
+        self.assertIn("node_limit=4; truncated=false", output)
+        self.assertNotIn("incomplete", output)
+
     def test_trace_limit_alias_bounds_emitted_nodes(self) -> None:
         captured: dict[str, object] = {}
 
@@ -530,10 +654,12 @@ class CliFailureContractTests(unittest.TestCase):
                     "direction": "in",
                     "depth": 0,
                     "node_count": 1,
+                    "node_limit": 100,
+                    "truncated": False,
                     "tree": {"node": {"name": "run", "path": "/repo/foo.py", "line": 2}, "children": []},
                     "_meta": {"duration_ms": 3.0},
                 },
-                "[1 nodes; depth=0; 3.0 ms]",
+                "[1 nodes; depth=0; node_limit=100; truncated=false; 3.0 ms]",
             ),
             (
                 ["review", "--base", "HEAD~1"],

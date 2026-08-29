@@ -101,6 +101,34 @@ class CursorContextTests(unittest.TestCase):
             self.assertEqual(result["symbol"]["name"], "endpoint")
             self.assertFalse(result["cursor_definition"])
 
+    def test_trace_without_call_hierarchy_keeps_limit_disclosure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pyproject.toml").write_text(
+                "[project]\nname='cursor-test'\nversion='0'\n",
+                encoding="utf-8",
+            )
+            api = root / "api.py"
+            service = root / "service.py"
+            api.write_text("def endpoint():\n    return 1\n", encoding="utf-8")
+            service.write_text("def service_call():\n    return 1\n", encoding="utf-8")
+            workspace = Workspace(root)
+            fake = _CursorSession(api, service)
+            cast(Any, workspace)._session = lambda project: fake
+            try:
+                result = workspace.trace("api.py:1", "out", depth=2, limit=7)
+            finally:
+                workspace.close()
+
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["node_count"], 1)
+            self.assertEqual(result["node_limit"], 7)
+            self.assertFalse(result["truncated"])
+            self.assertEqual(
+                result["note"],
+                "language server returned no call hierarchy for this position",
+            )
+
     def test_multiple_local_definitions_collapse_to_shared_enclosing_function(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
