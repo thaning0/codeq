@@ -344,6 +344,7 @@ Details:
 
 - [RC6 Quant cold/warm benchmark](benchmarks/1.0.0rc6-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
+- [RC7 downstream agent-utility replay](benchmarks/1.0.0rc7-agent-utility.md)
 - [RC6 readiness gate](benchmarks/1.0.0rc6-readiness.md)
 - [Full validation record](VALIDATION.md)
 
