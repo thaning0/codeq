@@ -1,0 +1,4 @@
+interface:
+  display_name: "Find codeq Simplifications"
+  short_description: "Evidence-backed simplification audits for codeq"
+  default_prompt: "Use $codeq-find-simplifications to audit this codeq scope and rank evidence-backed opportunities to remove or collapse complexity."
