@@ -110,7 +110,11 @@ class CodeqService:
         gate_acquired = False
         queue_ms = 0.0
         try:
-            if command == "find" and not bool(request.get("text")):
+            if (
+                command == "find"
+                and not bool(request.get("text"))
+                and str(request.get("mode") or "auto") != "text"
+            ):
                 queued_at = time.perf_counter()
                 gate_acquired = entry.semantic_find_gate.acquire(timeout=timeout)
                 queue_ms = (time.perf_counter() - queued_at) * 1000
@@ -128,6 +132,7 @@ class CodeqService:
                     limit=limit,
                     kind=str(request.get("kind") or "") or None,
                     text=bool(request.get("text")),
+                    mode=str(request.get("mode") or "auto"),
                     paths=tuple(str(value) for value in (request.get("paths") or [])),
                     globs=tuple(str(value) for value in (request.get("globs") or [])),
                     exclude_tests=bool(request.get("exclude_tests")),

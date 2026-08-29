@@ -22,8 +22,11 @@ New top-level commands are a compatibility break and require explicit evidence f
 ### Navigation and discovery
 
 - Find Python/TypeScript/JavaScript symbols semantically.
-- Discover multi-term source concepts as ranked files through a workspace-local,
-  contentless in-memory SQLite FTS5 index.
+- Discover source concepts as ranked files through a workspace-local, contentless
+  in-memory SQLite FTS5 index, with bounded representative lexical source lines and
+  copyable location-based context commands for returned files.
+- Select `find` behavior explicitly with symbol, concept, or text mode when automatic
+  identifier-versus-multi-term classification is not desired.
 - Search exact runtime/configuration/HTTP/registry contracts across Git-visible text (tracked plus non-ignored untracked files).
 - Filter exact-text evidence by repository path, glob, and test/non-test category.
 - Resolve `PATH:LINE` to enclosing semantic context.
@@ -116,14 +119,17 @@ timing under `_meta.phase_ms`. Context separates `resolution`, `prewarm`, and
   suffix never degrades to an unrelated same-named symbol.
 - Semantic `find` and symbolic `context` path constraints filter before target
   selection; ambiguous candidates include copyable exact-location commands.
-- Multi-token `find` is lexical file discovery, never an invented semantic symbol;
-  its path/glob/test constraints filter before the public result limit.
+- Concept `find` is lexical file discovery, never an invented semantic symbol;
+  representative lines explain file ranking without being promoted to semantic
+  evidence, and path/glob/test constraints filter before the public result limit.
 - `PATH:LINE` means enclosing semantic context.
 - `PATH:LINE:COLUMN` prefers the exact cursor definition and preserves `requested_location` plus a request-site snippet.
 
 ## Disclosure / token contract
 
-`--limit` remains the single public disclosure control.
+`--limit` remains the single public item-count control. Concept `find --files-only`
+only suppresses plain-output evidence details; it does not change result selection,
+counts, or JSON evidence.
 
 Internally:
 

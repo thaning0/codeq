@@ -10,7 +10,7 @@ from codeq.cli import main
 
 
 class CliFailureContractTests(unittest.TestCase):
-    def test_search_alias_sends_a_find_request(self) -> None:
+    def test_search_alias_sends_a_find_request_with_explicit_mode(self) -> None:
         captured: dict[str, object] = {}
 
         def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
@@ -29,9 +29,11 @@ class CliFailureContractTests(unittest.TestCase):
             patch("codeq.cli._request", side_effect=request),
             redirect_stdout(io.StringIO()),
         ):
-            main(["search", "Thing", "--json"])
+            main(["search", "Thing", "--mode", "concept", "--json"])
         self.assertEqual(captured["command"], "find")
         self.assertEqual(captured["query"], "Thing")
+        self.assertEqual(captured["mode"], "concept")
+        self.assertEqual(captured["text"], False)
 
     def test_no_daemon_flag_uses_in_process_request(self) -> None:
         result = {
@@ -599,6 +601,8 @@ class CliFailureContractTests(unittest.TestCase):
         ):
             main(["find", "Foo"])
         self.assertIn("No matches.", stdout.getvalue())
+        self.assertIn("codeq find --mode concept Foo", stdout.getvalue())
+        self.assertIn("codeq find --mode text Foo", stdout.getvalue())
         self.assertIn("[showing 0 of 0 candidates; 12.3 ms]", stdout.getvalue())
         self.assertNotIn("increase --limit", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
@@ -636,29 +640,48 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertIn("[showing 1 of 3 candidates; 1.5 ms]", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 
-    def test_fts_find_plain_output_prints_one_top_result_context_command_in_footer(self) -> None:
+    def test_concept_find_plain_output_explains_results_and_can_list_files_only(self) -> None:
         result = {
             "status": "ok",
             "mode": "fts5",
+            "search_mode": "concept",
             "query": "catalog refresh",
             "results": [
                 {
                     "name": "src/catalog.py",
                     "kind": "File",
                     "path": "/repo/src/catalog.py",
-                    "line": 1,
-                    "column": 1,
+                    "line": 12,
+                    "column": 5,
                     "source": "fts5",
-                    "selection_command": "codeq context src/catalog.py",
+                    "matched_terms": ["catalog", "refresh"],
+                    "representative_lines": [
+                        {
+                            "line": 12,
+                            "column": 5,
+                            "text": "def refresh_catalog():",
+                            "matched_terms": ["catalog", "refresh"],
+                        }
+                    ],
+                    "selection_command": "codeq context src/catalog.py:12:5",
                 },
                 {
                     "name": "src/cache.py",
                     "kind": "File",
                     "path": "/repo/src/cache.py",
-                    "line": 1,
-                    "column": 1,
+                    "line": 8,
+                    "column": 3,
                     "source": "fts5",
-                    "selection_command": "codeq context src/cache.py",
+                    "matched_terms": ["refresh"],
+                    "representative_lines": [
+                        {
+                            "line": 8,
+                            "column": 3,
+                            "text": "# refresh cache",
+                            "matched_terms": ["refresh"],
+                        }
+                    ],
+                    "selection_command": "codeq context src/cache.py:8:3",
                 },
             ],
             "result_count": 2,
@@ -676,15 +699,28 @@ class CliFailureContractTests(unittest.TestCase):
         ):
             main(["find", "catalog refresh", "--limit", "2"])
         output = stdout.getvalue()
-        self.assertIn("File         src/catalog.py  [fts5]", output)
-        self.assertIn("File         src/cache.py  [fts5]", output)
-        self.assertNotIn("src/catalog.py:1:1", output)
-        self.assertNotIn("codeq context src/cache.py", output)
-        self.assertEqual(output.count("codeq context"), 1)
+        self.assertIn("Concept search: 'catalog refresh'", output)
+        self.assertIn("1. src/catalog.py:12:5", output)
+        self.assertIn("12 | def refresh_catalog():", output)
+        self.assertIn("Matched terms: catalog, refresh", output)
+        self.assertIn("codeq context src/catalog.py:12:5", output)
+        self.assertIn("codeq context src/cache.py:8:3", output)
+        self.assertNotIn("[fts5]", output)
         self.assertIn("more matching files available; increase --limit", output)
         self.assertIn("[showing 2 of 3 files; 2.5 ms]", output)
-        self.assertTrue(output.endswith("Next: codeq context src/catalog.py\n"))
         self.assertEqual(stderr.getvalue(), "")
+
+        compact_stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(compact_stdout),
+        ):
+            main(["find", "catalog refresh", "--files-only"])
+        compact = compact_stdout.getvalue()
+        self.assertIn("File         src/catalog.py", compact)
+        self.assertNotIn("def refresh_catalog", compact)
+        self.assertNotIn("codeq context", compact)
 
     def test_all_success_renderers_keep_stderr_empty(self) -> None:
         cases = [

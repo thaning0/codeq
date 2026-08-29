@@ -13,7 +13,7 @@ After release-ready changes have passed validation and the package version has
 been updated consistently, refresh the local tool from the repository:
 
 ```bash
-uv tool install --force /path/to/codeq
+uv tool install --force --no-cache /path/to/codeq
 codeq --version
 codeq --root /path/to/repository context path/to/file.py:10 --limit 1
 ```

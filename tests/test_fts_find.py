@@ -46,15 +46,53 @@ class FtsFindTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "ok")
             self.assertEqual(result["mode"], "fts5")
+            self.assertEqual(result["search_mode"], "concept")
             self.assertEqual(result["results"][0]["path"], str(target.resolve()))
             self.assertEqual(result["results"][0]["source"], "fts5")
+            self.assertEqual(result["results"][0]["matched_terms"], ["orchid", "ranking", "lantern"])
+            self.assertEqual(result["results"][0]["representative_lines"][0]["line"], 1)
             self.assertEqual(
                 result["results"][0]["selection_command"],
-                "codeq context src/concept_search.py",
+                "codeq context src/concept_search.py:1:3",
             )
             self.assertEqual(result["ranking"]["engine"], "sqlite_fts5_bm25")
             self.assertEqual(syntax["status"], "ok")
             self.assertEqual(syntax["results"][0]["path"], str(target.resolve()))
+
+    def test_concept_result_explains_distributed_terms_and_supports_explicit_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _init_repo(root)
+            source = root / "src/evidence.py"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                "# orchid trial\nfailure = 'recovery'\n",
+                encoding="utf-8",
+            )
+            _track_all(root)
+
+            workspace = Workspace(root)
+            try:
+                result = workspace.find("orchid failure recovery")
+                one_term = workspace.find("orchid", mode="concept")
+            finally:
+                workspace.close()
+
+            item = result["results"][0]
+            self.assertEqual(item["line"], 2)
+            self.assertEqual(item["column"], 1)
+            self.assertEqual(item["matched_terms"], ["orchid", "failure", "recovery"])
+            self.assertEqual(
+                [line["line"] for line in item["representative_lines"]],
+                [2, 1],
+            )
+            self.assertEqual(
+                item["selection_command"],
+                "codeq context src/evidence.py:2:1",
+            )
+            self.assertEqual(one_term["status"], "ok")
+            self.assertEqual(one_term["search_mode"], "concept")
+            self.assertEqual(one_term["results"][0]["matched_terms"], ["orchid"])
 
     def test_git_visibility_and_scope_filters_apply_before_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

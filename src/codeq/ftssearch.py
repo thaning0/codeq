@@ -35,6 +35,22 @@ class FtsSearch:
     query_ms: float
 
 
+@dataclass(frozen=True)
+class FtsEvidenceLine:
+    line: int
+    column: int
+    text: str
+    matched_terms: tuple[str, ...]
+    text_truncated: bool
+    text_start_column: int
+
+
+@dataclass(frozen=True)
+class FtsEvidence:
+    lines: tuple[FtsEvidenceLine, ...]
+    matched_terms: tuple[str, ...]
+
+
 def lexical_terms(query: str) -> list[str]:
     """Return distinct lexical terms in user order for deterministic FTS queries."""
     tokens = re.findall(r"[^\W\d_]\w*|_[A-Za-z0-9_]+", query, flags=re.UNICODE)
@@ -54,6 +70,87 @@ def _match_expression(terms: list[str]) -> str:
     # extracted term is one phrase and OR keeps partial lexical matches visible;
     # built-in BM25 naturally rewards files matching more of the query vocabulary.
     return " OR ".join(f'"{term.replace(chr(34), chr(34) * 2)}"' for term in terms)
+
+
+def _bounded_evidence_text(text: str, match_index: int, max_chars: int) -> tuple[str, bool, int]:
+    if len(text) <= max_chars:
+        return text, False, 1
+    context = max(0, max_chars // 3)
+    start = max(0, match_index - context)
+    if start + max_chars > len(text):
+        start = max(0, len(text) - max_chars)
+    end = min(len(text), start + max_chars)
+    window = text[start:end]
+    if start > 0 and max_chars >= 3:
+        window = "..." + window[3:]
+    if end < len(text) and max_chars >= 3:
+        window = window[:-3] + "..."
+    return window, True, start + 1
+
+
+def representative_evidence(
+    path: Path,
+    terms: list[str],
+    *,
+    limit: int = 3,
+    max_chars: int = 500,
+) -> FtsEvidence:
+    """Return bounded source lines that explain why one ranked file matched."""
+    try:
+        source_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return FtsEvidence(lines=(), matched_terms=())
+
+    patterns = [
+        (term, re.compile(re.escape(term), flags=re.IGNORECASE))
+        for term in terms
+    ]
+    candidates: list[tuple[int, int, int, FtsEvidenceLine]] = []
+    all_matched: set[str] = set()
+    for line_number, text in enumerate(source_lines, start=1):
+        matched: list[str] = []
+        occurrence_count = 0
+        first_index: int | None = None
+        for term, pattern in patterns:
+            occurrences = list(pattern.finditer(text))
+            if not occurrences:
+                continue
+            matched.append(term)
+            occurrence_count += len(occurrences)
+            candidate_index = occurrences[0].start()
+            first_index = candidate_index if first_index is None else min(first_index, candidate_index)
+        if first_index is None:
+            continue
+        all_matched.update(term.casefold() for term in matched)
+        bounded, truncated, text_start_column = _bounded_evidence_text(
+            text,
+            first_index,
+            max(1, max_chars),
+        )
+        evidence = FtsEvidenceLine(
+            line=line_number,
+            column=first_index + 1,
+            text=bounded,
+            matched_terms=tuple(matched),
+            text_truncated=truncated,
+            text_start_column=text_start_column,
+        )
+        candidates.append((len(matched), occurrence_count, line_number, evidence))
+
+    ordered = sorted(candidates, key=lambda item: (-item[0], -item[1], item[2]))
+    selected: list[FtsEvidenceLine] = []
+    covered: set[str] = set()
+    for _, _, _, evidence in ordered:
+        normalized = {term.casefold() for term in evidence.matched_terms}
+        if selected and normalized <= covered:
+            continue
+        selected.append(evidence)
+        covered.update(normalized)
+        if len(selected) >= max(1, limit) or covered >= all_matched:
+            break
+
+    matched_terms = tuple(term for term in terms if term.casefold() in all_matched)
+    return FtsEvidence(lines=tuple(selected), matched_terms=matched_terms)
 
 
 class WorkspaceFtsIndex:

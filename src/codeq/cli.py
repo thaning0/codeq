@@ -343,7 +343,18 @@ def _query_exit_code(data: dict[str, Any]) -> int:
     return 0 if status in (None, "ok") else 1
 
 
-def _render_find(data: dict[str, Any], root: str | Path) -> None:
+def _print_find_recovery(query: str, *modes: str) -> None:
+    print("Try:")
+    for mode in modes:
+        print(f"  {shlex.join(['codeq', 'find', '--mode', mode, query])}")
+
+
+def _render_find(
+    data: dict[str, Any],
+    root: str | Path,
+    *,
+    files_only: bool = False,
+) -> None:
     if data.get("status") and data.get("status") != "ok":
         if data.get("status") == "ambiguous":
             _render_resolution(data, root)
@@ -354,6 +365,7 @@ def _render_find(data: dict[str, Any], root: str | Path) -> None:
         )
         return
     if data.get("mode") == "text":
+        print(f"Exact text search: {str(data.get('query') or '')!r}\n")
         for item in data.get("results", []):
             markers: list[str] = []
             if not item.get("tracked", True):
@@ -369,6 +381,7 @@ def _render_find(data: dict[str, Any], root: str | Path) -> None:
             )
         if not data.get("results"):
             print("No matches.")
+            _print_find_recovery(str(data.get("query") or ""), "concept")
         if data.get("truncated"):
             print("... more matching lines available; increase --limit")
         meta = data.get("_meta", {})
@@ -382,14 +395,33 @@ def _render_find(data: dict[str, Any], root: str | Path) -> None:
         return
     if data.get("mode") == "fts5":
         results = data.get("results", [])
-        for item in results:
+        print(f"Concept search: {str(data.get('query') or '')!r}\n")
+        for index, item in enumerate(results, start=1):
             marker = " [test]" if item.get("is_test") else ""
-            print(
-                f"{item.get('kind', 'File'):<12} {_display_path(item.get('path'), root)}"
-                f"{marker}  [{item.get('source', 'fts5')}]"
+            evidence_lines = item.get("representative_lines") or []
+            if files_only:
+                print(f"{item.get('kind', 'File'):<12} {_display_path(item.get('path'), root)}{marker}")
+                continue
+            target = (
+                _display_location(item, root)
+                if evidence_lines
+                else _display_path(item.get("path"), root)
             )
+            print(f"{index}. {target}{marker}")
+            for evidence in evidence_lines:
+                line = int(evidence.get("line") or 1)
+                text = str(evidence.get("text") or "").strip()
+                print(f"   {line:>5} | {text}")
+            matched_terms = item.get("matched_terms") or []
+            if matched_terms:
+                print(f"   Matched terms: {', '.join(str(term) for term in matched_terms)}")
+            if item.get("selection_command"):
+                print(f"   → {item['selection_command']}")
+            if index < len(results):
+                print()
         if not results:
             print("No matches.")
+            _print_find_recovery(str(data.get("query") or ""), "symbol", "text")
         result_count = int(data.get("result_count") or 0)
         total_candidates = int(data.get("total_candidates", result_count) or 0)
         truncated = bool(data.get("truncated", result_count < total_candidates))
@@ -400,18 +432,17 @@ def _render_find(data: dict[str, Any], root: str | Path) -> None:
             f"\n[showing {result_count} of {total_candidates} files; "
             f"{meta.get('duration_ms', '?')} ms]"
         )
-        if results and results[0].get("selection_command"):
-            print(f"Next: {results[0]['selection_command']}")
         return
+    print(f"Symbol search: {str(data.get('query') or '')!r}\n")
     for item in data.get("results", []):
         container = f"{item.get('container')}." if item.get("container") else ""
         print(
             f"{item.get('kind','?'):<12} {container}{item.get('name','')}  "
             f"{_display_location(item, root)}"
-            f"  [{item.get('source','?')}]"
         )
     if not data.get("results"):
         print("No matches.")
+        _print_find_recovery(str(data.get("query") or ""), "concept", "text")
     result_count = int(data.get("result_count") or 0)
     total_candidates = int(data.get("total_candidates", result_count) or 0)
     truncated = bool(data.get("truncated", result_count < total_candidates))
@@ -900,17 +931,14 @@ Agent notes:
         description="""\
 Find likely code locations before you know an exact target.
 
-An exact identifier uses language-server symbol discovery. A query with multiple
-lexical terms uses a workspace-local, in-memory SQLite FTS5 index and returns ranked
-source files. For concept searches, use vocabulary likely to occur in the repository's
-source/comments (usually the source language); codeq does not translate queries.
+Auto mode treats an exact identifier as a symbol search and a query with multiple
+lexical terms as a concept search. Every concept result includes representative
+source lines, matched terms, and a copyable `codeq context` command. Use source
+vocabulary likely to occur in the repository; codeq does not translate queries.
 
-`--path`, `--glob`, and `--exclude-tests` scope the candidate files in either mode.
-Repeat path and glob filters for OR matching within each filter type.
-
-With `--text`, QUERY is an exact literal searched across Git-visible working-tree
-text: tracked files plus untracked files that are not ignored. Text mode is
-intentionally non-semantic and supports optional path/glob/test filtering.
+Use `--mode` to select symbol, concept, or exact-text search explicitly. `--text`
+remains a shortcut for `--mode text`. `--path`, `--glob`, and `--exclude-tests`
+scope candidates before the result limit.
 """,
         epilog="""\
 Examples:
@@ -919,6 +947,8 @@ Examples:
   codeq find Candidate --kind class --path packages/research-core
   codeq find 'architecture guard' --path packages --glob '*.py' --exclude-tests
   codeq find 'report summary freshness policy evidence' --limit 8
+  codeq find retry --mode concept
+  codeq find 'architecture guard' --files-only
   codeq find --text 'BACKTEST_QUESTDB_QUERY_TARGET_ROWS' --limit 20
   codeq find --text '/logs/stream' --path frontend --exclude-tests
   codeq find --text 'DEPLOYMENTS' --glob '*.py' --glob '*.yaml'
@@ -932,21 +962,32 @@ Typical next step:
     find.add_argument(
         "query",
         metavar="QUERY",
-        help="Symbol name, qualified-name fragment, or short source-code description.",
+        help="Symbol name, qualified-name fragment, short source-code description, or exact text.",
+    )
+    find.add_argument(
+        "--mode",
+        choices=("auto", "symbol", "concept", "text"),
+        default="auto",
+        help="Search mode: auto, symbol, concept, or exact text (default: auto).",
     )
     find_mode = find.add_mutually_exclusive_group()
     find_mode.add_argument(
         "--kind",
         metavar="KIND",
         help=(
-            "Optional exact-symbol result filter, e.g. function, method, class, interface, "
-            "test; unsupported for multi-token file discovery."
+            "Optional symbol result filter, e.g. function, method, class, interface, "
+            "test; unsupported for concept and text search."
         ),
     )
     find_mode.add_argument(
         "--text",
         action="store_true",
-        help="Exact literal search across tracked + non-ignored untracked text files.",
+        help="Shortcut for `--mode text`: exact literal search across Git-visible text files.",
+    )
+    find.add_argument(
+        "--files-only",
+        action="store_true",
+        help="Concept-search plain output: list ranked files without representative lines.",
     )
     find.add_argument(
         "--path",
@@ -954,7 +995,7 @@ Typical next step:
         action="append",
         default=[],
         metavar="PREFIX",
-        help="Repository-relative path prefix for symbol, FTS5 file, or text results; repeat for OR matching.",
+        help="Repository-relative path prefix for symbol, concept, or text results; repeat for OR matching.",
     )
     find.add_argument(
         "--glob",
@@ -962,13 +1003,13 @@ Typical next step:
         action="append",
         default=[],
         metavar="PATTERN",
-        help="Shell-style path glob for symbol, FTS5 file, or text results; repeat for OR matching.",
+        help="Shell-style path glob for symbol, concept, or text results; repeat for OR matching.",
     )
     find.add_argument(
         "--exclude-tests",
         dest="exclude_tests",
         action="store_true",
-        help="Exclude test paths from symbol, FTS5 file, or text results and counts.",
+        help="Exclude test paths from symbol, concept, or text results and counts.",
     )
 
     context = sub.add_parser(
@@ -1268,6 +1309,14 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(_normalize_global_options(raw_argv))
     limit_was_supplied = _option_was_supplied(raw_argv, "--limit")
     node_limit_was_supplied = _option_was_supplied(raw_argv, "--node-limit")
+    if args.command == "find":
+        if args.text and args.mode not in {"auto", "text"}:
+            parser.error("--text cannot be combined with --mode symbol or --mode concept")
+        effective_find_mode = "text" if args.text else args.mode
+        if args.kind and effective_find_mode in {"concept", "text"}:
+            parser.error("--kind requires auto or symbol mode")
+        if args.files_only and args.json:
+            parser.error("--files-only controls plain output and cannot be combined with --json")
     if args.command == "context":
         if (args.lexical_globs or args.lexical_exclude_tests) and args.lexical_references is None:
             parser.error("--glob/--exclude-tests require --lexical-references; --path also scopes symbol resolution")
@@ -1281,7 +1330,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "find":
         payload["query"] = args.query
         payload["kind"] = args.kind
-        payload["text"] = args.text
+        payload["mode"] = "text" if args.text else args.mode
+        payload["text"] = args.text or args.mode == "text"
         payload["paths"] = args.paths
         payload["globs"] = args.globs
         payload["exclude_tests"] = args.exclude_tests
@@ -1344,7 +1394,7 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(exit_code)
         return
     if args.command == "find":
-        _render_find(data, root)
+        _render_find(data, root, files_only=args.files_only)
     elif args.command == "context":
         _render_context(data, root)
     elif args.command == "trace":

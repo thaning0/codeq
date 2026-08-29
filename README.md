@@ -110,27 +110,37 @@ codeq find 'request retry policy' --limit 8
 codeq find RetryPolicy --kind class
 codeq find Candidate --kind class --path packages/research-core
 codeq find 'architecture guard' --path packages --glob '*.py' --exclude-tests
+codeq find retry --mode concept
+codeq find 'request retry policy' --files-only
 ```
 
-An exact identifier uses language-server symbol discovery. A query containing
-multiple lexical terms uses SQLite FTS5 BM25 to rank Git-visible supported source
-files. Plain output lists those files compactly, then prints one copyable
-`codeq context FILE` command for the top result; JSON retains a selection command
-for each result. The FTS database is a contentless, workspace-local `:memory:` index:
-it adds no runtime dependency or persistent repository state. `--text` remains exact
-literal search.
+Auto mode treats an exact identifier as a language-server symbol search and a query
+containing multiple lexical terms as concept discovery. Concept discovery uses
+SQLite FTS5 BM25 to rank Git-visible supported source files, then reads only the
+bounded returned files to show up to three representative source lines, matched
+terms, an actionable `PATH:LINE:COLUMN`, and a copyable `codeq context` command.
+These lines are lexical evidence explaining the file ranking; they are not promoted
+to semantic symbols. Use `--files-only` when compact ranked-file output is preferred.
+
+Select behavior explicitly with `--mode auto|symbol|concept|text`. `--text` remains a
+shortcut for exact literal text search. Explicit concept mode also supports a
+single-term query, while explicit symbol mode prevents a multi-term query from being
+automatically treated as a concept. The FTS database remains a contentless,
+workspace-local `:memory:` index, adding no runtime dependency or persistent
+repository state.
 
 `--path`, `--glob`, and `--exclude-tests` scope candidate files before the result
 limit; repeat path and glob filters for OR matching within each filter type. `--kind`
-is intentionally unsupported for multi-token file discovery because an FTS file hit
-does not prove a symbol kind; use an exact identifier when a symbol-kind filter is
-required.
+is intentionally unsupported for concept discovery because a lexical file hit does
+not prove a symbol kind; use symbol mode when a symbol-kind filter is required.
 
 Plain output reports `showing X of Y` after all filters. When `--limit` hides
 additional candidates, it says so explicitly and suggests increasing the limit.
 JSON exposes the same state through `result_count`, `total_candidates`, and
-`truncated`; FTS results also disclose the BM25 value, deterministic query terms,
-and index/query diagnostics.
+`truncated`; concept results add `search_mode`, `matched_terms`, and
+`representative_lines` while retaining the BM25 value, deterministic query terms,
+and index/query diagnostics. When plain search returns no matches, it suggests
+copyable commands for the other appropriate search modes.
 
 Exact working-tree text search:
 

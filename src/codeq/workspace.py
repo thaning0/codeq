@@ -43,7 +43,7 @@ from .gitdiff import (
     merge_ranges,
     whole_file_range,
 )
-from .ftssearch import FtsUnavailable, WorkspaceFtsIndex, lexical_terms
+from .ftssearch import FtsUnavailable, WorkspaceFtsIndex, lexical_terms, representative_evidence
 from .lsp import LspError, LspProcess
 from .textsearch import git_text_search
 from .topology import extract_imports, importer_candidate_hits, resolve_import_specifier
@@ -651,14 +651,38 @@ class Workspace:
         kind: str | None = None,
         *,
         text: bool = False,
+        mode: str = "auto",
         paths: tuple[str, ...] = (),
         globs: tuple[str, ...] = (),
         exclude_tests: bool = False,
     ) -> dict[str, Any]:
         path_filters = tuple(value for value in paths if value.strip())
         glob_filters = tuple(value for value in globs if value.strip())
-        if text:
-            return git_text_search(
+        requested_mode = mode.strip().lower() or "auto"
+        if requested_mode not in {"auto", "symbol", "concept", "text"}:
+            return {
+                "status": "invalid_query",
+                "query": query,
+                "reason": f"unsupported find mode: {mode}",
+                "results": [],
+                "result_count": 0,
+                "total_candidates": 0,
+                "truncated": False,
+                "errors": [],
+            }
+        if text and requested_mode not in {"auto", "text"}:
+            return {
+                "status": "invalid_query",
+                "query": query,
+                "reason": "text search cannot be combined with symbol or concept mode",
+                "results": [],
+                "result_count": 0,
+                "total_candidates": 0,
+                "truncated": False,
+                "errors": [],
+            }
+        if text or requested_mode == "text":
+            result = git_text_search(
                 self.root,
                 query,
                 limit=limit,
@@ -666,6 +690,8 @@ class Workspace:
                 globs=glob_filters,
                 exclude_tests=exclude_tests,
             )
+            result["search_mode"] = "text"
+            return result
 
         def in_scope(path: str | Path) -> bool:
             return self._matches_find_scope(
@@ -725,7 +751,10 @@ class Workspace:
             }
 
         terms = lexical_terms(query)
-        if len(terms) >= 2:
+        concept_search = requested_mode == "concept" or (
+            requested_mode == "auto" and len(terms) >= 2
+        )
+        if concept_search:
             filters = {
                 "paths": list(path_filters),
                 "globs": list(glob_filters),
@@ -733,6 +762,7 @@ class Workspace:
             }
             common = {
                 "mode": "fts5",
+                "search_mode": "concept",
                 "query": query,
                 "kind": kind,
                 "paths": list(path_filters),
@@ -743,13 +773,19 @@ class Workspace:
                 "truncated": False,
                 "errors": [],
             }
+            if not terms:
+                return {
+                    **common,
+                    "status": "invalid_query",
+                    "reason": "concept query must contain at least one lexical term",
+                }
             if kind:
                 return {
                     **common,
                     "status": "unsupported_target",
                     "reason": (
-                        "--kind is unavailable for multi-token file discovery; "
-                        "use an exact identifier for symbol filtering"
+                        "--kind is unavailable for concept search; "
+                        "use symbol mode for symbol filtering"
                     ),
                 }
             try:
@@ -761,23 +797,42 @@ class Workspace:
                     "reason": str(exc),
                 }
             matching = [hit for hit in search.hits if in_scope(hit.path)]
-            returned = [
-                {
+            returned: list[dict[str, Any]] = []
+            for hit in matching[: max(1, limit)]:
+                evidence = representative_evidence(hit.path, search.terms)
+                lines: list[dict[str, Any]] = [
+                    {
+                        "line": item.line,
+                        "column": item.column,
+                        "text": item.text,
+                        "matched_terms": list(item.matched_terms),
+                        "text_truncated": item.text_truncated,
+                        "text_start_column": item.text_start_column,
+                    }
+                    for item in evidence.lines
+                ]
+                anchor = lines[0] if lines else None
+                item = {
                     "name": hit.relative_path,
                     "kind": "File",
                     "container": "",
                     "path": str(hit.path),
                     "relative_path": hit.relative_path,
-                    "line": 1,
-                    "column": 1,
+                    "line": int(anchor["line"]) if anchor else 1,
+                    "column": int(anchor["column"]) if anchor else 1,
                     "source": "fts5",
                     "evidence": EVIDENCE_LEXICAL,
                     "is_test": is_test_path(hit.path),
                     "bm25": hit.bm25,
-                    "selection_command": self._file_context_command(hit.path),
+                    "matched_terms": list(evidence.matched_terms),
+                    "representative_lines": lines,
                 }
-                for hit in matching[: max(1, limit)]
-            ]
+                item["selection_command"] = (
+                    self._selection_command(item)
+                    if anchor
+                    else self._file_context_command(hit.path)
+                )
+                returned.append(item)
             return {
                 **common,
                 "status": "ok",
@@ -1007,6 +1062,8 @@ class Workspace:
         returned = self._with_selection_commands(ordered[:limit])
         return {
             "status": "ok",
+            "mode": "symbol",
+            "search_mode": "symbol",
             "query": query,
             "kind": kind,
             "paths": list(path_filters),
@@ -1393,7 +1450,7 @@ class Workspace:
                 "candidates": [],
             }
 
-        found = self.find(target, limit=12, paths=semantic_paths)
+        found = self.find(target, limit=12, mode="symbol", paths=semantic_paths)
         candidates = [r for r in found["results"] if r.get("source") == "lsp"] or found["results"]
         if not candidates:
             return {"status": "not_found", "target": target, "candidates": []}
