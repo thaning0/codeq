@@ -4,7 +4,7 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc8` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** `1.0.0rc9` is the active release candidate. The four-command surface is feature-frozen for 1.0.
 
 ## Why codeq
 
@@ -69,7 +69,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc8
+codeq 1.0.0rc9
 ```
 
 ## The workflow
@@ -156,7 +156,12 @@ accepted only when exactly one Git-visible source file matches; ambiguity return
 exact path-based commands. Paths containing `/` or `\\` remain exact and missing
 files fail closed.
 
-For symbols and locations, `context` returns bounded definition source, hover/signature, direct callers and callees, implementations, references, tests, and possible dynamic callback/registry evidence.
+For symbols and locations, `context` returns bounded definition source,
+hover/signature, direct callers and callees, implementations, references, tests,
+and possible dynamic callback/registry evidence. Every bounded evidence array has a
+matching `section_metadata` entry with returned count, exact total when known, lower
+bound, and truncation state. Plain output renders exact totals as `showing X of Y`
+and explicitly marks lower-bound-only totals as `showing X+`.
 
 Position semantics are deliberate:
 

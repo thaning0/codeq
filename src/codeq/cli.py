@@ -278,16 +278,28 @@ def _print_locations(
     title: str,
     items: list[dict[str, Any]],
     root: str | Path,
+    disclosure: dict[str, Any] | None = None,
     indent: str = "  ",
 ) -> None:
-    print(f"{title} ({len(items)})")
+    returned = int((disclosure or {}).get("returned_count", len(items)))
+    truncated = bool((disclosure or {}).get("truncated"))
+    total = (disclosure or {}).get("total_count")
+    if truncated and total is None:
+        count = f"showing {returned}+"
+    elif truncated:
+        count = f"showing {returned} of {total}"
+    else:
+        count = str(returned)
+    print(f"{title} ({count})")
     if not items:
         print(f"{indent}-")
-        return
-    for item in items:
-        name = item.get("name")
-        prefix = f"{name}  " if name else ""
-        print(f"{indent}{prefix}{_display_location(item, root)}")
+    else:
+        for item in items:
+            name = item.get("name")
+            prefix = f"{name}  " if name else ""
+            print(f"{indent}{prefix}{_display_location(item, root)}")
+    if truncated:
+        print(f"{indent}... more {title.lower()} available; increase --limit")
 
 
 def _query_exit_code(data: dict[str, Any]) -> int:
@@ -433,17 +445,29 @@ def _print_text_search(
 def _print_dynamic_references(
     items: list[dict[str, Any]],
     root: str | Path,
+    disclosure: dict[str, Any] | None = None,
     indent: str = "  ",
 ) -> None:
-    print(f"Possible dynamic references ({len(items)})")
+    returned = int((disclosure or {}).get("returned_count", len(items)))
+    truncated = bool((disclosure or {}).get("truncated"))
+    total = (disclosure or {}).get("total_count")
+    if truncated and total is None:
+        count = f"showing {returned}+"
+    elif truncated:
+        count = f"showing {returned} of {total}"
+    else:
+        count = str(returned)
+    print(f"Possible dynamic references ({count})")
     if not items:
         print(f"{indent}-")
-        return
-    for item in items:
-        reason = item.get("reason") or "possible"
-        text = str(item.get("text") or "").strip()
-        suffix = f"  {text}" if text else ""
-        print(f"{indent}[{reason}] {_display_location(item, root)}{suffix}")
+    else:
+        for item in items:
+            reason = item.get("reason") or "possible"
+            text = str(item.get("text") or "").strip()
+            suffix = f"  {text}" if text else ""
+            print(f"{indent}[{reason}] {_display_location(item, root)}{suffix}")
+    if truncated:
+        print(f"{indent}... more possible dynamic references available; increase --limit")
 
 
 def _render_file_context(data: dict[str, Any], root: str | Path) -> None:
@@ -539,12 +563,22 @@ def _render_context(data: dict[str, Any], root: str | Path) -> None:
         print("\nDefinition source" if request_snippet else "\nSource")
         print(snippet)
     print()
-    _print_locations("Callers", data.get("callers", []), root)
-    _print_locations("Callees", data.get("callees", []), root)
-    _print_locations("Implementations", data.get("implementations", []), root)
-    _print_locations("Tests", data.get("tests", []), root)
-    _print_locations("References", data.get("references", []), root)
-    _print_dynamic_references(data.get("possible_dynamic_references", []), root)
+    sections = data.get("section_metadata") or {}
+    _print_locations("Callers", data.get("callers", []), root, sections.get("callers"))
+    _print_locations("Callees", data.get("callees", []), root, sections.get("callees"))
+    _print_locations(
+        "Implementations",
+        data.get("implementations", []),
+        root,
+        sections.get("implementations"),
+    )
+    _print_locations("Tests", data.get("tests", []), root, sections.get("tests"))
+    _print_locations("References", data.get("references", []), root, sections.get("references"))
+    _print_dynamic_references(
+        data.get("possible_dynamic_references", []),
+        root,
+        sections.get("possible_dynamic_references"),
+    )
     if data.get("lexical_references"):
         print()
         _print_text_search("Lexical references", data.get("lexical_references"), root)
@@ -839,6 +873,10 @@ For a symbol or source-position target, context returns:
   Implementations and references
   Likely tests
   Possible dynamic callback/registry references when detected
+
+Each bounded evidence section reports whether it is complete, shows exact totals
+when already known, and uses a lower bound when upstream classification is bounded.
+Truncated sections include an exact `increase --limit` recovery hint.
 
 For a source-file target, context uses progressive disclosure: top-level outline by
 default. Expand only what you need with --outline-depth, --kind, or --container;

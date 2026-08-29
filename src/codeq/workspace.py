@@ -218,6 +218,56 @@ def _call_item_entry(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _deduplicate_locations(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Preserve first-seen evidence while collapsing duplicate locations."""
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, int, str]] = set()
+    for item in items:
+        key = (
+            str(item.get("path") or ""),
+            int(item.get("line") or 0),
+            int(item.get("column") or 1),
+            str(item.get("name") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _known_section_disclosure(
+    items: list[dict[str, Any]],
+    limit: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    returned = items[:limit]
+    total = len(items)
+    return returned, {
+        "returned_count": len(returned),
+        "total_count": total,
+        "total_lower_bound": total,
+        "total_is_exact": True,
+        "truncated": len(returned) < total,
+    }
+
+
+def _bounded_section_disclosure(
+    items: list[dict[str, Any]],
+    limit: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Describe a limit+1 probe whose full total is unknown when it overflows."""
+    returned = items[:limit]
+    overflow = len(items) > len(returned)
+    total = None if overflow else len(items)
+    return returned, {
+        "returned_count": len(returned),
+        "total_count": total,
+        "total_lower_bound": len(items),
+        "total_is_exact": not overflow,
+        "truncated": overflow,
+    }
+
+
 _CALL_HIERARCHY_KIND_CODES = {
     "Class": 5,
     "Method": 6,
@@ -1976,11 +2026,11 @@ class Workspace:
         except LspError:
             pass
         try:
-            refs = [
+            refs = _deduplicate_locations([
                 x
                 for x in (lsp_location(r) for r in session.references(path, line, column))
                 if x and self._is_repo_path(x["path"])
-            ]
+            ])
         except LspError:
             refs = []
         try:
@@ -2003,15 +2053,25 @@ class Workspace:
                 impls.append(self._symbol_at_location(implementation))
         except LspError:
             impls = []
-        callers = self._call_neighbors(session, path, line, column, "in")
-        callees = self._call_neighbors(session, path, line, column, "out")
+        callers = _deduplicate_locations(self._call_neighbors(session, path, line, column, "in"))
+        callees = _deduplicate_locations(self._call_neighbors(session, path, line, column, "out"))
+        impls = _deduplicate_locations(impls)
 
         tests = [r for r in refs if is_test_path(r["path"])]
         source_refs = [r for r in refs if not is_test_path(r["path"])]
-        possible_dynamic = classify_dynamic_references(
+        possible_dynamic_probe = classify_dynamic_references(
             source_refs,
             str(symbol.get("name") or ""),
-            limit=budget.items,
+            limit=budget.items + 1,
+        )
+        callers_out, callers_meta = _known_section_disclosure(callers, budget.items)
+        callees_out, callees_meta = _known_section_disclosure(callees, budget.items)
+        impls_out, impls_meta = _known_section_disclosure(impls, budget.items)
+        references_out, references_meta = _known_section_disclosure(source_refs, budget.items)
+        tests_out, tests_meta = _known_section_disclosure(tests, budget.items)
+        possible_dynamic, possible_dynamic_meta = _bounded_section_disclosure(
+            possible_dynamic_probe,
+            budget.items,
         )
         hover_text = ""
         if isinstance(hover, dict):
@@ -2061,12 +2121,20 @@ class Workspace:
                 max_chars=budget.snippet_chars,
                 max_line_chars=budget.text_line_chars,
             ),
-            "callers": callers[:budget.items],
-            "callees": callees[:budget.items],
-            "implementations": impls[:budget.items],
-            "references": source_refs[:budget.items],
+            "callers": callers_out,
+            "callees": callees_out,
+            "implementations": impls_out,
+            "references": references_out,
             "possible_dynamic_references": possible_dynamic,
-            "tests": tests[:budget.items],
+            "tests": tests_out,
+            "section_metadata": {
+                "callers": callers_meta,
+                "callees": callees_meta,
+                "implementations": impls_meta,
+                "references": references_meta,
+                "tests": tests_meta,
+                "possible_dynamic_references": possible_dynamic_meta,
+            },
         }
         if requested_location is not None:
             data["requested_location"] = requested_location
