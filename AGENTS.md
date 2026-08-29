@@ -1,5 +1,7 @@
 # Repository instructions
 
+When exploring, understanding, tracing, or reviewing code, use the `codeq` CLI first; if a command is unfamiliar, run `codeq COMMAND --help`.
+
 ## Updating the local `codeq` installation
 
 The globally installed `codeq` command used by other agents must be a stable
