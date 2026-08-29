@@ -35,7 +35,8 @@ New top-level commands are a compatibility break and require explicit evidence f
 - Semantic references and likely tests.
 - Implementations/inheritance.
 - Bounded possible dynamic callback/registry evidence.
-- Progressive file outlines and opt-in import/importer topology.
+- Progressive file outlines and opt-in import/importer topology for a target file
+  or the file containing a resolved symbol/location.
 - Separate lexical evidence that is never silently promoted to a semantic edge.
 
 ### Multi-hop tracing

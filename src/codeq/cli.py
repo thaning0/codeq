@@ -527,6 +527,44 @@ def _print_dynamic_references(
         print(f"{indent}... more possible dynamic references available; increase --limit")
 
 
+def _print_file_topology(
+    data: dict[str, Any],
+    root: str | Path,
+    *,
+    heading: str | None = None,
+) -> None:
+    if heading:
+        print(f"\n{heading} ({_display_path(data.get('path', ''), root)})")
+
+    imports = data.get("imports", [])
+    print(f"\nImports (showing {len(imports)} of {data.get('import_count', len(imports))})")
+    if not imports:
+        print("  -")
+    for item in imports:
+        names = ", ".join(str(name) for name in item.get("names", []))
+        suffix = f" [{names}]" if names else ""
+        resolved = item.get("resolved_paths", [])
+        resolved_text = (
+            f" -> {', '.join(_display_path(path, root) for path in resolved)}"
+            if resolved
+            else ""
+        )
+        print(f"  {item.get('specifier','')}:{item.get('line',1)}{suffix}{resolved_text}")
+
+    if data.get("imports_truncated"):
+        print("  ... more imports available; increase --limit")
+
+    importers = data.get("importers", [])
+    importer_suffix = "+" if data.get("importers_truncated") else ""
+    print(f"\nImported by (showing {len(importers)}{importer_suffix})")
+    if not importers:
+        print("  -")
+    for item in importers:
+        text = str(item.get("text") or "").strip()
+        suffix = f"  {text}" if text else ""
+        print(f"  {_display_location(item, root)}{suffix}")
+
+
 def _render_file_context(data: dict[str, Any], root: str | Path) -> None:
     file_info = data.get("file") or {}
     print(f"File {_display_path(file_info.get('path', data.get('target', '')), root)}")
@@ -556,33 +594,7 @@ def _render_file_context(data: dict[str, Any], root: str | Path) -> None:
         print(f"\n[{meta.get('duration_ms','?')} ms]")
         return
 
-    imports = data.get("imports", [])
-    print(f"\nImports (showing {len(imports)} of {data.get('import_count', len(imports))})")
-    if not imports:
-        print("  -")
-    for item in imports:
-        names = ", ".join(str(name) for name in item.get("names", []))
-        suffix = f" [{names}]" if names else ""
-        resolved = item.get("resolved_paths", [])
-        resolved_text = (
-            f" -> {', '.join(_display_path(path, root) for path in resolved)}"
-            if resolved
-            else ""
-        )
-        print(f"  {item.get('specifier','')}:{item.get('line',1)}{suffix}{resolved_text}")
-
-    if data.get("imports_truncated"):
-        print("  ... more imports available; increase --limit")
-
-    importers = data.get("importers", [])
-    importer_suffix = "+" if data.get("importers_truncated") else ""
-    print(f"\nImported by (showing {len(importers)}{importer_suffix})")
-    if not importers:
-        print("  -")
-    for item in importers:
-        text = str(item.get("text") or "").strip()
-        suffix = f"  {text}" if text else ""
-        print(f"  {_display_location(item, root)}{suffix}")
+    _print_file_topology(data, root)
 
     if data.get("lexical_references"):
         print()
@@ -648,6 +660,13 @@ def _render_context(data: dict[str, Any], root: str | Path) -> None:
     if data.get("lexical_references"):
         print()
         _print_text_search("Lexical references", data.get("lexical_references"), root)
+    file_topology = data.get("file_topology")
+    if isinstance(file_topology, dict):
+        _print_file_topology(
+            file_topology,
+            root,
+            heading="Containing file topology",
+        )
     meta = data.get("_meta", {})
     print(f"\n[{meta.get('duration_ms','?')} ms]")
 
@@ -982,6 +1001,10 @@ For a source-file target, context uses progressive disclosure: top-level outline
 default. Expand only what you need with --outline-depth, --kind, or --container;
 add --topology only when you need imports/importers.
 
+For a symbol or source-position target, --topology preserves the symbol neighborhood
+and additionally discloses imports/importers for its containing file. Direct symbol
+callers/callees remain part of context; use trace for multi-hop call relationships.
+
 PATH:LINE keeps the enclosing function/method/type. PATH:LINE:COLUMN first follows
 the exact repository definition under the cursor when available and also returns a
 small request-site snippet; it falls back to enclosing context when no definition is
@@ -1006,6 +1029,7 @@ Examples:
   codeq context backend/src/app/services/backtest_service.py --container BacktestService
   codeq context backend/src/app/services/backtest_service.py --kind method --limit 20
   codeq context frontend/src/features/market/api.ts --topology --limit 20
+  codeq context BacktestService.stream_backtest_logs --topology
   codeq context BacktestService.stream_backtest_logs --section callers
   codeq context BacktestService.stream_backtest_logs --section tests --section references
   codeq context BacktestService.stream_backtest_logs --lexical-references
@@ -1044,7 +1068,10 @@ more than the direct callers/callees, continue with `codeq trace`.
     context.add_argument(
         "--topology",
         action="store_true",
-        help="File targets only: additionally disclose bounded imports and importers.",
+        help=(
+            "Additionally disclose bounded imports/importers for a file target "
+            "or a symbol/location target's containing file."
+        ),
     )
     context.add_argument(
         "--section",

@@ -209,6 +209,16 @@ codeq context src/services/orders.py --kind method --limit 20
 codeq context src/services/orders.py --topology
 ```
 
+For a symbol or source position, `--topology` keeps the symbol as the query target
+and adds bounded import/importer topology for its containing file. JSON reports that
+additional evidence under `file_topology` with `scope: "containing_file"`; it does
+not claim that every file import is used by the selected symbol. Use `trace` when
+you need a multi-hop call relationship instead.
+
+```bash
+codeq context OrderService.submit --topology
+```
+
 Runtime/text contracts can be attached without mixing them into semantic references:
 
 ```bash

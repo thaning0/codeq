@@ -2028,6 +2028,52 @@ class Workspace:
         }
         return returned, metadata
 
+    def _file_topology(
+        self,
+        path: Path,
+        limit: int,
+        *,
+        project: Project,
+        session: LspProcess,
+        imports: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        source_imports = extract_imports(path) if imports is None else imports
+        resolved_imports: list[dict[str, Any]] = []
+        for item in source_imports:
+            definitions = resolve_import_specifier(
+                path,
+                str(item.get("specifier") or ""),
+                project.root,
+            )
+            if not definitions:
+                definitions = self._definition_paths(
+                    session,
+                    path,
+                    int(item.get("line") or 1),
+                    int(item.get("column") or 1),
+                )
+            resolved_imports.append(
+                {
+                    **item,
+                    "resolved_paths": [
+                        str(candidate) for candidate in definitions if candidate != path
+                    ],
+                }
+            )
+
+        importers, importers_truncated = self._verified_importers(path, limit=limit)
+        returned_imports = resolved_imports[:limit]
+        returned_importers = importers[:limit]
+        return {
+            "path": str(path),
+            "imports": returned_imports,
+            "import_count": len(source_imports),
+            "imports_truncated": len(resolved_imports) > len(returned_imports),
+            "importers": returned_importers,
+            "importer_count": len(returned_importers),
+            "importers_truncated": importers_truncated,
+        }
+
     def _file_context(
         self,
         path: Path,
@@ -2060,27 +2106,23 @@ class Workspace:
             return {"status": "error", "target": str(path), "error": str(exc)}
 
         imports = extract_imports(path)
-        resolved_imports: list[dict[str, Any]] = []
-        importers: list[dict[str, Any]] = []
-        importers_truncated = False
         if include_topology:
-            for item in imports:
-                definitions = resolve_import_specifier(path, str(item.get("specifier") or ""), project.root)
-                if not definitions:
-                    definitions = self._definition_paths(
-                        session,
-                        path,
-                        int(item.get("line") or 1),
-                        int(item.get("column") or 1),
-                    )
-                resolved_imports.append(
-                    {
-                        **item,
-                        "resolved_paths": [str(candidate) for candidate in definitions if candidate != path],
-                    }
-                )
-
-            importers, importers_truncated = self._verified_importers(path, limit=limit)
+            topology = self._file_topology(
+                path,
+                limit,
+                project=project,
+                session=session,
+                imports=imports,
+            )
+        else:
+            topology = {
+                "imports": [],
+                "import_count": len(imports),
+                "imports_truncated": False,
+                "importers": [],
+                "importer_count": 0,
+                "importers_truncated": False,
+            }
 
         def outline_depth_of(symbol: dict[str, Any]) -> int:
             parent = str(symbol.get("container") or "")
@@ -2129,8 +2171,6 @@ class Workspace:
             {k: symbol[k] for k in ("name", "kind", "container", "path", "line", "column")}
             for symbol in selected_symbols[:limit]
         ]
-        returned_importers = importers[:limit]
-        returned_imports = resolved_imports[:limit]
         return {
             "status": "ok",
             "target": str(path),
@@ -2149,12 +2189,12 @@ class Workspace:
             "outline_kind": outline_kind,
             "container": container,
             "topology_loaded": include_topology,
-            "imports": returned_imports,
-            "import_count": len(imports),
-            "imports_truncated": include_topology and len(resolved_imports) > len(returned_imports),
-            "importers": returned_importers,
-            "importer_count": len(returned_importers),
-            "importers_truncated": importers_truncated,
+            "imports": topology["imports"],
+            "import_count": topology["import_count"],
+            "imports_truncated": topology["imports_truncated"],
+            "importers": topology["importers"],
+            "importer_count": topology["importer_count"],
+            "importers_truncated": topology["importers_truncated"],
         }
 
     def context(
@@ -2342,17 +2382,6 @@ class Workspace:
         if resolved["status"] != "ok":
             return with_phase_timing(resolved, resolution_finished=resolution_finished)
         symbol = resolved["symbol"]
-        if include_topology:
-            return with_phase_timing(
-                {
-                    "status": "invalid_query",
-                    "target": target,
-                    "reason": "--topology applies only to whole-file context; the target resolved to a symbol",
-                    "symbol": symbol,
-                    "recovery_command": self._file_context_command(symbol["path"], "--topology"),
-                },
-                resolution_finished=resolution_finished,
-            )
         budget = QueryBudget.from_limit(limit)
         prewarm_started = time.perf_counter()
         try:
@@ -2380,6 +2409,19 @@ class Workspace:
                 prewarm_ms=(prewarm_finished - prewarm_started) * 1000,
             )
         prewarm_finished = time.perf_counter()
+
+        file_topology: dict[str, Any] | None = None
+        if include_topology:
+            file_topology = {
+                "status": "ok",
+                "scope": "containing_file",
+                **self._file_topology(
+                    path,
+                    limit,
+                    project=project,
+                    session=session,
+                ),
+            }
 
         hover: Any = None
         if "source" in selected_keys:
@@ -2542,6 +2584,8 @@ class Workspace:
             data["request_source"] = request_source
         if lexical_data is not None:
             data["lexical_references"] = lexical_data
+        if file_topology is not None:
+            data["file_topology"] = file_topology
         return with_phase_timing(
             data,
             resolution_finished=resolution_finished,

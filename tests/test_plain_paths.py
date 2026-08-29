@@ -136,6 +136,44 @@ class PlainPathRenderingTests(unittest.TestCase):
         self.assertIn("src/api.py:2:1", stdout)
         self.assertNotIn("/repo/", stdout)
 
+    def test_symbol_context_renders_containing_file_topology(self) -> None:
+        result = {
+            "status": "ok",
+            "symbol": {
+                "name": "run",
+                "kind": "Method",
+                "container": "Thing",
+                "path": "/repo/src/model.py",
+                "line": 4,
+                "column": 7,
+            },
+            "section_metadata": {},
+            "file_topology": {
+                "status": "ok",
+                "scope": "containing_file",
+                "path": "/repo/src/model.py",
+                "imports": [
+                    {
+                        "specifier": ".helper",
+                        "line": 1,
+                        "resolved_paths": ["/repo/src/helper.py"],
+                    }
+                ],
+                "import_count": 1,
+                "imports_truncated": False,
+                "importers": [
+                    {"path": "/repo/src/api.py", "line": 2, "column": 1, "text": "import model"}
+                ],
+                "importer_count": 1,
+                "importers_truncated": False,
+            },
+        }
+        stdout, _ = self._render(["context", "Thing.run", "--topology"], result)
+        self.assertIn("Containing file topology (src/model.py)", stdout)
+        self.assertIn("src/helper.py", stdout)
+        self.assertIn("src/api.py:2:1", stdout)
+        self.assertNotIn("/repo/", stdout)
+
     def test_trace_and_review_plain_paths_are_repository_relative(self) -> None:
         trace = {
             "status": "ok",

@@ -51,6 +51,9 @@ class _FakeSession:
     def definitions(self, path: Path, line: int, column: int):
         return []
 
+    def hover(self, path: Path, line: int, column: int):
+        return None
+
     def close(self):
         return None
 
@@ -112,7 +115,7 @@ class FileContextDisclosureTests(unittest.TestCase):
             self.assertEqual(result["import_count"], 1)
             self.assertEqual(len(result["imports"]), 1)
 
-    def test_topology_on_symbol_is_rejected_with_whole_file_recovery(self) -> None:
+    def test_topology_on_symbol_preserves_symbol_and_adds_containing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "sample.py"
@@ -126,18 +129,25 @@ class FileContextDisclosureTests(unittest.TestCase):
                 "line": 2,
                 "column": 9,
             }
+            fake_import = {"specifier": "app.dep", "line": 1, "column": 1, "names": ["Dep"]}
             with (
                 patch.object(workspace, "resolve", return_value={"status": "ok", "symbol": symbol}),
-                patch.object(
-                    workspace,
-                    "_session_and_position",
-                    side_effect=AssertionError("invalid topology must fail before neighborhood queries"),
-                ),
+                patch("codeq.workspace.extract_imports", return_value=[fake_import]),
+                patch("codeq.workspace.resolve_import_specifier", return_value=[]),
+                patch("codeq.workspace.importer_candidate_hits", return_value=[]),
             ):
-                result = workspace.context("Service.run", include_topology=True)
-            self.assertEqual(result["status"], "invalid_query")
-            self.assertIn("whole-file", result["reason"])
-            self.assertEqual(result["recovery_command"], "codeq context sample.py --topology")
+                result = workspace.context(
+                    "Service.run",
+                    include_topology=True,
+                    selected_sections=("source",),
+                )
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["symbol"], symbol)
+            self.assertEqual(result["file_topology"]["status"], "ok")
+            self.assertEqual(result["file_topology"]["scope"], "containing_file")
+            self.assertEqual(result["file_topology"]["path"], str(source))
+            self.assertEqual(result["file_topology"]["import_count"], 1)
+            self.assertEqual(len(result["file_topology"]["imports"]), 1)
 
     def test_dotted_module_keeps_file_topology_behavior(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

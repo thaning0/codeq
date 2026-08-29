@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "codeq"
-version = "1.0.0rc12"
+version = "1.0.0rc13"
 source = { editable = "." }
 
 [package.dev-dependencies]
