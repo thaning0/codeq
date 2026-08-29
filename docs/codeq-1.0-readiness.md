@@ -22,6 +22,8 @@ New top-level commands are a compatibility break and require explicit evidence f
 ### Navigation and discovery
 
 - Find Python/TypeScript/JavaScript symbols semantically.
+- Discover multi-term source concepts as ranked files through a workspace-local,
+  contentless in-memory SQLite FTS5 index.
 - Search exact runtime/configuration/HTTP/registry contracts across Git-visible text (tracked plus non-ignored untracked files).
 - Filter exact-text evidence by repository path, glob, and test/non-test category.
 - Resolve `PATH:LINE` to enclosing semantic context.
@@ -72,6 +74,7 @@ not_found
 ambiguous
 unsupported_language
 unsupported_target
+unsupported_capability
 invalid_query
 error
 ```
@@ -112,6 +115,8 @@ timing under `_meta.phase_ms`. Context separates `resolution`, `prewarm`, and
   suffix never degrades to an unrelated same-named symbol.
 - Semantic `find` and symbolic `context` path constraints filter before target
   selection; ambiguous candidates include copyable exact-location commands.
+- Multi-token `find` is lexical file discovery, never an invented semantic symbol;
+  its path/glob/test constraints filter before the public result limit.
 - `PATH:LINE` means enclosing semantic context.
 - `PATH:LINE:COLUMN` prefers the exact cursor definition and preserves `requested_location` plus a request-site snippet.
 
@@ -239,6 +244,11 @@ Run:
 uv run python benchmarks/readiness_gate.py
 ```
 
-The gate consumes the committed active-version performance artifact and the 0.5.2 historical replay artifact. The refreshed `1.0.0rc6` gate passes all ten checks, including mandatory live-workload cases and the no-10-second semantic/review limit. RC6 keeps the shared abstract daemon when allowed, automatically falls back to one-shot execution when a sandbox denies Unix sockets, and coalesces concurrent cold semantic work.
+The gate consumes the committed active-version performance artifact and the 0.5.2
+historical replay artifact. The refreshed `1.0.0rc12` gate passes all ten checks,
+including mandatory live-workload cases and the no-10-second semantic/review limit.
+RC12 keeps the shared daemon and one-shot fallback, coalesces concurrent cold work,
+and replaces heuristic multi-token semantic promotion with ephemeral FTS5 file
+discovery.
 
 During the RC period, only release blockers should change analysis/runtime behavior: silent correctness bugs, compatibility-contract regressions, or repeated severe performance/lifecycle failures. New analysis capabilities stay deferred. If the RC workload remains clean, the next stable release is `1.0.0`.

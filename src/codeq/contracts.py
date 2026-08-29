@@ -12,6 +12,7 @@ STATUS_VALUES = frozenset(
         "ambiguous",
         "unsupported_language",
         "unsupported_target",
+        "unsupported_capability",
         "invalid_query",
         "error",
         "unavailable",

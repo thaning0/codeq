@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any, Callable
@@ -59,12 +60,30 @@ def git_visible_files(root: str | Path) -> list[Path]:
         check=False,
     )
     if proc.returncode == 0:
-        visible_paths = {
-            (resolved_root / raw.decode("utf-8", errors="surrogateescape")).resolve()
-            for raw in proc.stdout.split(b"\0")
-            if raw
-        }
-        return sorted(path for path in visible_paths if path.is_file())
+        relative_paths = sorted(
+            {
+                raw.decode("utf-8", errors="surrogateescape")
+                for raw in proc.stdout.split(b"\0")
+                if raw
+            }
+        )
+        visible_paths: list[Path] = []
+        for relative_path in relative_paths:
+            path = resolved_root / relative_path
+            # Git paths are already rooted and normalized. Resolving every regular
+            # file repeats realpath work for each parent directory; only symlinks
+            # need resolution to preserve the existing boundary behavior.
+            try:
+                mode = path.lstat().st_mode
+            except OSError:
+                continue
+            if stat.S_ISREG(mode):
+                visible_paths.append(path)
+            elif stat.S_ISLNK(mode):
+                resolved = path.resolve()
+                if resolved.is_file():
+                    visible_paths.append(resolved)
+        return visible_paths
 
     skipped = {
         ".git", ".hg", ".svn", ".venv", "venv", "node_modules", ".next",
@@ -73,7 +92,9 @@ def git_visible_files(root: str | Path) -> list[Path]:
     paths: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(resolved_root):
         dirnames[:] = [name for name in dirnames if name not in skipped]
-        paths.extend((Path(dirpath) / name).resolve() for name in filenames)
+        for name in filenames:
+            path = Path(dirpath) / name
+            paths.append(path.resolve() if path.is_symlink() else path)
     return sorted(path for path in paths if path.is_file())
 
 

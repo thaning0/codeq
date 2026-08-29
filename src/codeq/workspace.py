@@ -43,6 +43,7 @@ from .gitdiff import (
     merge_ranges,
     whole_file_range,
 )
+from .ftssearch import FtsUnavailable, WorkspaceFtsIndex, lexical_terms
 from .lsp import LspError, LspProcess
 from .textsearch import git_text_search
 from .topology import extract_imports, importer_candidate_hits, resolve_import_specifier
@@ -318,6 +319,7 @@ class Workspace:
         self._prewarm_flights: dict[tuple[str, str, int], threading.Event] = {}
         self._document_symbol_cache: OrderedDict[Path, tuple[tuple[int, int], list[dict[str, Any]]]] = OrderedDict()
         self._document_symbol_flights: dict[tuple[Path, tuple[int, int]], threading.Event] = {}
+        self._fts_index = WorkspaceFtsIndex(self.root)
         self._metrics: dict[str, int] = {
             "sessions_started": 0,
             "document_symbols_hit": 0,
@@ -341,6 +343,7 @@ class Workspace:
             self._prewarm_flights.clear()
         for flight in flights:
             flight.set()
+        self._fts_index.close()
         for session in sessions:
             session.close()
 
@@ -719,6 +722,84 @@ class Workspace:
                 **common,
                 "status": "unsupported_target",
                 "reason": "use `codeq context FILE` for a source-file target",
+            }
+
+        terms = lexical_terms(query)
+        if len(terms) >= 2:
+            filters = {
+                "paths": list(path_filters),
+                "globs": list(glob_filters),
+                "exclude_tests": exclude_tests,
+            }
+            common = {
+                "mode": "fts5",
+                "query": query,
+                "kind": kind,
+                "paths": list(path_filters),
+                "filters": filters,
+                "results": [],
+                "result_count": 0,
+                "total_candidates": 0,
+                "truncated": False,
+                "errors": [],
+            }
+            if kind:
+                return {
+                    **common,
+                    "status": "unsupported_target",
+                    "reason": (
+                        "--kind is unavailable for multi-token file discovery; "
+                        "use an exact identifier for symbol filtering"
+                    ),
+                }
+            try:
+                search = self._fts_index.search(query)
+            except FtsUnavailable as exc:
+                return {
+                    **common,
+                    "status": "unsupported_capability",
+                    "reason": str(exc),
+                }
+            matching = [hit for hit in search.hits if in_scope(hit.path)]
+            returned = [
+                {
+                    "name": hit.relative_path,
+                    "kind": "File",
+                    "container": "",
+                    "path": str(hit.path),
+                    "relative_path": hit.relative_path,
+                    "line": 1,
+                    "column": 1,
+                    "source": "fts5",
+                    "evidence": EVIDENCE_LEXICAL,
+                    "is_test": is_test_path(hit.path),
+                    "bm25": hit.bm25,
+                    "selection_command": self._file_context_command(hit.path),
+                }
+                for hit in matching[: max(1, limit)]
+            ]
+            return {
+                **common,
+                "status": "ok",
+                "results": returned,
+                "result_count": len(returned),
+                "total_candidates": len(matching),
+                "truncated": len(returned) < len(matching),
+                "ranking": {
+                    "engine": "sqlite_fts5_bm25",
+                    "terms": search.terms,
+                    "match_expression": search.match_expression,
+                    "tie_breaker": "relative_path",
+                },
+                "index": {
+                    "storage": "memory_contentless",
+                    "file_count": search.file_count,
+                    "source_bytes": search.source_bytes,
+                    "index_bytes": search.index_bytes,
+                    "refreshed": search.refreshed,
+                    "build_ms": round(search.build_ms, 3),
+                    "query_ms": round(search.query_ms, 3),
+                },
             }
 
         hits = lexical_hits(

@@ -4,7 +4,7 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc11` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** `1.0.0rc12` is the active release candidate. The four-command surface is feature-frozen for 1.0.
 
 ## Why codeq
 
@@ -23,7 +23,8 @@ A language server can answer many of these questions, but driving it directly ta
 - **CLI first** — four shell commands, designed for agents and humans.
 - **Semantic when possible** — Python and TypeScript/JavaScript relationships come from mature language servers.
 - **Exact text when semantics stop** — URLs, environment variables, YAML, Shell, SQL, registry keys, and other runtime contracts stay raw textual evidence.
-- **No persistent code graph** — no graph database, embedding index, or per-worktree rebuild.
+- **No persistent code graph** — no graph database, embedding index, or on-disk
+  per-worktree rebuild state.
 - **Fail closed** — explicit paths and qualified symbols are never silently degraded into unrelated fuzzy matches.
 - **Bounded output** — one `--limit` budget keeps agent context predictable while preserving full counts and truncation metadata.
 
@@ -33,7 +34,7 @@ A language server can answer many of these questions, but driving it directly ta
 
 `codeq` itself has no Python runtime dependencies. You need:
 
-- Python 3.12+
+- Python 3.12+ (with SQLite FTS5 for multi-token discovery)
 - Git
 - ripgrep (`rg`)
 - a language server for the languages you want to analyze semantically
@@ -69,7 +70,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc11
+codeq 1.0.0rc12
 ```
 
 ## The workflow
@@ -111,15 +112,23 @@ codeq find Candidate --kind class --path packages/research-core
 codeq find 'architecture guard' --path packages --glob '*.py' --exclude-tests
 ```
 
-By default, `find` matches symbols and source concepts semantically. `--text` changes
-only the matching strategy to exact literal search. `--path`, `--glob`, and
-`--exclude-tests` scope candidate files in either mode; repeat path and glob filters
-for OR matching within each filter type.
+An exact identifier uses language-server symbol discovery. A query containing
+multiple lexical terms uses SQLite FTS5 BM25 to rank Git-visible supported source
+files and returns copyable `codeq context FILE` commands. The FTS database is a
+contentless, workspace-local `:memory:` index: it adds no runtime dependency or
+persistent repository state. `--text` remains exact literal search.
 
-Semantic plain output reports `showing X of Y candidates` after all filters. When
-`--limit` hides additional candidates, it says so explicitly and suggests increasing
-the limit. JSON exposes the same state through `result_count`, `total_candidates`,
-and `truncated`.
+`--path`, `--glob`, and `--exclude-tests` scope candidate files before the result
+limit; repeat path and glob filters for OR matching within each filter type. `--kind`
+is intentionally unsupported for multi-token file discovery because an FTS file hit
+does not prove a symbol kind; use an exact identifier when a symbol-kind filter is
+required.
+
+Plain output reports `showing X of Y` after all filters. When `--limit` hides
+additional candidates, it says so explicitly and suggests increasing the limit.
+JSON exposes the same state through `result_count`, `total_candidates`, and
+`truncated`; FTS results also disclose the BM25 value, deterministic query terms,
+and index/query diagnostics.
 
 Exact working-tree text search:
 
@@ -268,12 +277,12 @@ Plain text is the default. Use `--json` when the caller wants a stable machine-r
 
 ## Supported analysis
 
-| Source | Semantic analysis | Exact text search |
-| --- | --- | --- |
-| Python / `.py`, `.pyi` | basedpyright or pyright | Yes |
-| TypeScript / JavaScript | typescript-language-server | Yes |
-| YAML / Shell / SQL / docs / config | No | Yes |
-| Other Git-visible text | No | Yes |
+| Source | Semantic analysis | Multi-term FTS5 discovery | Exact text search |
+| --- | --- | --- | --- |
+| Python / `.py`, `.pyi` | basedpyright or pyright | Yes | Yes |
+| TypeScript / JavaScript | typescript-language-server | Yes | Yes |
+| YAML / Shell / SQL / docs / config | No | No | Yes |
+| Other Git-visible text | No | No | Yes |
 
 Language servers remain the semantic authority for definitions, references, implementations, and call hierarchy. `codeq` does not invent a second semantic graph.
 
@@ -284,7 +293,8 @@ These behaviors are part of the 1.0 compatibility boundary:
 - Qualified targets such as `Class.method` are **fail-closed**.
 - Fully module-qualified targets are accepted only when their module/file suffix
   and semantic declaration suffix match exactly.
-- Semantic `find` and symbolic `context` support repeatable path-prefix scoping.
+- Exact-symbol and multi-token `find`, plus symbolic `context`, support repeatable
+  path-prefix scoping.
 - Explicit path-like targets never fall back to fuzzy symbol search.
 - Missing files return `not_found`.
 - Unsupported source-file languages return `unsupported_language` rather than an unrelated symbol.
@@ -308,16 +318,23 @@ Agent / shell
  small daemon
   ├─ basedpyright / pyright
   ├─ typescript-language-server
+  ├─ SQLite FTS5 (`:memory:`, contentless)
   ├─ rg
   └─ git
 ```
 
-The daemon keeps relevant language servers warm, caches only safe file-local document symbols, and releases inactive workspaces. Workspaces without a live language server expire after five minutes; workspaces retaining an LSP process expire after 30 minutes. Override those limits with `CODEQ_WORKSPACE_IDLE_SECONDS` and `CODEQ_LSP_IDLE_SECONDS`. It does **not** maintain a persistent repository graph or embedding index.
+The daemon keeps relevant language servers warm, caches only safe file-local document
+symbols, and lazily owns one contentless in-memory FTS index per active worktree.
+Releasing an inactive workspace closes both its language servers and FTS database.
+Workspaces without a live language server expire after five minutes; workspaces
+retaining an LSP process expire after 30 minutes. Override those limits with
+`CODEQ_WORKSPACE_IDLE_SECONDS` and `CODEQ_LSP_IDLE_SECONDS`. It does **not** maintain
+a persistent repository graph, source index, or embedding index.
 
-Concurrent semantic `find` requests for the same worktree are queued so one cold
-request initializes the language servers and caches. Document-symbol and prewarm
-fills are single-flight; followers reuse the first request's result instead of
-duplicating LSP work. JSON `_meta` reports `queue_ms` separately from
+Concurrent non-text `find` requests for the same worktree are queued so one cold
+request initializes the required language server or FTS index. Document-symbol and
+prewarm fills are single-flight; followers reuse the first request's result instead
+of duplicating LSP work. JSON `_meta` reports `queue_ms` separately from
 `execution_ms` and total `duration_ms`.
 
 ### Runtime state and sandboxing
@@ -360,7 +377,8 @@ This keeps the read-only contract focused on the analyzed repository while allow
 
 The release candidate is validated against a large Python/TypeScript monorepo and historical real-agent workflows.
 
-Representative RC11 committed results:
+Representative committed results (semantic/context workloads from RC11; FTS5
+discovery refreshed for RC12):
 
 - warm semantic `context` P95 with expanded test discovery: **1.12 s**
 - warm incoming `trace` P95: **448.4 ms**
@@ -375,11 +393,11 @@ These are project-specific benchmark results, not universal latency guarantees.
 
 Details:
 
-- [RC11 Quant cold/warm benchmark](benchmarks/1.0.0rc11-quant.md)
+- [RC12 Quant cold/warm and FTS5 benchmark](benchmarks/1.0.0rc12-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
 - [RC11 downstream agent-utility replay and test-evidence baseline](benchmarks/1.0.0rc11-agent-utility.md)
 - [RC7 downstream agent-utility replay](benchmarks/1.0.0rc7-agent-utility.md)
-- [RC11 readiness gate](benchmarks/1.0.0rc11-readiness.md)
+- [RC12 readiness gate](benchmarks/1.0.0rc12-readiness.md)
 - [Full validation record](VALIDATION.md)
 
 ## Boundaries

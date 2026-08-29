@@ -116,7 +116,7 @@ class CodeqService:
                 queue_ms = (time.perf_counter() - queued_at) * 1000
                 if not gate_acquired:
                     raise TimeoutError(
-                        f"semantic find timed out after {timeout:g}s waiting for another query"
+                        f"find timed out after {timeout:g}s waiting for another query"
                     )
             execution_started = time.perf_counter()
             before = ws.session_stats()

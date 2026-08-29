@@ -380,6 +380,27 @@ def _render_find(data: dict[str, Any], root: str | Path) -> None:
             f"{meta.get('duration_ms','?')} ms]"
         )
         return
+    if data.get("mode") == "fts5":
+        for item in data.get("results", []):
+            marker = " [test]" if item.get("is_test") else ""
+            print(
+                f"{item.get('kind', 'File'):<12} {_display_path(item.get('path'), root)}"
+                f"{marker}  [{item.get('source', 'fts5')}]"
+            )
+            print(f"             {item.get('selection_command', '')}")
+        if not data.get("results"):
+            print("No matches.")
+        result_count = int(data.get("result_count") or 0)
+        total_candidates = int(data.get("total_candidates", result_count) or 0)
+        truncated = bool(data.get("truncated", result_count < total_candidates))
+        if truncated:
+            print("... more matching files available; increase --limit")
+        meta = data.get("_meta", {})
+        print(
+            f"\n[showing {result_count} of {total_candidates} files; "
+            f"{meta.get('duration_ms', '?')} ms]"
+        )
+        return
     for item in data.get("results", []):
         container = f"{item.get('container')}." if item.get("container") else ""
         print(
@@ -864,10 +885,10 @@ Agent notes:
         description="""\
 Find likely code locations before you know an exact target.
 
-By default, `QUERY` may be an exact symbol name, part of a qualified name, or a short
-natural-language description. For concept searches, use vocabulary likely to occur
-in the repository's source/comments (usually the source language); codeq does not
-translate queries between natural languages.
+An exact identifier uses language-server symbol discovery. A query with multiple
+lexical terms uses a workspace-local, in-memory SQLite FTS5 index and returns ranked
+source files. For concept searches, use vocabulary likely to occur in the repository's
+source/comments (usually the source language); codeq does not translate queries.
 
 `--path`, `--glob`, and `--exclude-tests` scope the candidate files in either mode.
 Repeat path and glob filters for OR matching within each filter type.
@@ -902,7 +923,10 @@ Typical next step:
     find_mode.add_argument(
         "--kind",
         metavar="KIND",
-        help="Optional semantic result filter, e.g. function, method, class, interface, test.",
+        help=(
+            "Optional exact-symbol result filter, e.g. function, method, class, interface, "
+            "test; unsupported for multi-token file discovery."
+        ),
     )
     find_mode.add_argument(
         "--text",
@@ -915,7 +939,7 @@ Typical next step:
         action="append",
         default=[],
         metavar="PREFIX",
-        help="Repository-relative path prefix for semantic or text results; repeat for OR matching.",
+        help="Repository-relative path prefix for symbol, FTS5 file, or text results; repeat for OR matching.",
     )
     find.add_argument(
         "--glob",
@@ -923,13 +947,13 @@ Typical next step:
         action="append",
         default=[],
         metavar="PATTERN",
-        help="Shell-style path glob for semantic or text results; repeat for OR matching.",
+        help="Shell-style path glob for symbol, FTS5 file, or text results; repeat for OR matching.",
     )
     find.add_argument(
         "--exclude-tests",
         dest="exclude_tests",
         action="store_true",
-        help="Exclude test paths from semantic or text results and counts.",
+        help="Exclude test paths from symbol, FTS5 file, or text results and counts.",
     )
 
     context = sub.add_parser(
@@ -1278,7 +1302,7 @@ def main(argv: list[str] | None = None) -> None:
         payload["merge_base"] = args.merge_base
 
     try:
-        # A semantic find may spend up to one LSP timeout queued behind the
+        # A non-text find may spend up to one timeout queued behind the
         # workspace's cold-start owner, then need another timeout to execute.
         request_timeout = max(args.timeout * 2.0 + 5.0, 10.0)
         data = (

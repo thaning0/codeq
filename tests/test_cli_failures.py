@@ -91,6 +91,26 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(payload["status"], "not_found")
         self.assertEqual(payload["target"], "scripts/missing.py:12")
 
+    def test_missing_fts_capability_is_actionable_and_exits_one(self) -> None:
+        result = {
+            "status": "unsupported_capability",
+            "mode": "fts5",
+            "query": "catalog refresh",
+            "reason": "SQLite FTS5 is unavailable; use `codeq find --text QUERY`",
+            "results": [],
+        }
+        stderr = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stderr(stderr),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main(["find", "catalog refresh"])
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("SQLite FTS5 is unavailable", stderr.getvalue())
+        self.assertIn("codeq find --text QUERY", stderr.getvalue())
+
     def test_trace_depth_zero_reaches_service_payload_unchanged(self) -> None:
         captured: dict[str, object] = {}
 
@@ -612,6 +632,43 @@ class CliFailureContractTests(unittest.TestCase):
             main(["find", "Foo", "--limit", "1"])
         self.assertIn("more semantic candidates available; increase --limit", stdout.getvalue())
         self.assertIn("[showing 1 of 3 candidates; 1.5 ms]", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_fts_find_plain_output_returns_copyable_file_context_command(self) -> None:
+        result = {
+            "status": "ok",
+            "mode": "fts5",
+            "query": "catalog refresh",
+            "results": [
+                {
+                    "name": "src/catalog.py",
+                    "kind": "File",
+                    "path": "/repo/src/catalog.py",
+                    "line": 1,
+                    "column": 1,
+                    "source": "fts5",
+                    "selection_command": "codeq context src/catalog.py",
+                }
+            ],
+            "result_count": 1,
+            "total_candidates": 3,
+            "truncated": True,
+            "_meta": {"duration_ms": 2.5},
+        }
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            main(["find", "catalog refresh", "--limit", "1"])
+        self.assertIn("File         src/catalog.py  [fts5]", stdout.getvalue())
+        self.assertIn("codeq context src/catalog.py", stdout.getvalue())
+        self.assertNotIn("src/catalog.py:1:1", stdout.getvalue())
+        self.assertIn("more matching files available; increase --limit", stdout.getvalue())
+        self.assertIn("[showing 1 of 3 files; 2.5 ms]", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 
     def test_all_success_renderers_keep_stderr_empty(self) -> None:
