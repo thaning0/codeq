@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import DAEMON_PROTOCOL_VERSION, __version__
+from .contracts import CONTEXT_SECTION_VALUES
 from .daemon import SocketEndpoint, default_socket_endpoint
 from .util import git_root
 
@@ -303,6 +304,40 @@ def _print_locations(
         print(f"{indent}... more {title.lower()} available; increase --limit")
 
 
+def _print_test_evidence(
+    items: list[dict[str, Any]],
+    root: str | Path,
+    disclosure: dict[str, Any] | None = None,
+    indent: str = "  ",
+) -> None:
+    returned = int((disclosure or {}).get("returned_count", len(items)))
+    truncated = bool((disclosure or {}).get("truncated"))
+    total = (disclosure or {}).get("total_count")
+    if truncated and total is None:
+        count = f"showing {returned}+"
+    elif truncated:
+        count = f"showing {returned} of {total}"
+    else:
+        count = str(returned)
+    print(f"Tests ({count})")
+    labels = {
+        "direct_semantic_reference": "direct semantic reference",
+        "semantic_caller": "candidate: semantic caller",
+        "module_import": "candidate: module import",
+        "exact_lexical_reference": "candidate: exact lexical reference",
+    }
+    if not items:
+        print(f"{indent}-")
+    for item in items:
+        evidence_type = str(item.get("evidence_type") or "direct_semantic_reference")
+        label = labels.get(evidence_type, evidence_type)
+        name = item.get("name")
+        prefix = f"{name}  " if name else ""
+        print(f"{indent}[{label}] {prefix}{_display_location(item, root)}")
+    if truncated:
+        print(f"{indent}... more test evidence available; increase --limit")
+
+
 def _query_exit_code(data: dict[str, Any]) -> int:
     status = data.get("status")
     return 0 if status in (None, "ok") else 1
@@ -546,6 +581,9 @@ def _render_context(data: dict[str, Any], root: str | Path) -> None:
     container = f"{s.get('container')}." if s.get("container") else ""
     print(f"{s.get('kind','?')} {container}{s.get('name','')}")
     print(_display_location(s, root))
+    selection = data.get("section_selection") or {}
+    if selection.get("mode") == "focused":
+        print(f"Focused sections: {', '.join(selection.get('selected') or [])}")
     requested = data.get("requested_location")
     if isinstance(requested, dict):
         mode = " -> cursor definition" if data.get("cursor_definition") else ""
@@ -565,21 +603,27 @@ def _render_context(data: dict[str, Any], root: str | Path) -> None:
         print(snippet)
     print()
     sections = data.get("section_metadata") or {}
-    _print_locations("Callers", data.get("callers", []), root, sections.get("callers"))
-    _print_locations("Callees", data.get("callees", []), root, sections.get("callees"))
-    _print_locations(
-        "Implementations",
-        data.get("implementations", []),
-        root,
-        sections.get("implementations"),
-    )
-    _print_locations("Tests", data.get("tests", []), root, sections.get("tests"))
-    _print_locations("References", data.get("references", []), root, sections.get("references"))
-    _print_dynamic_references(
-        data.get("possible_dynamic_references", []),
-        root,
-        sections.get("possible_dynamic_references"),
-    )
+    if "callers" in data:
+        _print_locations("Callers", data["callers"], root, sections.get("callers"))
+    if "callees" in data:
+        _print_locations("Callees", data["callees"], root, sections.get("callees"))
+    if "implementations" in data:
+        _print_locations(
+            "Implementations",
+            data["implementations"],
+            root,
+            sections.get("implementations"),
+        )
+    if "tests" in data:
+        _print_test_evidence(data["tests"], root, sections.get("tests"))
+    if "references" in data:
+        _print_locations("References", data["references"], root, sections.get("references"))
+    if "possible_dynamic_references" in data:
+        _print_dynamic_references(
+            data["possible_dynamic_references"],
+            root,
+            sections.get("possible_dynamic_references"),
+        )
     if data.get("lexical_references"):
         print()
         _print_text_search("Lexical references", data.get("lexical_references"), root)
@@ -899,12 +943,16 @@ For a symbol or source-position target, context returns:
   Bounded definition source snippet
   Callers and callees
   Implementations and references
-  Likely tests
+  Direct tests plus provenance-labelled test candidates
   Possible dynamic callback/registry references when detected
 
 Each bounded evidence section reports whether it is complete, shows exact totals
 when already known, and uses a lower bound when upstream classification is bounded.
 Truncated sections include an exact `increase --limit` recovery hint.
+
+For a symbol target, repeat `--section SECTION` to request only the evidence you
+need. Focused context keeps symbol identity and provenance while omitting unselected
+sections; prefer it to increasing the global limit when one evidence family matters.
 
 For a source-file target, context uses progressive disclosure: top-level outline by
 default. Expand only what you need with --outline-depth, --kind, or --container;
@@ -934,7 +982,10 @@ Examples:
   codeq context backend/src/app/services/backtest_service.py --container BacktestService
   codeq context backend/src/app/services/backtest_service.py --kind method --limit 20
   codeq context frontend/src/features/market/api.ts --topology --limit 20
+  codeq context BacktestService.stream_backtest_logs --section callers
+  codeq context BacktestService.stream_backtest_logs --section tests --section references
   codeq context BacktestService.stream_backtest_logs --lexical-references
+  codeq context BacktestService.stream_backtest_logs --section lexical-references --lexical-references '/logs/stream'
   codeq context BacktestService.stream_backtest_logs --lexical-references '/logs/stream'
   codeq context BacktestService.stream_backtest_logs --lexical-references '/logs/stream' --path frontend --exclude-tests
   codeq context fetchBars --json
@@ -970,6 +1021,17 @@ more than the direct callers/callees, continue with `codeq trace`.
         "--topology",
         action="store_true",
         help="File targets only: additionally disclose bounded imports and importers.",
+    )
+    context.add_argument(
+        "--section",
+        dest="selected_sections",
+        action="append",
+        default=[],
+        metavar="SECTION",
+        help=(
+            "Symbol targets only: disclose one evidence section; repeat to combine. "
+            f"Allowed: {', '.join(CONTEXT_SECTION_VALUES)}."
+        ),
     )
     context.add_argument(
         "--lexical-references",
@@ -1191,6 +1253,7 @@ def main(argv: list[str] | None = None) -> None:
             lexical_globs=args.lexical_globs,
             lexical_exclude_tests=args.lexical_exclude_tests,
             semantic_paths=semantic_paths,
+            selected_sections=args.selected_sections,
         )
     elif args.command == "trace":
         if limit_was_supplied and node_limit_was_supplied and args.limit != args.node_limit:

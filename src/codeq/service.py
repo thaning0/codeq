@@ -146,6 +146,9 @@ class CodeqService:
                     lexical_globs=tuple(str(value) for value in (request.get("lexical_globs") or [])),
                     lexical_exclude_tests=bool(request.get("lexical_exclude_tests")),
                     semantic_paths=tuple(str(value) for value in (request.get("semantic_paths") or [])),
+                    selected_sections=tuple(
+                        str(value) for value in (request.get("selected_sections") or [])
+                    ),
                 )
             elif command == "trace":
                 raw_depth = request.get("depth")

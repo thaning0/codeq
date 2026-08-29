@@ -24,6 +24,36 @@ EVIDENCE_POSSIBLE_DYNAMIC = "possible_dynamic"
 EVIDENCE_BASE_SIDE_LEXICAL = "base_side_lexical"
 EVIDENCE_CURRENT_SEMANTIC = "current_semantic"
 
+TEST_EVIDENCE_DIRECT_REFERENCE = "direct_semantic_reference"
+TEST_EVIDENCE_SEMANTIC_CALLER = "semantic_caller"
+TEST_EVIDENCE_MODULE_IMPORT = "module_import"
+TEST_EVIDENCE_EXACT_LEXICAL = "exact_lexical_reference"
+
+TEST_EVIDENCE_VALUES = frozenset(
+    {
+        TEST_EVIDENCE_DIRECT_REFERENCE,
+        TEST_EVIDENCE_SEMANTIC_CALLER,
+        TEST_EVIDENCE_MODULE_IMPORT,
+        TEST_EVIDENCE_EXACT_LEXICAL,
+    }
+)
+
+CONTEXT_SECTION_VALUES = (
+    "source",
+    "callers",
+    "callees",
+    "implementations",
+    "tests",
+    "references",
+    "possible-dynamic-references",
+    "lexical-references",
+)
+
+CONTEXT_SECTION_KEYS = {
+    value: value.replace("-", "_")
+    for value in CONTEXT_SECTION_VALUES
+}
+
 EVIDENCE_VALUES = frozenset(
     {
         EVIDENCE_SEMANTIC,

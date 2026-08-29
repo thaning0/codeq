@@ -51,8 +51,12 @@ def _path_matches(
     path_prefixes: tuple[str, ...],
     globs: tuple[str, ...],
     exclude_tests: bool,
+    only_tests: bool,
 ) -> bool:
-    if exclude_tests and is_test_path(root / rel):
+    test_path = is_test_path(root / rel)
+    if exclude_tests and test_path:
+        return False
+    if only_tests and not test_path:
         return False
     if path_prefixes:
         normalized = tuple(_normalize_path_prefix(root, value) for value in path_prefixes)
@@ -72,6 +76,7 @@ def _tracked_hits(
     path_prefixes: tuple[str, ...],
     globs: tuple[str, ...],
     exclude_tests: bool,
+    only_tests: bool,
 ) -> list[dict[str, Any]]:
     proc = subprocess.run(
         [
@@ -111,6 +116,7 @@ def _tracked_hits(
             path_prefixes=path_prefixes,
             globs=globs,
             exclude_tests=exclude_tests,
+            only_tests=only_tests,
         ):
             continue
         text = text_raw.decode("utf-8", errors="replace")
@@ -159,6 +165,7 @@ def _untracked_hits(
     path_prefixes: tuple[str, ...],
     globs: tuple[str, ...],
     exclude_tests: bool,
+    only_tests: bool,
 ) -> list[dict[str, Any]]:
     hits: list[dict[str, Any]] = []
     for rel in _untracked_files(root):
@@ -168,6 +175,7 @@ def _untracked_hits(
             path_prefixes=path_prefixes,
             globs=globs,
             exclude_tests=exclude_tests,
+            only_tests=only_tests,
         ):
             continue
         path = (root / rel).resolve()
@@ -235,6 +243,7 @@ def git_text_search(
     globs: tuple[str, ...] = (),
     exclude_tests: bool = False,
     include_untracked: bool = True,
+    only_tests: bool = False,
 ) -> dict[str, Any]:
     """Search an exact literal across Git-visible working-tree text.
 
@@ -256,6 +265,7 @@ def git_text_search(
         path_prefixes=path_prefixes,
         globs=glob_filters,
         exclude_tests=exclude_tests,
+        only_tests=only_tests,
     )
     if include_untracked:
         hits.extend(
@@ -265,6 +275,7 @@ def git_text_search(
                 path_prefixes=path_prefixes,
                 globs=glob_filters,
                 exclude_tests=exclude_tests,
+                only_tests=only_tests,
             )
         )
     hits.sort(key=lambda item: (item["relative_path"], int(item["line"]), not bool(item["tracked"])))
@@ -292,5 +303,6 @@ def git_text_search(
             "globs": list(glob_filters),
             "exclude_tests": exclude_tests,
             "include_untracked": include_untracked,
+            "only_tests": only_tests,
         },
     }

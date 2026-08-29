@@ -4,7 +4,7 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc10` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** `1.0.0rc11` is the active release candidate. The four-command surface is feature-frozen for 1.0.
 
 ## Why codeq
 
@@ -69,7 +69,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc10
+codeq 1.0.0rc11
 ```
 
 ## The workflow
@@ -162,6 +162,29 @@ and possible dynamic callback/registry evidence. Every bounded evidence array ha
 matching `section_metadata` entry with returned count, exact total when known, lower
 bound, and truncation state. Plain output renders exact totals as `showing X of Y`
 and explicitly marks lower-bound-only totals as `showing X+`.
+
+Test evidence keeps its provenance instead of presenting every candidate as direct
+coverage. Direct language-server references remain first, followed by separately
+labelled semantic callers in tests, resolved test-module imports, and bounded exact
+lexical candidates. Each JSON item includes `evidence_type`, `confidence`, and a
+structured `reason`; common short names are not expanded through lexical matching.
+
+When only one evidence family matters, focus symbol context instead of raising the
+global limit:
+
+```bash
+codeq context RetryPolicy.should_retry --section callers
+codeq context RetryPolicy.should_retry --section tests --section references
+codeq context RetryPolicy.should_retry \
+  --section lexical-references \
+  --lexical-references 'RETRY_POLICY_KEY'
+```
+
+`--section` is repeatable and accepts `source`, `callers`, `callees`,
+`implementations`, `tests`, `references`, `possible-dynamic-references`, and
+`lexical-references`. Focused JSON includes `section_selection`; unselected arrays
+are omitted while target identity, location, and evidence authority remain visible.
+Without `--section`, the existing full symbol-context response is unchanged.
 
 Position semantics are deliberate:
 
@@ -337,13 +360,13 @@ This keeps the read-only contract focused on the analyzed repository while allow
 
 The release candidate is validated against a large Python/TypeScript monorepo and historical real-agent workflows.
 
-Representative committed results:
+Representative RC11 committed results:
 
-- warm semantic `context` P95: **362.2 ms**
-- warm incoming `trace` P95: **410.1 ms**
-- cold semantic context/trace P95: **< 4 s**
-- live-workload-shaped broad review cold P95: **7.48 s**
-- maximum representative semantic/review sample: **7.48 s**
+- warm semantic `context` P95 with expanded test discovery: **1.12 s**
+- warm incoming `trace` P95: **448.4 ms**
+- cold semantic context/trace P95: **< 4.51 s**
+- live-workload-shaped broad review cold P95: **2.10 s**
+- maximum representative semantic/review sample: **4.50 s**
 - historical actionable CRG-call mapping: **93.3%**
 - sampled navigation workflows with unsupported fallback: **0 / 50**
 - anonymized historical concrete query validation: **30 / 30 `ok`**
@@ -352,10 +375,11 @@ These are project-specific benchmark results, not universal latency guarantees.
 
 Details:
 
-- [RC6 Quant cold/warm benchmark](benchmarks/1.0.0rc6-quant.md)
+- [RC11 Quant cold/warm benchmark](benchmarks/1.0.0rc11-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
+- [RC11 downstream agent-utility replay and test-evidence baseline](benchmarks/1.0.0rc11-agent-utility.md)
 - [RC7 downstream agent-utility replay](benchmarks/1.0.0rc7-agent-utility.md)
-- [RC6 readiness gate](benchmarks/1.0.0rc6-readiness.md)
+- [RC11 readiness gate](benchmarks/1.0.0rc11-readiness.md)
 - [Full validation record](VALIDATION.md)
 
 ## Boundaries

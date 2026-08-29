@@ -15,11 +15,17 @@ from typing import Any, Callable
 
 from .baseanalysis import extract_base_declarations
 from .contracts import (
+    CONTEXT_SECTION_KEYS,
+    CONTEXT_SECTION_VALUES,
     EVIDENCE_BASE_SIDE_LEXICAL,
     EVIDENCE_CURRENT_SEMANTIC,
     EVIDENCE_LEXICAL,
     EVIDENCE_SEMANTIC,
     QueryBudget,
+    TEST_EVIDENCE_DIRECT_REFERENCE,
+    TEST_EVIDENCE_EXACT_LEXICAL,
+    TEST_EVIDENCE_MODULE_IMPORT,
+    TEST_EVIDENCE_SEMANTIC_CALLER,
     bounded_text,
 )
 from .dynamic import (
@@ -274,6 +280,30 @@ _CALL_HIERARCHY_KIND_CODES = {
     "Constructor": 9,
     "Function": 12,
 }
+
+_COMMON_SHORT_TEST_TOKENS = {
+    "call",
+    "data",
+    "get",
+    "item",
+    "load",
+    "main",
+    "name",
+    "run",
+    "save",
+    "set",
+    "test",
+    "value",
+}
+
+
+def _lexical_test_candidate_allowed(symbol_name: str) -> bool:
+    normalized = symbol_name.strip()
+    return bool(
+        len(normalized) >= 5
+        and re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", normalized)
+        and normalized.lower() not in _COMMON_SHORT_TEST_TOKENS
+    )
 
 
 class Workspace:
@@ -1709,6 +1739,214 @@ class Workspace:
             out.append(candidate)
         return out
 
+    def _verified_importers(
+        self,
+        target: Path,
+        *,
+        limit: int,
+        only_tests: bool = False,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        target = target.resolve()
+        project = self.project_for_path(target)
+        if project is None:
+            return [], False
+        scan_limit = max(400, limit * 20)
+        hits = importer_candidate_hits(project.root, target, limit=scan_limit + 1)
+        discovery_truncated = len(hits) > scan_limit
+        importers: list[dict[str, Any]] = []
+        seen: set[tuple[str, int]] = set()
+        for hit in hits[:scan_limit]:
+            importer_path = Path(hit["path"]).resolve()
+            if only_tests and not is_test_path(importer_path):
+                continue
+            importer_project = self.project_for_path(importer_path)
+            if importer_project is None:
+                continue
+            matched = False
+            resolved_any_local = False
+            matched_import: dict[str, Any] | None = None
+            for imported in extract_imports(importer_path):
+                if int(imported.get("line") or 0) != int(hit["line"]):
+                    continue
+                resolved_paths = resolve_import_specifier(
+                    importer_path,
+                    str(imported.get("specifier") or ""),
+                    importer_project.root,
+                )
+                resolved_any_local = resolved_any_local or bool(resolved_paths)
+                if target in resolved_paths:
+                    matched = True
+                    matched_import = imported
+                    break
+            if not matched and not resolved_any_local:
+                try:
+                    importer_session = self._session(importer_project)
+                    matched = target in self._definition_paths(
+                        importer_session,
+                        importer_path,
+                        int(hit["line"]),
+                        int(hit.get("column") or 1),
+                    )
+                except (LspError, OSError):
+                    matched = False
+            if not matched:
+                continue
+            key = (str(importer_path), int(hit["line"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            importers.append(
+                {
+                    "path": str(importer_path),
+                    "line": int(hit["line"]),
+                    "column": int(hit.get("column") or 1),
+                    "text": str(hit.get("text") or "").strip(),
+                    "specifier": str((matched_import or {}).get("specifier") or ""),
+                }
+            )
+            if len(importers) > limit:
+                return importers[:limit], True
+        return importers, discovery_truncated
+
+    def _test_evidence(
+        self,
+        *,
+        symbol: dict[str, Any],
+        path: Path,
+        references: list[dict[str, Any]],
+        callers: list[dict[str, Any]],
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        symbol_name = str(symbol.get("name") or "")
+        discovered: list[dict[str, Any]] = []
+
+        for reference in references:
+            if not is_test_path(reference["path"]):
+                continue
+            discovered.append(
+                {
+                    **reference,
+                    "evidence": EVIDENCE_SEMANTIC,
+                    "evidence_type": TEST_EVIDENCE_DIRECT_REFERENCE,
+                    "confidence": "direct",
+                    "reason": {
+                        "relationship": "references_symbol",
+                        "source": "language_server",
+                        "symbol": symbol_name,
+                    },
+                }
+            )
+
+        for caller in callers:
+            if not is_test_path(caller["path"]):
+                continue
+            discovered.append(
+                {
+                    **caller,
+                    "evidence": EVIDENCE_SEMANTIC,
+                    "evidence_type": TEST_EVIDENCE_SEMANTIC_CALLER,
+                    "confidence": "candidate",
+                    "reason": {
+                        "relationship": "contains_incoming_caller",
+                        "source": "language_server",
+                        "symbol": symbol_name,
+                        "caller": str(caller.get("name") or ""),
+                    },
+                }
+            )
+
+        importers, import_discovery_truncated = self._verified_importers(
+            path,
+            limit=limit + 1,
+            only_tests=True,
+        )
+        for importer in importers:
+            discovered.append(
+                {
+                    **importer,
+                    "evidence": EVIDENCE_LEXICAL,
+                    "evidence_type": TEST_EVIDENCE_MODULE_IMPORT,
+                    "confidence": "candidate",
+                    "reason": {
+                        "relationship": "imports_defining_module",
+                        "source": "resolved_import",
+                        "symbol": symbol_name,
+                        "specifier": str(importer.get("specifier") or ""),
+                    },
+                }
+            )
+
+        lexical_discovery_truncated = False
+        if _lexical_test_candidate_allowed(symbol_name):
+            lexical: dict[str, Any]
+            try:
+                lexical = git_text_search(
+                    self.root,
+                    symbol_name,
+                    limit=limit + 1,
+                    only_tests=True,
+                )
+            except (OSError, RuntimeError):
+                lexical = {"results": [], "truncated": False}
+            lexical_discovery_truncated = bool(lexical.get("truncated"))
+            for hit in lexical.get("results", []):
+                if (
+                    str(hit.get("path") or "") == str(path)
+                    and int(hit.get("line") or 0) == int(symbol.get("line") or 0)
+                ):
+                    continue
+                discovered.append(
+                    {
+                        **hit,
+                        "evidence": EVIDENCE_LEXICAL,
+                        "evidence_type": TEST_EVIDENCE_EXACT_LEXICAL,
+                        "confidence": "candidate",
+                        "reason": {
+                            "relationship": "contains_exact_symbol_text",
+                            "source": str(hit.get("source") or "text_search"),
+                            "symbol": symbol_name,
+                            "query": symbol_name,
+                        },
+                    }
+                )
+
+        deduplicated: list[dict[str, Any]] = []
+        seen: set[tuple[str, int, int]] = set()
+        for item in discovered:
+            key = (
+                str(item.get("path") or ""),
+                int(item.get("line") or 0),
+                int(item.get("column") or 1),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduplicated.append(item)
+
+        discovery_truncated = import_discovery_truncated or lexical_discovery_truncated
+        if discovery_truncated:
+            returned, metadata = _bounded_section_disclosure(deduplicated, limit)
+            metadata.update(
+                total_count=None,
+                total_is_exact=False,
+                truncated=True,
+            )
+        else:
+            returned, metadata = _known_section_disclosure(deduplicated, limit)
+        metadata["discovery_truncated"] = discovery_truncated
+        metadata["returned_evidence_counts"] = {
+            evidence_type: sum(
+                1 for item in returned if item.get("evidence_type") == evidence_type
+            )
+            for evidence_type in (
+                TEST_EVIDENCE_DIRECT_REFERENCE,
+                TEST_EVIDENCE_SEMANTIC_CALLER,
+                TEST_EVIDENCE_MODULE_IMPORT,
+                TEST_EVIDENCE_EXACT_LEXICAL,
+            )
+        }
+        return returned, metadata
+
     def _file_context(
         self,
         path: Path,
@@ -1761,54 +1999,7 @@ class Workspace:
                     }
                 )
 
-            seen_importers: set[tuple[str, int]] = set()
-            for hit in importer_candidate_hits(project.root, path, limit=max(400, limit * 20)):
-                importer_path = Path(hit["path"]).resolve()
-                importer_project = self.project_for_path(importer_path)
-                if importer_project is None:
-                    continue
-                matched = False
-                resolved_any_local = False
-                for imported in extract_imports(importer_path):
-                    if int(imported.get("line") or 0) != int(hit["line"]):
-                        continue
-                    resolved_paths = resolve_import_specifier(
-                        importer_path,
-                        str(imported.get("specifier") or ""),
-                        importer_project.root,
-                    )
-                    resolved_any_local = resolved_any_local or bool(resolved_paths)
-                    if path in resolved_paths:
-                        matched = True
-                        break
-                if not matched and not resolved_any_local:
-                    try:
-                        importer_session = self._session(importer_project)
-                        matched = path in self._definition_paths(
-                            importer_session,
-                            importer_path,
-                            int(hit["line"]),
-                            int(hit.get("column") or 1),
-                        )
-                    except (LspError, OSError):
-                        matched = False
-                if not matched:
-                    continue
-                key = (str(importer_path), int(hit["line"]))
-                if key in seen_importers:
-                    continue
-                seen_importers.add(key)
-                importers.append(
-                    {
-                        "path": str(importer_path),
-                        "line": int(hit["line"]),
-                        "column": int(hit.get("column") or 1),
-                        "text": str(hit.get("text") or "").strip(),
-                    }
-                )
-                if len(importers) > limit:
-                    importers_truncated = True
-                    break
+            importers, importers_truncated = self._verified_importers(path, limit=limit)
 
         def outline_depth_of(symbol: dict[str, Any]) -> int:
             parent = str(symbol.get("container") or "")
@@ -1900,6 +2091,7 @@ class Workspace:
         lexical_globs: tuple[str, ...] = (),
         lexical_exclude_tests: bool = False,
         semantic_paths: tuple[str, ...] = (),
+        selected_sections: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         context_started = time.perf_counter()
 
@@ -1923,9 +2115,79 @@ class Workspace:
             }
             return data
 
+        requested_sections = tuple(
+            dict.fromkeys(value.strip() for value in selected_sections if value.strip())
+        )
+        invalid_sections = [
+            value for value in requested_sections if value not in CONTEXT_SECTION_KEYS
+        ]
+        if invalid_sections:
+            resolution_finished = time.perf_counter()
+            allowed = ", ".join(CONTEXT_SECTION_VALUES)
+            return with_phase_timing(
+                {
+                    "status": "invalid_query",
+                    "target": target,
+                    "reason": (
+                        f"unknown context section(s): {', '.join(invalid_sections)}; "
+                        f"allowed values: {allowed}"
+                    ),
+                    "allowed_sections": list(CONTEXT_SECTION_VALUES),
+                    "recovery_command": shlex.join(["codeq", "context", target]),
+                },
+                resolution_finished=resolution_finished,
+            )
+        focused = bool(requested_sections)
+        selected_keys = (
+            {CONTEXT_SECTION_KEYS[value] for value in requested_sections}
+            if focused
+            else {
+                "source",
+                "callers",
+                "callees",
+                "implementations",
+                "tests",
+                "references",
+                "possible_dynamic_references",
+            }
+        )
+        if "lexical_references" in selected_keys and not lexical_references:
+            resolution_finished = time.perf_counter()
+            return with_phase_timing(
+                {
+                    "status": "invalid_query",
+                    "target": target,
+                    "reason": "section lexical-references requires --lexical-references",
+                    "allowed_sections": list(CONTEXT_SECTION_VALUES),
+                    "recovery_command": shlex.join(
+                        [
+                            "codeq",
+                            "context",
+                            target,
+                            "--section",
+                            "lexical-references",
+                            "--lexical-references",
+                        ]
+                    ),
+                },
+                resolution_finished=resolution_finished,
+            )
+        if lexical_references:
+            selected_keys.add("lexical_references")
+
         file_target = self._file_target(target)
         if file_target is not None:
             resolution_finished = time.perf_counter()
+            if focused:
+                return with_phase_timing(
+                    {
+                        "status": "invalid_query",
+                        "target": target,
+                        "reason": "--section applies only to symbol context; the target resolved to a file",
+                        "recovery_command": self._file_context_command(file_target),
+                    },
+                    resolution_finished=resolution_finished,
+                )
             data = self._file_context(
                 file_target,
                 limit,
@@ -1955,6 +2217,16 @@ class Workspace:
         )
         if len(module_candidates) == 1:
             resolution_finished = time.perf_counter()
+            if focused:
+                return with_phase_timing(
+                    {
+                        "status": "invalid_query",
+                        "target": target,
+                        "reason": "--section applies only to symbol context; the target resolved to a file",
+                        "recovery_command": self._file_context_command(module_candidates[0]),
+                    },
+                    resolution_finished=resolution_finished,
+                )
             data = self._file_context(
                 module_candidates[0],
                 limit,
@@ -2004,13 +2276,21 @@ class Workspace:
         prewarm_started = time.perf_counter()
         try:
             session, project, path, line, column = self._session_and_position(symbol)
-            self._prewarm_symbol(
-                project,
-                session,
-                symbol,
-                desired_results=budget.items,
-                probe=lambda: self._reference_probe(session, path, line, column),
-            )
+            if selected_keys & {
+                "callers",
+                "callees",
+                "implementations",
+                "tests",
+                "references",
+                "possible_dynamic_references",
+            }:
+                self._prewarm_symbol(
+                    project,
+                    session,
+                    symbol,
+                    desired_results=budget.items,
+                    probe=lambda: self._reference_probe(session, path, line, column),
+                )
         except LspError as exc:
             prewarm_finished = time.perf_counter()
             return with_phase_timing(
@@ -2021,58 +2301,55 @@ class Workspace:
         prewarm_finished = time.perf_counter()
 
         hover: Any = None
-        try:
-            hover = session.hover(path, line, column)
-        except LspError:
-            pass
-        try:
-            refs = _deduplicate_locations([
-                x
-                for x in (lsp_location(r) for r in session.references(path, line, column))
-                if x and self._is_repo_path(x["path"])
-            ])
-        except LspError:
-            refs = []
-        try:
-            impl_locations = [
-                x
-                for x in (lsp_location(r) for r in session.implementations(path, line, column))
-                if x and self._is_repo_path(x["path"])
-            ]
-            impls = []
-            seen_impls: set[tuple[str, int, int]] = set()
-            for implementation in impl_locations:
-                key = (
-                    str(implementation["path"]),
-                    int(implementation["line"]),
-                    int(implementation.get("column") or 1),
-                )
-                if key == (str(path), int(line), int(column)) or key in seen_impls:
-                    continue
-                seen_impls.add(key)
-                impls.append(self._symbol_at_location(implementation))
-        except LspError:
-            impls = []
-        callers = _deduplicate_locations(self._call_neighbors(session, path, line, column, "in"))
-        callees = _deduplicate_locations(self._call_neighbors(session, path, line, column, "out"))
-        impls = _deduplicate_locations(impls)
+        if "source" in selected_keys:
+            try:
+                hover = session.hover(path, line, column)
+            except LspError:
+                pass
+        refs: list[dict[str, Any]] = []
+        if selected_keys & {"references", "tests", "possible_dynamic_references"}:
+            try:
+                refs = _deduplicate_locations([
+                    x
+                    for x in (lsp_location(r) for r in session.references(path, line, column))
+                    if x and self._is_repo_path(x["path"])
+                ])
+            except LspError:
+                refs = []
+        impls: list[dict[str, Any]] = []
+        if "implementations" in selected_keys:
+            try:
+                impl_locations = [
+                    x
+                    for x in (lsp_location(r) for r in session.implementations(path, line, column))
+                    if x and self._is_repo_path(x["path"])
+                ]
+                seen_impls: set[tuple[str, int, int]] = set()
+                for implementation in impl_locations:
+                    key = (
+                        str(implementation["path"]),
+                        int(implementation["line"]),
+                        int(implementation.get("column") or 1),
+                    )
+                    if key == (str(path), int(line), int(column)) or key in seen_impls:
+                        continue
+                    seen_impls.add(key)
+                    impls.append(self._symbol_at_location(implementation))
+            except LspError:
+                impls = []
+            impls = _deduplicate_locations(impls)
+        callers = (
+            _deduplicate_locations(self._call_neighbors(session, path, line, column, "in"))
+            if selected_keys & {"callers", "tests"}
+            else []
+        )
+        callees = (
+            _deduplicate_locations(self._call_neighbors(session, path, line, column, "out"))
+            if "callees" in selected_keys
+            else []
+        )
 
-        tests = [r for r in refs if is_test_path(r["path"])]
         source_refs = [r for r in refs if not is_test_path(r["path"])]
-        possible_dynamic_probe = classify_dynamic_references(
-            source_refs,
-            str(symbol.get("name") or ""),
-            limit=budget.items + 1,
-        )
-        callers_out, callers_meta = _known_section_disclosure(callers, budget.items)
-        callees_out, callees_meta = _known_section_disclosure(callees, budget.items)
-        impls_out, impls_meta = _known_section_disclosure(impls, budget.items)
-        references_out, references_meta = _known_section_disclosure(source_refs, budget.items)
-        tests_out, tests_meta = _known_section_disclosure(tests, budget.items)
-        possible_dynamic, possible_dynamic_meta = _bounded_section_disclosure(
-            possible_dynamic_probe,
-            budget.items,
-        )
         hover_text = ""
         if isinstance(hover, dict):
             contents = hover.get("contents")
@@ -2086,7 +2363,12 @@ class Workspace:
 
         requested_location = resolved.get("requested_location")
         request_source: dict[str, Any] | None = None
-        if isinstance(requested_location, dict) and requested_location.get("path") and requested_location.get("line"):
+        if (
+            "source" in selected_keys
+            and isinstance(requested_location, dict)
+            and requested_location.get("path")
+            and requested_location.get("line")
+        ):
             request_source = source_snippet(
                 requested_location["path"],
                 int(requested_location["line"]),
@@ -2096,7 +2378,7 @@ class Workspace:
                 max_line_chars=budget.text_line_chars,
             )
         lexical_data: dict[str, Any] | None = None
-        if lexical_references:
+        if "lexical_references" in selected_keys:
             lexical_data = git_text_search(
                 self.root,
                 lexical_query or str(symbol.get("name") or ""),
@@ -2111,31 +2393,63 @@ class Workspace:
             "evidence": EVIDENCE_SEMANTIC,
             "target": target,
             "symbol": symbol,
-            "hover": bounded_text(hover_text, budget.hover_chars)[0],
-            "hover_truncated": bounded_text(hover_text, budget.hover_chars)[1],
-            "source": source_snippet(
+            "section_selection": {
+                "mode": "focused" if focused else "default",
+                "selected": [
+                    value
+                    for value in CONTEXT_SECTION_VALUES
+                    if CONTEXT_SECTION_KEYS[value] in selected_keys
+                ],
+            },
+            "section_metadata": {},
+        }
+        section_metadata = data["section_metadata"]
+        if "source" in selected_keys:
+            bounded_hover, hover_truncated = bounded_text(hover_text, budget.hover_chars)
+            data["hover"] = bounded_hover
+            data["hover_truncated"] = hover_truncated
+            data["source"] = source_snippet(
                 path,
                 line,
                 before=2,
                 after=12,
                 max_chars=budget.snippet_chars,
                 max_line_chars=budget.text_line_chars,
-            ),
-            "callers": callers_out,
-            "callees": callees_out,
-            "implementations": impls_out,
-            "references": references_out,
-            "possible_dynamic_references": possible_dynamic,
-            "tests": tests_out,
-            "section_metadata": {
-                "callers": callers_meta,
-                "callees": callees_meta,
-                "implementations": impls_meta,
-                "references": references_meta,
-                "tests": tests_meta,
-                "possible_dynamic_references": possible_dynamic_meta,
-            },
-        }
+            )
+        if "callers" in selected_keys:
+            data["callers"], section_metadata["callers"] = _known_section_disclosure(
+                callers, budget.items
+            )
+        if "callees" in selected_keys:
+            data["callees"], section_metadata["callees"] = _known_section_disclosure(
+                callees, budget.items
+            )
+        if "implementations" in selected_keys:
+            data["implementations"], section_metadata["implementations"] = (
+                _known_section_disclosure(impls, budget.items)
+            )
+        if "references" in selected_keys:
+            data["references"], section_metadata["references"] = _known_section_disclosure(
+                source_refs, budget.items
+            )
+        if "tests" in selected_keys:
+            data["tests"], section_metadata["tests"] = self._test_evidence(
+                symbol=symbol,
+                path=path,
+                references=refs,
+                callers=callers,
+                limit=budget.items,
+            )
+        if "possible_dynamic_references" in selected_keys:
+            possible_dynamic_probe = classify_dynamic_references(
+                source_refs,
+                str(symbol.get("name") or ""),
+                limit=budget.items + 1,
+            )
+            (
+                data["possible_dynamic_references"],
+                section_metadata["possible_dynamic_references"],
+            ) = _bounded_section_disclosure(possible_dynamic_probe, budget.items)
         if requested_location is not None:
             data["requested_location"] = requested_location
             data["cursor_definition"] = bool(resolved.get("cursor_definition"))

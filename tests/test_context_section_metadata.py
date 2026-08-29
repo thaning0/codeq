@@ -169,6 +169,8 @@ class ContextSectionMetadataTests(unittest.TestCase):
             self.assertEqual(session.implementations_calls, 1)
             self.assertEqual(session.hover_calls, 1)
             self.assertEqual(neighbor_calls, {"in": 1, "out": 1})
+            self.assertEqual(result["section_selection"]["mode"], "default")
+            self.assertIn("tests", result["section_selection"]["selected"])
             sections = result["section_metadata"]
 
             for name in ("callers", "implementations", "references", "tests"):

@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Iterator, Sequence
 
 
-PARSER_VERSION = "1"
+PARSER_VERSION = "2"
 
 _QUERY_COMMANDS = {"find", "search", "context", "trace", "review"}
 _CLASSIFICATIONS = {
@@ -103,6 +103,16 @@ _LOCATION_RE = re.compile(
 )
 _HEREDOC_RE = re.compile(r"<<-?\s*(?:[rubfRUBF]*)(?P<quote>['\"]?)(?P<word>[A-Za-z_][A-Za-z0-9_]*)\1")
 _VERSION_RE = re.compile(r"(?im)^\s*codeq(?:\s+version)?\s+v?([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:[A-Za-z0-9.-]+)?)\s*$")
+_TEST_SEARCH_RE = re.compile(
+    r"(?:^|[\s/_.-])(?:tests?|specs?|__tests__)(?:[\s/_.-]|$)|\b(?:pytest|fixture|mock)\b",
+    re.I,
+)
+_DIRECT_TEST_EVIDENCE = "direct_semantic_reference"
+_CANDIDATE_TEST_EVIDENCE = {
+    "semantic_caller",
+    "module_import",
+    "exact_lexical_reference",
+}
 
 
 @dataclass(frozen=True)
@@ -939,6 +949,46 @@ def _returned_paths(call: ToolCall) -> tuple[set[str], str]:
     return result, "query"
 
 
+def _test_evidence_paths(call: ToolCall) -> tuple[set[str], set[str]]:
+    direct: set[str] = set()
+    candidates: set[str] = set()
+    for invocation in call.invocations:
+        if not invocation.queries or not invocation.output or invocation.families:
+            continue
+        roots = [invocation.workdir] if invocation.workdir else []
+        text = invocation.output
+        for line in text.splitlines():
+            lowered = line.lower()
+            if "[direct semantic reference]" in lowered:
+                direct.update(_plain_paths(line, roots))
+            elif "[candidate:" in lowered:
+                candidates.update(_plain_paths(line, roots))
+        for match in re.finditer(r'"evidence_type"\s*:\s*"([^"]+)"', text):
+            evidence_type = match.group(1)
+            if evidence_type != _DIRECT_TEST_EVIDENCE and evidence_type not in _CANDIDATE_TEST_EVIDENCE:
+                continue
+            preceding = text[max(0, match.start() - 1200) : match.start()]
+            raw_paths = _PATH_KEY_RE.findall(preceding)
+            if not raw_paths:
+                continue
+            path = _normalize_path(raw_paths[-1], roots)
+            if not path:
+                continue
+            (direct if evidence_type == _DIRECT_TEST_EVIDENCE else candidates).add(path)
+    return direct, candidates
+
+
+def _is_test_oriented_search(call: ToolCall) -> bool:
+    commands = [
+        invocation.command
+        for invocation in call.invocations
+        if invocation.families["search"]
+    ]
+    if call.direct_families["search"]:
+        commands.append(call.raw_input)
+    return any(_TEST_SEARCH_RE.search(command) for command in commands)
+
+
 def _any_path_matches(candidates: Iterable[str], paths: Iterable[str]) -> bool:
     right = tuple(paths)
     return any(_path_matches(candidate, path) for candidate in candidates for path in right)
@@ -984,6 +1034,8 @@ def _classify_event(session: Session, index: int, call: ToolCall) -> dict[str, A
     repeated: set[str] = set()
     new_paths: set[str] = set()
     new_consumed: set[str] = set()
+    test_search_seen = False
+    test_search_new_consumed: set[str] = set()
     search_seen = False
     for later_index, candidate in enumerate(later):
         if not candidate.families["search"] or not _search_matches_queries(candidate, queries):
@@ -1002,6 +1054,16 @@ def _classify_event(session: Session, index: int, call: ToolCall) -> dict[str, A
                     for path in discovered
                     if _any_path_matches(_call_paths(following, "read") | _call_paths(following, "edit"), [path])
                 )
+                if _is_test_oriented_search(candidate):
+                    test_search_new_consumed.update(
+                        path
+                        for path in discovered
+                        if _any_path_matches(
+                            _call_paths(following, "read") | _call_paths(following, "edit"),
+                            [path],
+                        )
+                    )
+        test_search_seen = test_search_seen or _is_test_oriented_search(candidate)
 
     target_keys = {query.target_key for query in queries if query.target_key}
     refinement = any(
@@ -1033,6 +1095,12 @@ def _classify_event(session: Session, index: int, call: ToolCall) -> dict[str, A
     command_counts = Counter(query.command for query in queries)
     shape_counts = Counter(query.target_shape for query in queries)
     option_counts = Counter(option for query in queries for option in query.options)
+    direct_test_paths, candidate_test_paths = _test_evidence_paths(call)
+    consumed_candidate_paths = {
+        path
+        for path in candidate_test_paths
+        if any(_call_consumes(candidate, [path]) != (False, False) for candidate in later)
+    }
     return {
         "id": _event_id(session.key, call.call_id),
         "query_count": len(queries),
@@ -1052,6 +1120,16 @@ def _classify_event(session: Session, index: int, call: ToolCall) -> dict[str, A
             "search_repeated_returned_path": bool(repeated),
             "new_search_path_count": len(new_paths),
             "new_search_path_consumed_count": len(new_consumed),
+        },
+        "test_evidence_follow_up": {
+            "direct_test_path_count": len(direct_test_paths),
+            "candidate_test_path_count": len(candidate_test_paths),
+            "candidate_test_path_consumed_count": len(consumed_candidate_paths),
+            "candidate_test_path_not_consumed_count": len(
+                candidate_test_paths - consumed_candidate_paths
+            ),
+            "test_oriented_same_target_search": test_search_seen,
+            "test_oriented_new_search_path_consumed_count": len(test_search_new_consumed),
         },
         "classification": classification,
     }
@@ -1080,6 +1158,7 @@ def summarize(sessions: Sequence[Session], since: str = "", until: str = "") -> 
     later: Counter[str] = Counter()
     classifications: Counter[str] = Counter({key: 0 for key in _CLASSIFICATIONS})
     signals: Counter[str] = Counter({key: 0 for key in _UTILITY_SIGNALS})
+    test_evidence_follow_up: Counter[str] = Counter()
     observed_versions: set[str] = set()
     dates: list[str] = []
     working_directories: set[str] = set()
@@ -1116,6 +1195,15 @@ def summarize(sessions: Sequence[Session], since: str = "", until: str = "") -> 
                     signals["clean_events_editing_returned_path"] += 1
             if event["signals"]["later_search"]:
                 signals["same_target_search_events"] += 1
+            follow_up = event["test_evidence_follow_up"]
+            test_evidence_follow_up["events_exposing_direct_tests"] += int(
+                follow_up["direct_test_path_count"] > 0
+            )
+            test_evidence_follow_up["events_exposing_candidate_tests"] += int(
+                follow_up["candidate_test_path_count"] > 0
+            )
+            for key, value in follow_up.items():
+                test_evidence_follow_up[key] += int(value)
 
     events.sort(key=lambda item: item["id"])
     total_queries = sum(int(event["query_count"]) for event in events)
@@ -1143,6 +1231,7 @@ def summarize(sessions: Sequence[Session], since: str = "", until: str = "") -> 
             "later_follow_up_family_events": _counter_dict(later),
             "utility_signals": _counter_dict(signals),
             "classifications": _counter_dict(classifications),
+            "test_evidence_follow_up": _counter_dict(test_evidence_follow_up),
         },
         "events": events,
         "attribution_limitations": [
@@ -1168,6 +1257,19 @@ def render_markdown(data: dict[str, Any]) -> str:
     aggregates = data["aggregates"]
     window = corpus["observed_window"]
     versions = data.get("codeq_versions_observed") or ["not observable"]
+    test_follow_up = aggregates["test_evidence_follow_up"]
+    comparison_note = (
+        "This window is the pre-provenance baseline: it exposed no labelled candidate-test paths, "
+        f"while recording {test_follow_up.get('test_oriented_same_target_search', 0)} test-oriented "
+        "same-target search events and "
+        f"{test_follow_up.get('test_oriented_new_search_path_consumed_count', 0)} newly consumed paths. "
+        "Re-run an equivalent post-release window to measure change."
+        if not test_follow_up.get("candidate_test_path_count")
+        else (
+            "This window includes labelled candidate-test output; compare its candidate consumption and "
+            "test-oriented same-target search counts with an equivalent baseline window."
+        )
+    )
     rows = [
         ("Sessions", corpus["sessions_with_codeq"]),
         ("Working directories", corpus["working_directories"]),
@@ -1198,10 +1300,16 @@ def render_markdown(data: dict[str, Any]) -> str:
         f"- Later follow-up family events: `{json.dumps(aggregates['later_follow_up_family_events'], sort_keys=True)}`",
         f"- Utility signals: `{json.dumps(aggregates['utility_signals'], sort_keys=True)}`",
         f"- Downstream classifications: `{json.dumps(aggregates['classifications'], sort_keys=True)}`",
+        "- Test-evidence follow-up: "
+        f"`{json.dumps(aggregates['test_evidence_follow_up'], sort_keys=True)}`",
         "",
         "Classifications are event-level when one outer tool call launches multiple codeq queries. "
         "Searches that only repeat returned paths are verification; a new path must be consumed by a "
         "later read/edit to count as complemented or compensated/missed evidence.",
+        "Candidate-test consumption and test-oriented searches are weak comparison signals. A returned "
+        "candidate that is not consumed is not automatically a false positive, and consumption alone does "
+        "not prove relevance; compare equivalent corpus windows before and after the change.",
+        comparison_note,
         "",
         "## Known attribution limitations",
         "",

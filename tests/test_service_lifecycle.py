@@ -80,6 +80,7 @@ class _FakeWorkspace:
         lexical_globs: tuple[str, ...] = (),
         lexical_exclude_tests: bool = False,
         semantic_paths: tuple[str, ...] = (),
+        selected_sections: tuple[str, ...] = (),
     ):
         return {
             "status": "ok",

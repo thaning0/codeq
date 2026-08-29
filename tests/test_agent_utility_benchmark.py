@@ -3,15 +3,21 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 
 from benchmarks.agent_utility_benchmark import (
+    CodeqQuery,
+    ShellInvocation,
+    ToolCall,
     _codeq_argv,
     _nested_exec_invocations,
     _query_from_argv,
     _returned_paths,
     _session_from_path,
     _shell_segments,
+    _is_test_oriented_search,
+    _test_evidence_paths,
     load_sessions,
     render_markdown,
     summarize,
@@ -22,6 +28,54 @@ FIXTURES = Path(__file__).parent / "fixtures" / "agent_utility"
 
 
 class AgentUtilityBenchmarkTests(unittest.TestCase):
+    def test_test_evidence_follow_up_parser_keeps_only_anonymous_path_counts(self) -> None:
+        query = CodeqQuery("context", "identifier", ("--section",), "key", frozenset({"run"}))
+        invocation = ShellInvocation(
+            "codeq context run --section tests",
+            "/fixture/repo",
+            queries=[query],
+            output=(
+                "Tests (2)\n"
+                "  [direct semantic reference] tests/test_direct.py:4:5\n"
+                "  [candidate: module import] tests/test_import.py:1:12\n"
+            ),
+            output_attribution="query",
+        )
+        call = ToolCall(
+            "call-id",
+            "exec_command",
+            "{}",
+            invocation.output,
+            1,
+            1,
+            "2026-08-01T00:00:00Z",
+            "/fixture/repo",
+            invocations=[invocation],
+            paired_output=True,
+        )
+        direct, candidates = _test_evidence_paths(call)
+        self.assertEqual(direct, {"tests/test_direct.py"})
+        self.assertEqual(candidates, {"tests/test_import.py"})
+
+        search = ToolCall(
+            "search-id",
+            "exec_command",
+            "{}",
+            "",
+            2,
+            1,
+            "2026-08-01T00:00:01Z",
+            "/fixture/repo",
+            invocations=[
+                ShellInvocation(
+                    "rg run tests/test_service.py",
+                    "/fixture/repo",
+                    families=Counter({"search": 1}),
+                )
+            ],
+        )
+        self.assertTrue(_is_test_oriented_search(search))
+
     def test_direct_calls_pair_content_blocks_and_ignore_prose_examples(self) -> None:
         session = _session_from_path(FIXTURES / "direct_and_boundaries.jsonl")
         codeq_calls = [call for call in session.calls if call.queries]
