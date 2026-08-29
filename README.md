@@ -114,9 +114,11 @@ codeq find 'architecture guard' --path packages --glob '*.py' --exclude-tests
 
 An exact identifier uses language-server symbol discovery. A query containing
 multiple lexical terms uses SQLite FTS5 BM25 to rank Git-visible supported source
-files and returns copyable `codeq context FILE` commands. The FTS database is a
-contentless, workspace-local `:memory:` index: it adds no runtime dependency or
-persistent repository state. `--text` remains exact literal search.
+files. Plain output lists those files compactly, then prints one copyable
+`codeq context FILE` command for the top result; JSON retains a selection command
+for each result. The FTS database is a contentless, workspace-local `:memory:` index:
+it adds no runtime dependency or persistent repository state. `--text` remains exact
+literal search.
 
 `--path`, `--glob`, and `--exclude-tests` scope candidate files before the result
 limit; repeat path and glob filters for OR matching within each filter type. `--kind`

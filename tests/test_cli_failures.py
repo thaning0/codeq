@@ -615,7 +615,7 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertIn("[showing 1 of 3 candidates; 1.5 ms]", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 
-    def test_fts_find_plain_output_returns_copyable_file_context_command(self) -> None:
+    def test_fts_find_plain_output_prints_one_top_result_context_command_in_footer(self) -> None:
         result = {
             "status": "ok",
             "mode": "fts5",
@@ -629,9 +629,18 @@ class CliFailureContractTests(unittest.TestCase):
                     "column": 1,
                     "source": "fts5",
                     "selection_command": "codeq context src/catalog.py",
-                }
+                },
+                {
+                    "name": "src/cache.py",
+                    "kind": "File",
+                    "path": "/repo/src/cache.py",
+                    "line": 1,
+                    "column": 1,
+                    "source": "fts5",
+                    "selection_command": "codeq context src/cache.py",
+                },
             ],
-            "result_count": 1,
+            "result_count": 2,
             "total_candidates": 3,
             "truncated": True,
             "_meta": {"duration_ms": 2.5},
@@ -644,12 +653,16 @@ class CliFailureContractTests(unittest.TestCase):
             redirect_stdout(stdout),
             redirect_stderr(stderr),
         ):
-            main(["find", "catalog refresh", "--limit", "1"])
-        self.assertIn("File         src/catalog.py  [fts5]", stdout.getvalue())
-        self.assertIn("codeq context src/catalog.py", stdout.getvalue())
-        self.assertNotIn("src/catalog.py:1:1", stdout.getvalue())
-        self.assertIn("more matching files available; increase --limit", stdout.getvalue())
-        self.assertIn("[showing 1 of 3 files; 2.5 ms]", stdout.getvalue())
+            main(["find", "catalog refresh", "--limit", "2"])
+        output = stdout.getvalue()
+        self.assertIn("File         src/catalog.py  [fts5]", output)
+        self.assertIn("File         src/cache.py  [fts5]", output)
+        self.assertNotIn("src/catalog.py:1:1", output)
+        self.assertNotIn("codeq context src/cache.py", output)
+        self.assertEqual(output.count("codeq context"), 1)
+        self.assertIn("more matching files available; increase --limit", output)
+        self.assertIn("[showing 2 of 3 files; 2.5 ms]", output)
+        self.assertTrue(output.endswith("Next: codeq context src/catalog.py\n"))
         self.assertEqual(stderr.getvalue(), "")
 
     def test_all_success_renderers_keep_stderr_empty(self) -> None:

@@ -381,14 +381,14 @@ def _render_find(data: dict[str, Any], root: str | Path) -> None:
         )
         return
     if data.get("mode") == "fts5":
-        for item in data.get("results", []):
+        results = data.get("results", [])
+        for item in results:
             marker = " [test]" if item.get("is_test") else ""
             print(
                 f"{item.get('kind', 'File'):<12} {_display_path(item.get('path'), root)}"
                 f"{marker}  [{item.get('source', 'fts5')}]"
             )
-            print(f"             {item.get('selection_command', '')}")
-        if not data.get("results"):
+        if not results:
             print("No matches.")
         result_count = int(data.get("result_count") or 0)
         total_candidates = int(data.get("total_candidates", result_count) or 0)
@@ -400,6 +400,8 @@ def _render_find(data: dict[str, Any], root: str | Path) -> None:
             f"\n[showing {result_count} of {total_candidates} files; "
             f"{meta.get('duration_ms', '?')} ms]"
         )
+        if results and results[0].get("selection_command"):
+            print(f"Next: {results[0]['selection_command']}")
         return
     for item in data.get("results", []):
         container = f"{item.get('container')}." if item.get("container") else ""
