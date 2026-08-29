@@ -341,8 +341,16 @@ def _render_find(data: dict[str, Any], root: str | Path) -> None:
         )
     if not data.get("results"):
         print("No matches.")
+    result_count = int(data.get("result_count") or 0)
+    total_candidates = int(data.get("total_candidates", result_count) or 0)
+    truncated = bool(data.get("truncated", result_count < total_candidates))
+    if truncated:
+        print("... more semantic candidates available; increase --limit")
     meta = data.get("_meta", {})
-    print(f"\n[{data.get('result_count',0)} results; {meta.get('duration_ms','?')} ms]")
+    print(
+        f"\n[showing {result_count} of {total_candidates} candidates; "
+        f"{meta.get('duration_ms','?')} ms]"
+    )
 
 
 def _render_resolution(data: dict[str, Any], root: str | Path) -> bool:

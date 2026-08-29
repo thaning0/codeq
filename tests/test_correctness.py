@@ -231,20 +231,37 @@ class CorrectnessGuardTests(unittest.TestCase):
 
             workspace = Workspace(root)
             try:
+                candidates = [candidate(first), candidate(second)]
                 with (
                     patch("codeq.workspace.lexical_hits", return_value=[]),
-                    patch.object(workspace, "_exact_document_candidates", return_value=[candidate(first), candidate(second)]),
+                    patch.object(
+                        workspace,
+                        "_exact_document_candidates",
+                        side_effect=lambda name, **_: candidates if name == "Thing" else [],
+                    ),
                 ):
                     unscoped = workspace.resolve("Thing")
                     root_scoped = workspace.find("Thing", paths=(".",))
+                    limited = workspace.find("Thing", paths=(".",), limit=1)
                     scoped_find = workspace.find("Thing", paths=("packages/two",))
+                    empty = workspace.find("DefinitelyMissing")
                     scoped = workspace.resolve("Thing", semantic_paths=("packages/two",))
             finally:
                 workspace.close()
             self.assertEqual(unscoped["status"], "ambiguous")
             self.assertTrue(all(item.get("selection_command") for item in unscoped["candidates"]))
             self.assertEqual(root_scoped["result_count"], 2)
+            self.assertEqual(root_scoped["total_candidates"], 2)
+            self.assertFalse(root_scoped["truncated"])
+            self.assertEqual(limited["result_count"], 1)
+            self.assertEqual(limited["total_candidates"], 2)
+            self.assertTrue(limited["truncated"])
             self.assertEqual(scoped_find["result_count"], 1)
+            self.assertEqual(scoped_find["total_candidates"], 1)
+            self.assertFalse(scoped_find["truncated"])
+            self.assertEqual(empty["result_count"], 0)
+            self.assertEqual(empty["total_candidates"], 0)
+            self.assertFalse(empty["truncated"])
             self.assertEqual(scoped_find["paths"], ["packages/two"])
             self.assertEqual(scoped["status"], "ok")
             self.assertEqual(scoped["symbol"]["path"], str(second.resolve()))
@@ -272,6 +289,13 @@ class CorrectnessGuardTests(unittest.TestCase):
                     "origin": "document",
                 }
 
+            helper = {
+                **candidate(source),
+                "name": "guard_helper",
+                "kind": "Function",
+                "line": 2,
+            }
+
             workspace = Workspace(root)
             try:
                 with (
@@ -279,11 +303,18 @@ class CorrectnessGuardTests(unittest.TestCase):
                     patch.object(
                         workspace,
                         "_exact_document_candidates",
-                        return_value=[candidate(source), candidate(test), candidate(typescript), candidate(outside)],
+                        return_value=[
+                            candidate(source),
+                            candidate(test),
+                            candidate(typescript),
+                            candidate(outside),
+                            helper,
+                        ],
                     ),
                 ):
                     result = workspace.find(
                         "Guard",
+                        kind="class",
                         paths=("packages/core",),
                         globs=("*.py",),
                         exclude_tests=True,
@@ -293,6 +324,7 @@ class CorrectnessGuardTests(unittest.TestCase):
 
             self.assertEqual(result["result_count"], 1)
             self.assertEqual(result["total_candidates"], 1)
+            self.assertFalse(result["truncated"])
             self.assertEqual(result["results"][0]["path"], str(source.resolve()))
             self.assertEqual(result["filters"], {
                 "paths": ["packages/core"],

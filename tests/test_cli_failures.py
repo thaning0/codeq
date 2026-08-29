@@ -40,6 +40,7 @@ class CliFailureContractTests(unittest.TestCase):
             "results": [],
             "result_count": 0,
             "total_candidates": 0,
+            "truncated": False,
             "errors": [],
         }
         with (
@@ -452,7 +453,41 @@ class CliFailureContractTests(unittest.TestCase):
         ):
             main(["find", "Foo"])
         self.assertIn("No matches.", stdout.getvalue())
-        self.assertIn("[0 results; 12.3 ms]", stdout.getvalue())
+        self.assertIn("[showing 0 of 0 candidates; 12.3 ms]", stdout.getvalue())
+        self.assertNotIn("increase --limit", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_semantic_find_plain_output_reports_truncation_and_recovery(self) -> None:
+        result = {
+            "status": "ok",
+            "query": "Foo",
+            "results": [
+                {
+                    "name": "Foo",
+                    "kind": "Class",
+                    "path": "/repo/foo.py",
+                    "line": 1,
+                    "column": 1,
+                    "source": "lsp",
+                }
+            ],
+            "result_count": 1,
+            "total_candidates": 3,
+            "truncated": True,
+            "errors": [],
+            "_meta": {"duration_ms": 1.5},
+        }
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            main(["find", "Foo", "--limit", "1"])
+        self.assertIn("more semantic candidates available; increase --limit", stdout.getvalue())
+        self.assertIn("[showing 1 of 3 candidates; 1.5 ms]", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 
     def test_all_success_renderers_keep_stderr_empty(self) -> None:
@@ -464,9 +499,11 @@ class CliFailureContractTests(unittest.TestCase):
                     "query": "Foo",
                     "results": [{"name": "Foo", "kind": "Class", "path": "/repo/foo.py", "line": 1, "column": 1, "source": "lsp"}],
                     "result_count": 1,
+                    "total_candidates": 1,
+                    "truncated": False,
                     "_meta": {"duration_ms": 1.0},
                 },
-                "[1 results; 1.0 ms]",
+                "[showing 1 of 1 candidates; 1.0 ms]",
             ),
             (
                 ["context", "Foo.run"],

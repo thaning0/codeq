@@ -601,6 +601,7 @@ class Workspace:
                 "results": [],
                 "result_count": 0,
                 "total_candidates": 0,
+                "truncated": False,
                 "errors": [],
             }
             ambiguous_paths = [Path(value) for value in reference.get("ambiguous_paths", [])]
@@ -854,8 +855,9 @@ class Workspace:
                 "exclude_tests": exclude_tests,
             },
             "results": returned,
-            "result_count": min(len(ordered), limit),
+            "result_count": len(returned),
             "total_candidates": len(ordered),
+            "truncated": len(returned) < len(ordered),
             "errors": errors[:4],
         }
 

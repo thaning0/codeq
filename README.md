@@ -4,7 +4,7 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc7` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** `1.0.0rc8` is the active release candidate. The four-command surface is feature-frozen for 1.0.
 
 ## Why codeq
 
@@ -69,7 +69,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc7
+codeq 1.0.0rc8
 ```
 
 ## The workflow
@@ -115,6 +115,11 @@ By default, `find` matches symbols and source concepts semantically. `--text` ch
 only the matching strategy to exact literal search. `--path`, `--glob`, and
 `--exclude-tests` scope candidate files in either mode; repeat path and glob filters
 for OR matching within each filter type.
+
+Semantic plain output reports `showing X of Y candidates` after all filters. When
+`--limit` hides additional candidates, it says so explicitly and suggests increasing
+the limit. JSON exposes the same state through `result_count`, `total_candidates`,
+and `truncated`.
 
 Exact working-tree text search:
 
