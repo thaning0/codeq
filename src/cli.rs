@@ -2,9 +2,9 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Deserialize, Parser, Serialize)]
 #[command(
     name = "codeq",
     version,
@@ -46,7 +46,7 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[derive(Debug, Serialize, Subcommand)]
+#[derive(Debug, Deserialize, Serialize, Subcommand)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum Command {
     #[command(
@@ -128,7 +128,7 @@ impl Cli {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum FindMode {
     #[default]
@@ -138,7 +138,7 @@ pub enum FindMode {
     Text,
 }
 
-#[derive(Debug, Serialize, Args)]
+#[derive(Debug, Deserialize, Serialize, Args)]
 pub struct FindArgs {
     #[arg(value_name = "QUERY")]
     pub query: String,
@@ -165,7 +165,7 @@ pub struct FindArgs {
     pub exclude_tests: bool,
 }
 
-#[derive(Debug, Serialize, Args)]
+#[derive(Debug, Deserialize, Serialize, Args)]
 pub struct ContextArgs {
     #[arg(value_name = "TARGET")]
     pub target: String,
@@ -214,7 +214,7 @@ pub struct ContextArgs {
     pub exclude_tests: bool,
 }
 
-#[derive(Debug, Serialize, Args)]
+#[derive(Debug, Deserialize, Serialize, Args)]
 pub struct TraceArgs {
     #[arg(value_name = "TARGET")]
     pub target: String,
@@ -242,7 +242,7 @@ pub struct TraceArgs {
     pub node_limit: i64,
 }
 
-#[derive(Debug, Serialize, Args)]
+#[derive(Debug, Deserialize, Serialize, Args)]
 pub struct ReviewArgs {
     #[arg(long, value_name = "REF", default_value = "HEAD~1")]
     pub base: String,

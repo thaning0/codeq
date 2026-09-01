@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -46,8 +46,11 @@ fn run(options: Options) -> Result<(), String> {
     result?;
 
     exercise_signal_cleanup(&executable, &socket)?;
+    exercise_idle_exit(&executable, temporary.path())?;
     #[cfg(target_os = "linux")]
     exercise_abstract_daemon(&executable)?;
+    exercise_cli_transport(&executable, temporary.path())?;
+    exercise_stale_restart(&executable, temporary.path())?;
     Ok(())
 }
 
@@ -126,6 +129,175 @@ fn exercise_signal_cleanup(executable: &Path, socket: &Path) -> Result<(), Strin
     result
 }
 
+fn exercise_idle_exit(executable: &Path, temporary: &Path) -> Result<(), String> {
+    let socket = temporary.join("idle-runtime/codeq.sock");
+    let mut daemon = Command::new(executable)
+        .env("CODEQ2_DAEMON_IDLE_SECONDS", "0.1")
+        .arg("--internal-daemon")
+        .arg("--socket")
+        .arg(&socket)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    let result = (|| {
+        wait_for_socket(&socket, &mut daemon)?;
+        wait_for_exit(&mut daemon, "idle timeout")?;
+        if socket.exists() {
+            return Err("filesystem socket survived idle exit".to_owned());
+        }
+        Ok(())
+    })();
+    cleanup_child(&mut daemon, result.is_err());
+    result
+}
+
+fn exercise_cli_transport(executable: &Path, temporary: &Path) -> Result<(), String> {
+    let runtime = temporary.join("client-runtime");
+    let socket = runtime.join("codeq.sock");
+    let root = std::env::current_dir().map_err(|error| error.to_string())?;
+    let daemon_output = Command::new(executable)
+        .env("CODEQ2_RUNTIME_DIR", &runtime)
+        .arg("--root")
+        .arg(&root)
+        .arg("context")
+        .arg("missing/runtime-contract.py:12")
+        .arg("--json")
+        .output()
+        .map_err(|error| error.to_string())?;
+    if daemon_output.status.code() != Some(1) {
+        return Err(format!(
+            "daemon CLI query exited {:?}: {}",
+            daemon_output.status.code(),
+            String::from_utf8_lossy(&daemon_output.stderr)
+        ));
+    }
+    let daemon_data: Value =
+        serde_json::from_slice(&daemon_output.stdout).map_err(|error| error.to_string())?;
+    if daemon_data
+        .pointer("/_meta/transport")
+        .and_then(Value::as_str)
+        != Some("daemon")
+    {
+        return Err(format!(
+            "default CLI query did not use daemon: {daemon_data}"
+        ));
+    }
+
+    let one_shot_output = Command::new(executable)
+        .env("CODEQ2_RUNTIME_DIR", &runtime)
+        .arg("--root")
+        .arg(&root)
+        .arg("context")
+        .arg("missing/runtime-contract.py:12")
+        .arg("--json")
+        .arg("--no-daemon")
+        .output()
+        .map_err(|error| error.to_string())?;
+    let one_shot_data: Value =
+        serde_json::from_slice(&one_shot_output.stdout).map_err(|error| error.to_string())?;
+    if one_shot_data
+        .pointer("/_meta/transport")
+        .and_then(Value::as_str)
+        != Some("in_process")
+    {
+        return Err(format!(
+            "--no-daemon query used wrong transport: {one_shot_data}"
+        ));
+    }
+
+    let shutdown = request_path(&socket, json!({"command": "_shutdown"}))?;
+    assert_ok_status(&shutdown, "spawned CLI daemon shutdown")?;
+    wait_for_path_removal(&socket, "CLI-spawned daemon")
+}
+
+fn exercise_stale_restart(executable: &Path, temporary: &Path) -> Result<(), String> {
+    let runtime = temporary.join("stale-runtime");
+    fs::create_dir_all(&runtime).map_err(|error| error.to_string())?;
+    fs::set_permissions(&runtime, fs::Permissions::from_mode(0o700))
+        .map_err(|error| error.to_string())?;
+    let socket = runtime.join("codeq.sock");
+    let listener = UnixListener::bind(&socket).map_err(|error| error.to_string())?;
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))
+        .map_err(|error| error.to_string())?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|error| error.to_string())?;
+    let stale_socket = socket.clone();
+    let stale = thread::spawn(move || serve_stale(listener, &stale_socket));
+
+    let root = std::env::current_dir().map_err(|error| error.to_string())?;
+    let output = Command::new(executable)
+        .env("CODEQ2_RUNTIME_DIR", &runtime)
+        .arg("--root")
+        .arg(root)
+        .arg("context")
+        .arg("missing/stale-restart.py:12")
+        .arg("--json")
+        .output()
+        .map_err(|error| error.to_string())?;
+    let stale_result = stale
+        .join()
+        .map_err(|_| "stale daemon thread panicked".to_owned())?;
+    stale_result?;
+    if output.status.code() != Some(1) {
+        return Err(format!(
+            "query after stale restart exited {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let data: Value = serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+    if data.pointer("/_meta/transport").and_then(Value::as_str) != Some("daemon") {
+        return Err(format!("query did not recover onto current daemon: {data}"));
+    }
+    let shutdown = request_path(&socket, json!({"command": "_shutdown"}))?;
+    assert_ok_status(&shutdown, "restarted daemon shutdown")?;
+    wait_for_path_removal(&socket, "restarted daemon")
+}
+
+fn serve_stale(listener: UnixListener, socket: &Path) -> Result<(), String> {
+    for response in [
+        json!({
+            "ok": false,
+            "error_code": "version_mismatch",
+            "error": "stale daemon",
+            "server_version": "0.0.0-stale",
+            "protocol_version": 1,
+        }),
+        json!({
+            "ok": true,
+            "data": {"status": "ok"},
+            "server_version": "0.0.0-stale",
+            "protocol_version": 1,
+        }),
+    ] {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => return Err(format!("stale daemon accept failed: {error}")),
+            }
+        };
+        let mut request = String::new();
+        BufReader::new(&stream)
+            .read_line(&mut request)
+            .map_err(|error| error.to_string())?;
+        serde_json::to_writer(&mut stream, &response).map_err(|error| error.to_string())?;
+        stream.write_all(b"\n").map_err(|error| error.to_string())?;
+        stream.flush().map_err(|error| error.to_string())?;
+    }
+    drop(listener);
+    fs::remove_file(socket).map_err(|error| error.to_string())
+}
+
 #[cfg(target_os = "linux")]
 fn exercise_abstract_daemon(executable: &Path) -> Result<(), String> {
     let name = format!("codeq-2.0-rust-dev-test-{}", std::process::id());
@@ -192,6 +364,17 @@ fn wait_for_exit(daemon: &mut Child, action: &str) -> Result<(), String> {
         thread::sleep(Duration::from_millis(20));
     }
     Err(format!("daemon did not exit after {action}"))
+}
+
+fn wait_for_path_removal(socket: &Path, context: &str) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if !socket.exists() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    Err(format!("{context} socket survived shutdown"))
 }
 
 fn request_path(socket: &Path, payload: Value) -> Result<Value, String> {

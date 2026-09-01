@@ -12,6 +12,10 @@ SQLite FTS5, and external language servers remain explicit product boundaries.
 During migration, the Rust daemon namespace is `codeq-2.0-rust-dev` and an
 explicit development runtime directory is selected with `CODEQ2_RUNTIME_DIR`.
 It must never connect to, replace, shut down, or reuse a stable 1.x daemon.
+The default Linux transport is an isolated abstract Unix socket; an explicit
+runtime selects a private `0700` directory and `0600` filesystem socket.
+`CODEQ2_DAEMON_LOG` opts into a private daemon log; no log is created by
+default.
 
 The Rust CLI currently fails closed for unimplemented semantic commands. A
 slice is considered complete only when black-box fixtures pass against both an
@@ -26,6 +30,15 @@ cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 cargo build --release
+```
+
+The runtime contract can also target an arbitrary built executable. It covers
+filesystem and abstract sockets, same-UID peer validation, protocol mismatch,
+automatic daemon startup/restart, `--no-daemon`, idle exit, signals, and socket
+cleanup:
+
+```bash
+cargo test --test runtime_contract -- --codeq /path/to/codeq
 ```
 
 Run the committed corpus against the Rust candidate itself as part of ordinary

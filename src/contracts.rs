@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const SCHEMA_VERSION: u8 = 1;
 pub const CONTEXT_SECTIONS: &[&str] = &[
@@ -14,12 +14,8 @@ pub const CONTEXT_SECTIONS: &[&str] = &[
     "lexical-references",
 ];
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-#[expect(
-    dead_code,
-    reason = "the complete frozen status vocabulary precedes its semantic producers"
-)]
 pub enum Status {
     Ok,
     NotFound,
@@ -94,7 +90,7 @@ pub struct QueryMeta {
 }
 
 impl QueryMeta {
-    pub fn empty(root: &Path, duration_ms: f64) -> Self {
+    pub fn empty(root: &Path, duration_ms: f64, transport: &'static str) -> Self {
         Self {
             root: root.to_owned(),
             duration_ms,
@@ -119,7 +115,7 @@ impl QueryMeta {
                 prewarm: 0.0,
                 semantic_neighborhood: 0.0,
             },
-            transport: "in_process",
+            transport,
         }
     }
 }

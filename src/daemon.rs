@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
 use std::os::linux::net::SocketAddrExt;
@@ -20,11 +20,13 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 
 use crate::contracts::SCHEMA_VERSION;
 use crate::runtime::{DAEMON_PROTOCOL_VERSION, DEVELOPMENT_NAMESPACE, DEVELOPMENT_RUNTIME_ENV};
+use crate::{cli::Cli, service};
 
 const MAX_REQUEST_BYTES: u64 = 4 * 1024 * 1024;
 const SOCKET_MODE: u32 = 0o600;
 const RUNTIME_MODE: u32 = 0o700;
 const ACCEPT_POLL: Duration = Duration::from_millis(20);
+const DEFAULT_DAEMON_IDLE: Duration = Duration::from_secs(900);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Endpoint {
@@ -33,7 +35,7 @@ pub enum Endpoint {
 }
 
 impl Endpoint {
-    fn socket_path(&self) -> Option<&Path> {
+    pub(crate) fn socket_path(&self) -> Option<&Path> {
         match self {
             Self::Abstract(_) => None,
             Self::Filesystem(path) => Some(path),
@@ -85,18 +87,26 @@ pub fn run(endpoint: Endpoint) -> io::Result<()> {
     let stopping = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(SIGTERM, Arc::clone(&stopping))?;
     signal_hook::flag::register(SIGINT, Arc::clone(&stopping))?;
+    let idle_timeout = daemon_idle_timeout();
+    let mut last_activity = Instant::now();
     while !stopping.load(Ordering::Acquire) {
         match listener.accept() {
             Ok((stream, _)) => {
                 if !trusted_peer(&stream) {
                     continue;
                 }
+                last_activity = Instant::now();
                 let connection_stop = Arc::clone(&stopping);
                 thread::spawn(move || {
                     let _ = serve_connection(stream, &connection_stop);
                 });
             }
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => thread::sleep(ACCEPT_POLL),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                if last_activity.elapsed() >= idle_timeout {
+                    break;
+                }
+                thread::sleep(ACCEPT_POLL);
+            }
             Err(error) => {
                 cleanup(&endpoint);
                 return Err(error);
@@ -205,14 +215,26 @@ fn response(request: &Value) -> (Value, bool) {
             false,
         );
     }
-    (
-        wire_ok(json!({
-            "status": "unavailable",
-            "reason": "the Rust daemon service is not implemented yet",
-            "schema_version": SCHEMA_VERSION,
-        })),
-        false,
-    )
+    if command == Some("_query") {
+        let Some(query) = request.get("request") else {
+            return (
+                wire_error(None, "query request is missing".to_owned()),
+                false,
+            );
+        };
+        let cli: Cli = match serde_json::from_value(query.clone()) {
+            Ok(cli) => cli,
+            Err(error) => {
+                return (
+                    wire_error(None, format!("invalid query request: {error}")),
+                    false,
+                );
+            }
+        };
+        let root = cli.root.clone();
+        return (wire_ok(service::execute(&cli, &root, "daemon").data), false);
+    }
+    (wire_error(None, "unknown daemon command".to_owned()), false)
 }
 
 fn wire_ok(data: Value) -> Value {
@@ -237,7 +259,7 @@ fn wire_error(error_code: Option<&str>, error: String) -> Value {
     response
 }
 
-fn trusted_peer(stream: &UnixStream) -> bool {
+pub(crate) fn trusted_peer(stream: &UnixStream) -> bool {
     getsockopt(stream, sockopt::PeerCredentials)
         .map(|credentials| credentials.uid() == Uid::current().as_raw())
         .unwrap_or(false)
@@ -282,6 +304,15 @@ fn cleanup(endpoint: &Endpoint) {
 
 fn abstract_name(uid: u32) -> String {
     format!("{DEVELOPMENT_NAMESPACE}-{uid}-p{DAEMON_PROTOCOL_VERSION}")
+}
+
+fn daemon_idle_timeout() -> Duration {
+    env::var("CODEQ2_DAEMON_IDLE_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .map(Duration::from_secs_f64)
+        .unwrap_or(DEFAULT_DAEMON_IDLE)
 }
 
 #[cfg(test)]

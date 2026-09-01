@@ -23,9 +23,14 @@ pub struct Failure<'a> {
     pub plain: String,
 }
 
-pub fn evaluate<'a>(cli: &'a Cli, root: &Path, duration_ms: f64) -> Option<Failure<'a>> {
+pub fn evaluate<'a>(
+    cli: &'a Cli,
+    root: &Path,
+    duration_ms: f64,
+    transport: &'static str,
+) -> Option<Failure<'a>> {
     if let Command::Context(arguments) = &cli.command
-        && let Some(failure) = context_validation(arguments, root, duration_ms)
+        && let Some(failure) = context_validation(arguments, root, duration_ms, transport)
     {
         return Some(failure);
     }
@@ -39,6 +44,7 @@ pub fn evaluate<'a>(cli: &'a Cli, root: &Path, duration_ms: f64) -> Option<Failu
             intent,
             root,
             duration_ms,
+            transport,
         ));
     }
 
@@ -77,7 +83,7 @@ pub fn evaluate<'a>(cli: &'a Cli, root: &Path, duration_ms: f64) -> Option<Failu
             target: query,
             path: intent.path,
             reason,
-            meta: QueryMeta::empty(root, duration_ms),
+            meta: QueryMeta::empty(root, duration_ms, transport),
             schema_version: SCHEMA_VERSION,
         }),
         status,
@@ -89,6 +95,7 @@ fn context_validation<'a>(
     arguments: &'a ContextArgs,
     root: &Path,
     duration_ms: f64,
+    transport: &'static str,
 ) -> Option<Failure<'a>> {
     let mut requested = Vec::new();
     for section in &arguments.sections {
@@ -130,7 +137,7 @@ fn context_validation<'a>(
             reason,
             allowed_sections: CONTEXT_SECTIONS,
             recovery_command,
-            meta: QueryMeta::empty(root, duration_ms),
+            meta: QueryMeta::empty(root, duration_ms, transport),
             schema_version: SCHEMA_VERSION,
         }),
         status: Status::InvalidQuery,
@@ -143,6 +150,7 @@ fn find_path_failure<'a>(
     intent: ExplicitPath,
     root: &Path,
     duration_ms: f64,
+    transport: &'static str,
 ) -> Failure<'a> {
     let (status, reason) = if !intent.inside_repository {
         (
@@ -185,7 +193,7 @@ fn find_path_failure<'a>(
             errors: Vec::new(),
             status,
             reason,
-            meta: QueryMeta::empty(root, duration_ms),
+            meta: QueryMeta::empty(root, duration_ms, transport),
             schema_version: SCHEMA_VERSION,
         }),
         status,
