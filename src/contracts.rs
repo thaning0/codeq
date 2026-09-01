@@ -3,6 +3,16 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 pub const SCHEMA_VERSION: u8 = 1;
+pub const CONTEXT_SECTIONS: &[&str] = &[
+    "source",
+    "callers",
+    "callees",
+    "implementations",
+    "tests",
+    "references",
+    "possible-dynamic-references",
+    "lexical-references",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,7 +128,35 @@ impl QueryMeta {
 pub struct TargetFailureResponse<'a> {
     pub status: Status,
     pub target: &'a str,
-    pub path: &'a Path,
+    pub path: PathBuf,
+    pub reason: String,
+    #[serde(rename = "_meta")]
+    pub meta: QueryMeta,
+    pub schema_version: u8,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContextValidationResponse<'a> {
+    pub status: Status,
+    pub target: &'a str,
+    pub reason: String,
+    pub allowed_sections: &'static [&'static str],
+    pub recovery_command: String,
+    #[serde(rename = "_meta")]
+    pub meta: QueryMeta,
+    pub schema_version: u8,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FindFailureResponse<'a> {
+    pub query: &'a str,
+    pub path: PathBuf,
+    pub results: Vec<serde_json::Value>,
+    pub result_count: u64,
+    pub total_candidates: u64,
+    pub truncated: bool,
+    pub errors: Vec<serde_json::Value>,
+    pub status: Status,
     pub reason: String,
     #[serde(rename = "_meta")]
     pub meta: QueryMeta,

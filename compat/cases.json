@@ -38,6 +38,84 @@
       "with_root": true
     },
     {
+      "name": "missing_explicit_path_plain",
+      "args": ["context", "missing/module.py:12", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "unsupported_explicit_language_fails_closed",
+      "args": ["context", "contracts.yaml:1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "unsupported_explicit_language_plain",
+      "args": ["context", "contracts.yaml:1", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "trace_missing_explicit_path_fails_closed",
+      "args": ["trace", "missing/module.py:12", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "trace_unsupported_explicit_language_fails_closed",
+      "args": ["trace", "contracts.yaml:1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "find_missing_explicit_path_fails_closed",
+      "args": ["find", "missing/module.py", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "find_unsupported_explicit_language_fails_closed",
+      "args": ["find", "contracts.yaml", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "find_source_file_redirects_to_context",
+      "args": ["find", "app.py", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "find_source_location_redirects_to_context",
+      "args": ["find", "app.py:1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "trace_source_file_redirects_to_context",
+      "args": ["trace", "app.py", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "invalid_context_section",
+      "args": ["context", "app.Greeter.greet", "--section", "unknown", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "invalid_context_section_plain",
+      "args": ["context", "app.Greeter.greet", "--section", "unknown", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "lexical_section_requires_option",
+      "args": ["context", "app.Greeter.greet", "--section", "lexical-references", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
       "name": "exact_text_search",
       "args": ["find", "RUST_PARITY_MARKER", "--mode", "text", "--json", "--no-daemon"],
       "output": "json",

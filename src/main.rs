@@ -1,3 +1,4 @@
+mod boundary;
 mod cli;
 mod contracts;
 mod repository;
@@ -9,10 +10,10 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::{CommandFactory, Parser, error::ErrorKind};
-use contracts::{QueryMeta, SCHEMA_VERSION, Status, TargetFailureResponse, query_exit_code};
+use contracts::{SCHEMA_VERSION, Status, query_exit_code};
 use serde::Serialize;
 
-use crate::cli::{Cli, Command, EarlyOutput};
+use crate::cli::{Cli, EarlyOutput};
 
 #[derive(Serialize)]
 struct DevelopmentMeta {
@@ -29,6 +30,19 @@ struct UnavailableResponse {
     #[serde(rename = "_meta")]
     meta: DevelopmentMeta,
     schema_version: u8,
+}
+
+fn emit_failure(response: &impl Serialize, status: Status, json: bool, plain: &str) -> ExitCode {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(response)
+                .expect("failure response serialization must succeed")
+        );
+    } else {
+        eprintln!("{plain}");
+    }
+    ExitCode::from(query_exit_code(status))
 }
 
 fn main() -> ExitCode {
@@ -57,42 +71,9 @@ fn main() -> ExitCode {
         }
     };
 
-    if let Command::Context(arguments) = &cli.command
-        && let Some(intent) = target::explicit_path(&arguments.target, &root)
-        && (!intent.inside_repository || !intent.path.exists())
+    if let Some(failure) = boundary::evaluate(&cli, &root, started.elapsed().as_secs_f64() * 1000.0)
     {
-        let reason = if intent.inside_repository {
-            format!("file not found: {}", intent.path.display())
-        } else {
-            format!("path is outside repository root: {}", intent.path.display())
-        };
-        let response = TargetFailureResponse {
-            status: Status::NotFound,
-            target: &arguments.target,
-            path: &intent.path,
-            reason,
-            meta: QueryMeta::empty(&root, started.elapsed().as_secs_f64() * 1000.0),
-            schema_version: SCHEMA_VERSION,
-        };
-        if cli.json {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&response)
-                    .expect("failure response serialization must succeed")
-            );
-        } else {
-            let display_path = intent
-                .path
-                .strip_prefix(&root)
-                .unwrap_or(&intent.path)
-                .display();
-            if intent.inside_repository {
-                eprintln!("file not found: {display_path}");
-            } else {
-                eprintln!("path is outside repository root: {display_path}");
-            }
-        }
-        return ExitCode::from(query_exit_code(response.status));
+        return emit_failure(&failure.response, failure.status, cli.json, &failure.plain);
     }
 
     let command = cli.command.name();

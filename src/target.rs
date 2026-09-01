@@ -11,10 +11,18 @@ const PATH_LIKE_SUFFIXES: &[&str] = &[
 pub struct ExplicitPath {
     pub path: PathBuf,
     pub inside_repository: bool,
+    pub line: Option<u64>,
+    pub column: Option<u64>,
+}
+
+impl ExplicitPath {
+    pub const fn has_position(&self) -> bool {
+        self.line.is_some() || self.column.is_some()
+    }
 }
 
 pub fn explicit_path(target: &str, root: &Path) -> Option<ExplicitPath> {
-    let raw_path = split_position(target).0;
+    let (raw_path, line, column) = split_position(target);
     let candidate = Path::new(raw_path);
     let suffix = candidate
         .extension()
@@ -38,7 +46,25 @@ pub fn explicit_path(target: &str, root: &Path) -> Option<ExplicitPath> {
     Some(ExplicitPath {
         path,
         inside_repository,
+        line,
+        column,
     })
+}
+
+pub fn is_semantic_source(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|suffix| {
+            ["py", "pyi", "ts", "tsx", "js", "jsx", "mjs", "cjs"]
+                .iter()
+                .any(|known| suffix.eq_ignore_ascii_case(known))
+        })
+}
+
+pub fn source_suffix(path: &Path) -> String {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map_or_else(|| "<no extension>".to_owned(), |value| format!(".{value}"))
 }
 
 fn split_position(target: &str) -> (&str, Option<u64>, Option<u64>) {

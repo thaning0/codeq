@@ -74,6 +74,14 @@ impl Command {
             Self::Review(_) => "review",
         }
     }
+
+    pub fn target(&self) -> Option<&str> {
+        match self {
+            Self::Context(arguments) => Some(&arguments.target),
+            Self::Trace(arguments) => Some(&arguments.target),
+            Self::Find(_) | Self::Review(_) => None,
+        }
+    }
 }
 
 impl Cli {
