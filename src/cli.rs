@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
     name = "codeq",
     version,
     about = "Small, read-only code-intelligence CLI for coding agents.",
+    styles = clap::builder::Styles::plain(),
     subcommand_required = true,
     arg_required_else_help = true,
     disable_help_subcommand = true,
@@ -309,4 +310,21 @@ fn argument_was_supplied(arguments: &[OsString], option: &str) -> bool {
                 .to_string_lossy()
                 .starts_with(&format!("{option}="))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::Cli;
+
+    #[test]
+    fn generated_terminal_help_has_no_ansi_styles() {
+        let error = Cli::command()
+            .try_get_matches_from(["codeq"])
+            .expect_err("a missing subcommand must display help");
+        let rendered = error.render().ansi().to_string();
+
+        assert!(!rendered.contains('\u{1b}'), "styled help: {rendered:?}");
+    }
 }
