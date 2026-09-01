@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "codeq_version": "2.0.0",
+  "root": "Quant",
+  "root_revision": "ba4a5d62cf94a9180bafc61107fe156bca93a7c2",
+  "workload": "quant-agent-workflows",
+  "provenance": "Representative public targets distilled from the anonymized 0.5.2 historical workflow mapping and frozen RC13 Quant readiness workload.",
+  "privacy": "No prompts, private session paths, or uncommitted historical query text are stored.",
+  "summary": {
+    "queries": 11,
+    "passed": 11,
+    "actionable": 11,
+    "pass_rate_pct": 100.0,
+    "actionable_rate_pct": 100.0,
+    "p50_ms": 340.6,
+    "max_ms": 5532.9,
+    "commands": {
+      "context": 3,
+      "find": 4,
+      "review": 2,
+      "trace": 2
+    },
+    "statuses": {
+      "ok": 11
+    }
+  },
+  "cases": [
+    {
+      "id": "discover-service",
+      "category": "navigation",
+      "command": "find",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 559.8,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "discover-reference-store",
+      "category": "navigation",
+      "command": "find",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 116.8,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "discover-concept",
+      "category": "navigation",
+      "command": "find",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 193.7,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "discover-runtime-contract",
+      "category": "navigation",
+      "command": "find",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 156.2,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "service-context",
+      "category": "navigation",
+      "command": "context",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 3189.5,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "store-context",
+      "category": "navigation",
+      "command": "context",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 1052.4,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "cursor-context",
+      "category": "navigation",
+      "command": "context",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 340.6,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "incoming-callers",
+      "category": "navigation",
+      "command": "trace",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 531.7,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "outgoing-callees",
+      "category": "navigation",
+      "command": "trace",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 48.1,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "focused-review",
+      "category": "review",
+      "command": "review",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 184.0,
+      "actionable": true,
+      "passed": true
+    },
+    {
+      "id": "broad-review",
+      "category": "review",
+      "command": "review",
+      "status": "ok",
+      "exit_code": 0,
+      "duration_ms": 5532.9,
+      "actionable": true,
+      "passed": true
+    }
+  ]
+}

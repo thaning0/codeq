@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "top_level_help",
+      "args": ["--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "find_help",
+      "args": ["find", "--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "context_help",
+      "args": ["context", "--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "trace_help",
+      "args": ["trace", "--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "review_help",
+      "args": ["review", "--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "missing_explicit_path_fails_closed",
+      "args": ["context", "missing/module.py:12", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "missing_explicit_path_plain",
+      "args": ["context", "missing/module.py:12", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "unsupported_explicit_language_fails_closed",
+      "args": ["context", "contracts.yaml:1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "unsupported_explicit_language_plain",
+      "args": ["context", "contracts.yaml:1", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "trace_missing_explicit_path_fails_closed",
+      "args": ["trace", "missing/module.py:12", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "trace_unsupported_explicit_language_fails_closed",
+      "args": ["trace", "contracts.yaml:1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "find_missing_explicit_path_fails_closed",
+      "args": ["find", "missing/module.py", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "find_unsupported_explicit_language_fails_closed",
+      "args": ["find", "contracts.yaml", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "find_source_file_redirects_to_context",
+      "args": ["find", "app.py", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "find_source_location_redirects_to_context",
+      "args": ["find", "app.py:1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "trace_source_file_redirects_to_context",
+      "args": ["trace", "app.py", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "invalid_context_section",
+      "args": ["context", "app.Greeter.greet", "--section", "unknown", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "invalid_context_section_plain",
+      "args": ["context", "app.Greeter.greet", "--section", "unknown", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "lexical_section_requires_option",
+      "args": ["context", "app.Greeter.greet", "--section", "lexical-references", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "exact_text_search",
+      "args": ["find", "RUST_PARITY_MARKER", "--mode", "text", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "semantic_python_find",
+      "args": ["find", "Greeter", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "semantic_python_find_plain",
+      "args": ["find", "Greeter", "--limit", "3", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "search_alias_typescript_symbol",
+      "args": ["search", "renderGreeting", "--mode", "symbol", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "concept_file_discovery",
+      "args": ["find", "format greeting", "--mode", "concept", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "concept_file_discovery_plain",
+      "args": ["find", "format greeting", "--mode", "concept", "--limit", "2", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "qualified_python_context",
+      "args": ["context", "app.Greeter.greet", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "qualified_python_context_plain",
+      "args": ["context", "app.Greeter.greet", "--limit", "5", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "python_file_context",
+      "args": ["context", "app.py", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_file_context_plain",
+      "args": ["context", "app.py", "--limit", "5", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "python_file_topology_and_window",
+      "args": ["context", "app.py", "--topology", "--lines", "5", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_cursor_context",
+      "args": ["context", "app.py:15:16", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "incoming_python_trace",
+      "args": ["trace", "app.Greeter.greet", "--in", "--depth", "1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "incoming_python_trace_plain",
+      "args": ["trace", "app.Greeter.greet", "--in", "--depth", "1", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "default_both_python_trace",
+      "args": ["trace", "app.Greeter.greet", "--depth", "1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "qualified_typescript_context",
+      "args": ["context", "web.renderGreeting", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "typescript_cursor_context_with_lines",
+      "args": ["context", "web.ts:6:10", "--lines", "4", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "incoming_typescript_trace",
+      "args": ["trace", "web.formatGreeting", "--in", "--depth", "1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "typescript_file_context",
+      "args": ["context", "web.ts", "--topology", "--lines", "5", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "focused_python_context",
+      "args": ["context", "app.Greeter.greet", "--section", "callers", "--section", "tests", "--limit", "2", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_context_lexical_evidence",
+      "args": ["context", "app.Greeter.greet", "--section", "lexical-references", "--lexical-references", "RUST_PARITY_MARKER", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_dynamic_reference_classification",
+      "args": ["context", "dynamic.dispatch_order", "--section", "possible-dynamic-references", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "typescript_dynamic_reference_classification",
+      "args": ["context", "dispatchEvent", "--section", "possible-dynamic-references", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "working_tree_review",
+      "args": ["review", "--base", "HEAD", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "added_modified_deleted_renamed_review",
+      "args": ["review", "--base", "HEAD", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true,
+      "scenario": "review_statuses"
+    }
+  ]
+}

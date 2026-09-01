@@ -1,0 +1,35 @@
+name: Native release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-24.04
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+          targets: x86_64-unknown-linux-gnu
+      - name: Build locked native executable
+        run: cargo build --locked --release --target "$TARGET"
+      - name: Package artifact and checksum
+        run: |
+          package="codeq-${GITHUB_REF_NAME}-${TARGET}"
+          mkdir "$package"
+          install -m 0755 "target/${TARGET}/release/codeq" "$package/codeq"
+          install -m 0644 README.md "$package/README.md"
+          tar -czf "${package}.tar.gz" "$package"
+          sha256sum "${package}.tar.gz" > "${package}.tar.gz.sha256"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            codeq-*.tar.gz
+            codeq-*.tar.gz.sha256

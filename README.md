@@ -4,7 +4,10 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc12` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+Version 2.0 is a native Rust implementation of the frozen 1.x product contract.
+Its behavioral oracle is `v1.0.0-rc13` at commit
+`56fadc0a3485531da83851fbde69f2dc1126463b`; see the
+[cutover notes](docs/codeq-2.0-rust.md) for compatibility and validation evidence.
 
 ## Why codeq
 
@@ -32,9 +35,9 @@ A language server can answer many of these questions, but driving it directly ta
 
 ### Requirements
 
-`codeq` itself has no Python runtime dependencies. You need:
+The native `codeq` executable has no Python runtime or system SQLite dependency.
+You need:
 
-- Python 3.12+ (with SQLite FTS5 for multi-token discovery)
 - Git
 - ripgrep (`rg`)
 - a language server for the languages you want to analyze semantically
@@ -42,22 +45,19 @@ A language server can answer many of these questions, but driving it directly ta
 For Python, install `basedpyright` (preferred) or `pyright`. For TypeScript/JavaScript, install `typescript-language-server` and TypeScript.
 
 ```bash
-uv tool install basedpyright
 npm install -g typescript typescript-language-server
+npm install -g basedpyright
 ```
 
 ### Install codeq
 
+Download the native `x86_64-unknown-linux-gnu` archive from the GitHub release,
+or build from source with the pinned Rust toolchain:
+
 ```bash
 git clone https://github.com/thaning0/codeq.git
 cd codeq
-uv tool install .
-```
-
-If the uv tool directory is not already on `PATH`:
-
-```bash
-uv tool update-shell
+cargo install --locked --path .
 ```
 
 Verify the installation:
@@ -67,10 +67,10 @@ codeq --version
 codeq --help
 ```
 
-The current release candidate reports:
+Version 2 reports:
 
 ```text
-codeq 1.0.0rc12
+codeq 2.0.0
 ```
 
 ## The workflow
@@ -340,7 +340,8 @@ These behaviors are part of the 1.0 compatibility boundary:
 
 JSON responses use `schema_version: 1`. Query outcomes use exit code `0` for success, `1` for query outcomes such as `not_found`/`ambiguous`, and `2` for CLI/runtime failures.
 
-See [1.0 readiness and compatibility policy](docs/codeq-1.0-readiness.md) for the full frozen contract.
+See the [2.0 cutover notes](docs/codeq-2.0-rust.md) for the frozen contract and
+acceptance evidence.
 
 ## How it works
 
@@ -364,7 +365,7 @@ symbols, and lazily owns one contentless in-memory FTS index per active worktree
 Releasing an inactive workspace closes both its language servers and FTS database.
 Workspaces without a live language server expire after five minutes; workspaces
 retaining an LSP process expire after 30 minutes. Override those limits with
-`CODEQ_WORKSPACE_IDLE_SECONDS` and `CODEQ_LSP_IDLE_SECONDS`. It does **not** maintain
+`CODEQ2_WORKSPACE_IDLE_SECONDS` and `CODEQ2_LSP_IDLE_SECONDS`. It does **not** maintain
 a persistent repository graph, source index, or embedding index.
 
 Concurrent non-text `find` requests for the same worktree are queued so one cold
@@ -378,7 +379,7 @@ of duplicating LSP work. JSON `_meta` reports `queue_ms` separately from
 By default, `codeq` writes no runtime or analysis state into the target repository. On Linux/WSL, daemon discovery uses an **abstract Unix-domain socket** in the kernel namespace rather than a filesystem socket:
 
 ```text
-\0codeq-$UID-p$DAEMON_PROTOCOL_VERSION
+\0codeq-2-$UID-p1
 ```
 
 Because the endpoint is not a file, separate shell sandboxes can reuse one daemon even when their `/tmp` mount namespaces differ. Both client and server validate `SO_PEERCRED` UID; peer PID is treated only as optional liveness evidence because cross-PID-namespace peers can legitimately appear as PID `0`.
@@ -393,34 +394,39 @@ invocations.
 The daemon still needs private scratch space for language servers. Scratch selection is:
 
 ```text
-$XDG_RUNTIME_DIR/codeq when usable
-→ /tmp/codeq-$UID fallback
+$XDG_RUNTIME_DIR/codeq-2 when usable
+→ /tmp/codeq-2-$UID fallback
 ```
 
 That directory is private (`0700`). Language-server children always receive `TMPDIR`, `TEMP`, and `TMP` pointing at `<codeq-runtime>/lsp-tmp`, so host/WSL temporary-directory variables cannot redirect them into a sandbox-read-only Windows path.
 
-Set `CODEQ_RUNTIME_DIR=/some/shared/path` only as an explicit compatibility override. It forces the legacy filesystem socket under that directory and is intended for platforms or sandboxes where the network namespace itself is isolated. If you point it inside a repository, that repository will contain codeq runtime state by explicit user choice rather than by default behavior.
+Set `CODEQ2_RUNTIME_DIR=/some/shared/path` only as an explicit compatibility
+override. It forces a private 2.x filesystem socket under that directory and is
+intended for platforms or sandboxes where the network namespace itself is
+isolated. The 2.x namespace is disjoint from 1.x during upgrades and downgrades.
 
 Persistent daemon logging is **off by default**. Daemon stdout/stderr go to `/dev/null`; opt in only when debugging:
 
 ```bash
-CODEQ_DAEMON_LOG=/tmp/codeq-daemon.log codeq find Foo
+CODEQ2_DAEMON_LOG=/tmp/codeq-daemon.log codeq find Foo
 ```
 
 This keeps the read-only contract focused on the analyzed repository while allowing the ephemeral IPC state required by the daemon.
 
 ## Performance and validation
 
-The release candidate is validated against a large Python/TypeScript monorepo and historical real-agent workflows.
+Version 2 is validated against a large Python/TypeScript monorepo, the frozen
+RC13 black-box oracle, and historical real-agent workflows.
 
-Representative committed results (semantic/context workloads from RC11; FTS5
-discovery refreshed for RC12):
+Representative committed 2.0 results (three cold and warm runs per case):
 
-- warm semantic `context` P95 with expanded test discovery: **1.12 s**
-- warm incoming `trace` P95: **448.4 ms**
-- cold semantic context/trace P95: **< 4.51 s**
-- live-workload-shaped broad review cold P95: **2.10 s**
-- maximum representative semantic/review sample: **4.50 s**
+- warm semantic `context` / incoming `trace` P95: **409.8 / 428.5 ms**
+- cold semantic `context` / incoming `trace` P95: **3.68 / 3.98 s**
+- broad review cold/warm P95: **9.52 / 1.20 s**
+- maximum representative semantic/review sample: **9.52 s**
+- Rust query process / daemon peak RSS: **17.4 / 29.0 MiB**, measured
+  separately from external language-server process trees
+- representative four-command workflow replay: **11 / 11 successful and actionable**
 - historical actionable CRG-call mapping: **93.3%**
 - sampled navigation workflows with unsupported fallback: **0 / 50**
 - anonymized historical concrete query validation: **30 / 30 `ok`**
@@ -429,12 +435,13 @@ These are project-specific benchmark results, not universal latency guarantees.
 
 Details:
 
+- [2.0.0 Quant, workflow, RSS, and readiness acceptance](benchmarks/2.0.0-quant.md)
+- [2.0.0 readiness gate](benchmarks/2.0.0-readiness.md)
 - [RC12 Quant cold/warm and FTS5 benchmark](benchmarks/1.0.0rc12-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
 - [RC11 downstream agent-utility replay and test-evidence baseline](benchmarks/1.0.0rc11-agent-utility.md)
-- [RC7 downstream agent-utility replay](benchmarks/1.0.0rc7-agent-utility.md)
 - [RC12 readiness gate](benchmarks/1.0.0rc12-readiness.md)
-- [Full validation record](VALIDATION.md)
+- [2.0 migration test ledger](docs/test-migration-ledger.md)
 
 ## Boundaries
 
@@ -457,21 +464,20 @@ Dynamic dispatch can still be unknowable statically. Configuration, reflection, 
 ```bash
 git clone https://github.com/thaning0/codeq.git
 cd codeq
-uv sync
-uv run pytest
-uv run python -W error -m unittest discover -s tests
-uv run basedpyright --level error src/codeq tests benchmarks
-uv build
-uv run python benchmarks/readiness_gate.py
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features
+cargo build --locked --release
 ```
 
-The 1.0 RC policy is blocker-only: before stable 1.0, runtime/analysis behavior should change only for silent correctness problems, compatibility-contract regressions, or repeated severe performance/lifecycle failures.
+Run the executable-level readiness and historical workflow gates as described
+in [the 2.0 cutover notes](docs/codeq-2.0-rust.md).
 
 ## Documentation
 
-- [1.0 readiness and compatibility policy](docs/codeq-1.0-readiness.md)
-- [Validation history](VALIDATION.md)
-- [Initial design plan](PLAN.md)
+- [2.0 cutover and daemon compatibility](docs/codeq-2.0-rust.md)
+- [Test migration ledger](docs/test-migration-ledger.md)
+- [Dependency audit](docs/dependency-audit.md)
 - [Benchmarks](benchmarks/)
 
 For usage details, prefer the CLI help because it is tested together with the implementation:

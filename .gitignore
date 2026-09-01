@@ -1,11 +1,3 @@
+/target/
 .venv/
-.vendor/
 __pycache__/
-*.py[cod]
-.pytest_cache/
-.coverage
-htmlcov/
-dist/
-.acceptance*/
-.worktree-smoke.json
-debug_lsp.py

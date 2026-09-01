@@ -1,0 +1,54 @@
+usage: codeq find [-h] [--mode {auto,symbol,concept,text}] [--kind KIND |
+                  --text] [--files-only] [--path PREFIX] [--glob PATTERN]
+                  [--exclude-tests]
+                  QUERY
+
+Find likely code locations before you know an exact target.
+
+Auto mode treats an exact identifier as a symbol search and a query with multiple
+lexical terms as a concept search. Every concept result includes representative
+source lines, matched terms, and a copyable `codeq context` command. Use source
+vocabulary likely to occur in the repository; codeq does not translate queries.
+
+Use `--mode` to select symbol, concept, or exact-text search explicitly. `--text`
+remains a shortcut for `--mode text`. `--path`, `--glob`, and `--exclude-tests`
+scope candidates before the result limit.
+
+positional arguments:
+  QUERY                 Symbol name, qualified-name fragment, short source-
+                        code description, or exact text.
+
+options:
+  -h, --help            show this help message and exit
+  --mode {auto,symbol,concept,text}
+                        Search mode: auto, symbol, concept, or exact text
+                        (default: auto).
+  --kind KIND           Optional symbol result filter, e.g. function, method,
+                        class, interface, test; unsupported for concept and
+                        text search.
+  --text                Shortcut for `--mode text`: exact literal search
+                        across Git-visible text files.
+  --files-only          Concept-search plain output: list ranked files without
+                        representative lines.
+  --path PREFIX         Repository-relative path prefix for symbol, concept,
+                        or text results; repeat for OR matching.
+  --glob PATTERN        Shell-style path glob for symbol, concept, or text
+                        results; repeat for OR matching.
+  --exclude-tests       Exclude test paths from symbol, concept, or text
+                        results and counts.
+
+Examples:
+  codeq find BacktestService
+  codeq find BacktestService --kind class
+  codeq find Candidate --kind class --path packages/research-core
+  codeq find 'architecture guard' --path packages --glob '*.py' --exclude-tests
+  codeq find 'report summary freshness policy evidence' --limit 8
+  codeq find retry --mode concept
+  codeq find 'architecture guard' --files-only
+  codeq find --text 'BACKTEST_QUESTDB_QUERY_TARGET_ROWS' --limit 20
+  codeq find --text '/logs/stream' --path frontend --exclude-tests
+  codeq find --text 'DEPLOYMENTS' --glob '*.py' --glob '*.yaml'
+  codeq find fetchBars --root ~/Quant --json
+
+Typical next step:
+  Take the best definition from `find`, then run `codeq context TARGET`.

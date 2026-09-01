@@ -1,0 +1,119 @@
+{
+  "status": "PASS",
+  "schema_version": 1,
+  "checks": [
+    {
+      "name": "warm_context_p95",
+      "passed": true,
+      "actual": 409.8,
+      "requirement": "<= 3000 ms"
+    },
+    {
+      "name": "warm_trace_p95",
+      "passed": true,
+      "actual": 428.5,
+      "requirement": "<= 3000 ms"
+    },
+    {
+      "name": "cold_context_p95",
+      "passed": true,
+      "actual": 3677.0,
+      "requirement": "<= 5000 ms"
+    },
+    {
+      "name": "cold_trace_p95",
+      "passed": true,
+      "actual": 3975.3,
+      "requirement": "<= 5000 ms"
+    },
+    {
+      "name": "no_10s_semantic_outlier",
+      "passed": true,
+      "actual": 9524.5,
+      "requirement": "< 10000 ms"
+    },
+    {
+      "name": "live_workload_cases",
+      "passed": true,
+      "actual": [
+        "context_reference_store",
+        "review_broad"
+      ],
+      "requirement": "context_reference_store and review_broad in cold and warm samples"
+    },
+    {
+      "name": "workflow_replay_success",
+      "passed": true,
+      "actual": {
+        "pass_rate_pct": 100.0,
+        "queries": 11
+      },
+      "requirement": ">= 10 representative queries and 100% pass"
+    },
+    {
+      "name": "workflow_replay_actionability",
+      "passed": true,
+      "actual": {
+        "actionable_rate_pct": 100.0,
+        "queries": 11
+      },
+      "requirement": "100% of successful replay queries expose command-specific actionable output"
+    },
+    {
+      "name": "four_workflow_commands",
+      "passed": true,
+      "actual": [
+        "find",
+        "context",
+        "trace",
+        "review"
+      ],
+      "requirement": "find, context, trace, and review are represented"
+    },
+    {
+      "name": "historical_sample_size",
+      "passed": true,
+      "actual": 100,
+      "requirement": ">= 100 observed workflows"
+    },
+    {
+      "name": "historical_mapping_coverage",
+      "passed": true,
+      "actual": 93.3,
+      "requirement": ">= 90% direct or approximate mapping coverage"
+    },
+    {
+      "name": "navigation_fallback_free",
+      "passed": true,
+      "actual": {
+        "fallback": 0,
+        "workflows": 50
+      },
+      "requirement": ">= 50 navigation workflows and 0 unsupported fallback"
+    },
+    {
+      "name": "historical_query_validation",
+      "passed": true,
+      "actual": {
+        "ok_rate_pct": 100.0,
+        "queries": 30
+      },
+      "requirement": ">= 30 frozen extracted queries and >= 95% ok"
+    },
+    {
+      "name": "agent_utility_observation",
+      "passed": true,
+      "actual": {
+        "events": 99,
+        "limitations": 7,
+        "paired_outputs": 99,
+        "queries": 153
+      },
+      "requirement": "frozen privacy-preserving observation is complete and retains its non-causal claim boundary"
+    }
+  ],
+  "performance_version": "2.0.0",
+  "workflow_version": "2.0.0",
+  "historical_version": "0.5.2",
+  "agent_utility_parser_version": "2"
+}
