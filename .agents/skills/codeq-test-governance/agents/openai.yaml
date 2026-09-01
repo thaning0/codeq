@@ -1,4 +1,4 @@
 interface:
-  display_name: "Govern codeq Tests"
+  display_name: "codeq Test Governance"
   short_description: "Keep codeq tests durable, focused, and high-signal"
   default_prompt: "Use $codeq-test-governance to decide which verification belongs in permanent tests and review the current test changes."

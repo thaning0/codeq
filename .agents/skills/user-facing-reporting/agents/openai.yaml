@@ -1,4 +1,4 @@
 interface:
   display_name: "User-Facing Reporting"
-  short_description: "Explain technical work in clear user-facing terms"
-  default_prompt: "Use $user-facing-reporting to explain this work clearly from the user point of view."
+  short_description: "Explain work in clear user-facing terms"
+  default_prompt: "Use $user-facing-reporting to explain this work clearly from the user's point of view."
