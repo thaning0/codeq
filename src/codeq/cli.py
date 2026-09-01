@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import DAEMON_PROTOCOL_VERSION, __version__
-from .contracts import CONTEXT_SECTION_VALUES
+from .contracts import CONTEXT_SECTION_VALUES, MAX_LINE_WINDOW_LINES
 from .daemon import SocketEndpoint, default_socket_endpoint
 from .util import git_root
 
@@ -35,6 +35,18 @@ def _nonnegative_int(value: str) -> int:
         raise argparse.ArgumentTypeError("expected an integer") from exc
     if parsed < 0:
         raise argparse.ArgumentTypeError("must be >= 0")
+    return parsed
+
+
+def _line_window_count(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected an integer") from exc
+    if not 1 <= parsed <= MAX_LINE_WINDOW_LINES:
+        raise argparse.ArgumentTypeError(
+            f"must be between 1 and {MAX_LINE_WINDOW_LINES}"
+        )
     return parsed
 
 
@@ -614,6 +626,8 @@ def _render_file_context(data: dict[str, Any], root: str | Path) -> None:
     if not data.get("outline_kind") and not data.get("container"):
         print("  next: use --outline-depth 2, --kind KIND, or --container NAME to disclose more")
 
+    _print_line_window(data.get("line_window"), root)
+
     if not data.get("topology_loaded"):
         print(f"\nTopology: hidden ({data.get('import_count', 0)} direct imports; use --topology to disclose imports/importers)")
         if data.get("lexical_references"):
@@ -631,6 +645,24 @@ def _render_file_context(data: dict[str, Any], root: str | Path) -> None:
 
     meta = data.get("_meta", {})
     print(f"\n[{meta.get('duration_ms','?')} ms]")
+
+
+def _print_line_window(window: Any, root: str | Path) -> None:
+    if not isinstance(window, dict):
+        return
+    path = _display_path(window.get("path", ""), root)
+    start = int(window.get("start_line") or 1)
+    end = int(window.get("end_line") or start - 1)
+    print(f"\nSource window ({path}:{start}-{end})")
+    text = str(window.get("text") or "")
+    print(text if text else "  -")
+    if window.get("payload_truncated"):
+        print("  ... source window truncated by the character budget")
+        recovery = window.get("recovery_command")
+        if recovery:
+            print(f"  next: {recovery}")
+    elif window.get("line_truncated"):
+        print("  ... one or more long source lines were truncated")
 
 
 def _render_context(data: dict[str, Any], root: str | Path) -> None:
@@ -655,13 +687,15 @@ def _render_context(data: dict[str, Any], root: str | Path) -> None:
     if data.get("hover"):
         print("\nHover")
         print(data["hover"].strip())
+    line_window = data.get("line_window")
+    _print_line_window(line_window, root)
     request_snippet = data.get("request_source", {}).get("text")
-    if request_snippet:
+    if request_snippet and not line_window:
         print("\nRequest source")
         print(request_snippet)
     snippet = data.get("source", {}).get("text")
     if snippet:
-        print("\nDefinition source" if request_snippet else "\nSource")
+        print("\nDefinition source" if request_snippet or line_window else "\nSource")
         print(snippet)
     print()
     sections = data.get("section_metadata") or {}
@@ -722,40 +756,66 @@ def _render_trace(data: dict[str, Any], root: str | Path) -> None:
         for index, child in enumerate(children):
             visit(child, next_prefix, index == len(children) - 1, False)
 
-    visit(data["tree"], is_root=True)
-    if data.get("note"):
-        print(f"\nNote: {_display_message(data['note'], root)}")
-    node_count = int(data.get("node_count", 1))
-    node_limit = int(data.get("node_limit", node_count))
-    truncated = bool(data.get("truncated"))
-    if truncated:
-        print(
-            f"\n... emitted call tree is incomplete; traversal reached node_limit={node_limit}."
-        )
-        target = _display_message(data.get("target"), root)
-        direction = data.get("direction")
-        if target and direction in {"in", "out"}:
-            next_limit = max(node_limit + 1, node_limit * 2)
+    def render_branch(branch: dict[str, Any], *, include_duration: bool) -> None:
+        visit(branch["tree"], is_root=True)
+        if branch.get("note"):
+            print(f"\nNote: {_display_message(branch['note'], root)}")
+        node_count = int(branch.get("node_count", 1))
+        node_limit = int(branch.get("node_limit", node_count))
+        truncated = bool(branch.get("truncated"))
+        if truncated:
             print(
-                "next: "
-                + shlex.join(
-                    [
-                        "codeq",
-                        "trace",
-                        target,
-                        f"--{direction}",
-                        "--depth",
-                        str(data.get("depth", 3)),
-                        "--limit",
-                        str(next_limit),
-                    ]
-                )
+                f"\n... emitted call tree is incomplete; traversal reached node_limit={node_limit}."
             )
-    meta = data.get("_meta", {})
-    print(
-        f"\n[{node_count} nodes; depth={data.get('depth')}; node_limit={node_limit}; "
-        f"truncated={str(truncated).lower()}; {meta.get('duration_ms','?')} ms]"
-    )
+            target = _display_message(branch.get("target") or data.get("target"), root)
+            direction = branch.get("direction")
+            if target and direction in {"in", "out"}:
+                next_limit = max(node_limit + 1, node_limit * 2)
+                print(
+                    "next: "
+                    + shlex.join(
+                        [
+                            "codeq",
+                            "trace",
+                            target,
+                            f"--{direction}",
+                            "--depth",
+                            str(branch.get("depth", data.get("depth", 1))),
+                            "--limit",
+                            str(next_limit),
+                        ]
+                    )
+                )
+        duration = (
+            f"; {(branch.get('_meta') or data.get('_meta') or {}).get('duration_ms', '?')} ms"
+            if include_duration
+            else ""
+        )
+        print(
+            f"\n[{node_count} nodes; depth={branch.get('depth', data.get('depth'))}; "
+            f"node_limit={node_limit}; truncated={str(truncated).lower()}{duration}]"
+        )
+
+    if data.get("direction") == "both":
+        traces = data.get("traces") or {}
+        incoming = traces.get("in")
+        outgoing = traces.get("out")
+        if isinstance(incoming, dict):
+            print("Incoming callers")
+            render_branch(incoming, include_duration=False)
+        if isinstance(outgoing, dict):
+            print("\nOutgoing callees")
+            render_branch(outgoing, include_duration=False)
+        if data.get("hint"):
+            print(f"\nHint: {_display_message(data['hint'], root)}")
+        meta = data.get("_meta", {})
+        print(
+            f"\n[both directions; node_limit={data.get('node_limit')} per direction; "
+            f"{meta.get('duration_ms','?')} ms]"
+        )
+        return
+
+    render_branch(data, include_duration=True)
 
 
 def _render_review(data: dict[str, Any], root: str | Path) -> None:
@@ -1026,6 +1086,10 @@ For a symbol or source-position target, context returns:
   Direct tests plus provenance-labelled test candidates
   Possible dynamic callback/registry references when detected
 
+Use --lines N when you also need a raw source window. It begins at the requested
+PATH:LINE, at line 1 for a file target, or at the definition for a symbol target.
+This is explicit opt-in disclosure and remains subject to a hard character cap.
+
 Each bounded evidence section reports whether it is complete, shows exact totals
 when already known, and uses a lower bound when upstream classification is bounded.
 Truncated sections include an exact `increase --limit` recovery hint.
@@ -1062,6 +1126,7 @@ Examples:
   codeq context auto_research_core.application.research_governance
   codeq context research_projection.py
   codeq context backend/src/app/services/backtest_service.py:684
+  codeq context backend/src/app/services/backtest_service.py:684 --lines 120
   codeq context backend/src/app/services/backtest_service.py
   codeq context backend/src/app/services/backtest_service.py --container BacktestService
   codeq context backend/src/app/services/backtest_service.py --kind method --limit 20
@@ -1083,6 +1148,16 @@ more than the direct callers/callees, continue with `codeq trace`.
         "target",
         metavar="TARGET",
         help="Qualified/bare symbol, source file, or location as PATH:LINE[:COLUMN].",
+    )
+    context.add_argument(
+        "--lines",
+        dest="line_window_lines",
+        type=_line_window_count,
+        metavar="N",
+        help=(
+            "Also return up to N raw source lines beginning at the target position "
+            f"(1-{MAX_LINE_WINDOW_LINES}; explicit opt-in; hard character cap applies)."
+        ),
     )
     context.add_argument(
         "--outline-depth",
@@ -1169,22 +1244,24 @@ more than the direct callers/callees, continue with `codeq trace`.
         description="""\
 Follow a semantic call chain from one target.
 
-Direction is explicit:
+Direction is optional. With no direction flag, trace returns both directions and
+suggests --in or --out when one side is enough to reduce output:
   --in   Walk incoming calls: who calls this symbol? Useful for impact radius.
   --out  Walk outgoing calls: what does this symbol call? Useful for execution flow.
 
 Depth counts call edges: depth 0 returns only the root, depth 1 adds direct
-neighbors, depth 2 adds one more hop. Traversal is cycle-protected and repository-
-source bounded; external library nodes are omitted.
+neighbors and is the default, depth 2 adds one more hop. Traversal is cycle-
+protected and repository-source bounded; external library nodes are omitted.
 """,
         epilog="""\
 Examples:
+  codeq trace BacktestService.stream_backtest_logs
   codeq trace BacktestService.stream_backtest_logs --in --depth 2
   codeq trace fetchBars --out --depth 3
   codeq trace fetchBars --in --depth 2 --limit 50 --json
 
-Use --in when asking "what can this change affect?" and --out when asking "what
-happens after this entry point?".
+Omit direction to inspect both directions. Use --in when asking "what can this
+change affect?" and --out when asking "what happens after this entry point?".
 """,
     )
     trace.add_argument(
@@ -1192,7 +1269,7 @@ happens after this entry point?".
         metavar="TARGET",
         help="Qualified/bare symbol or source location as PATH:LINE[:COLUMN].",
     )
-    direction = trace.add_mutually_exclusive_group(required=True)
+    direction = trace.add_mutually_exclusive_group()
     direction.add_argument(
         "--in",
         dest="direction",
@@ -1207,12 +1284,13 @@ happens after this entry point?".
         const="out",
         help="Trace callees/outgoing calls toward lower-level implementation.",
     )
+    trace.set_defaults(direction="both")
     trace.add_argument(
         "--depth",
         type=_nonnegative_int,
-        default=3,
+        default=1,
         metavar="N",
-        help="Maximum call-edge depth; 0=root only, 1=direct neighbors (default: 3; must be >= 0).",
+        help="Maximum call-edge depth; 0=root only, 1=direct neighbors (default: 1; must be >= 0).",
     )
     trace.add_argument(
         "--node-limit",
@@ -1340,6 +1418,7 @@ def main(argv: list[str] | None = None) -> None:
         semantic_paths = [*args.semantic_paths, *([] if lexical_mode else args.paths)]
         payload.update(
             target=args.target,
+            line_window_lines=args.line_window_lines,
             outline_depth=max(0, args.outline_depth),
             outline_kind=args.outline_kind,
             container=args.container,

@@ -45,7 +45,10 @@ New top-level commands are a compatibility break and require explicit evidence f
 ### Multi-hop tracing
 
 - Incoming/outgoing LSP call hierarchy.
-- Explicit depth and node budgets.
+- Both directions by default, with an explicit hint to narrow later calls using
+  `--in` or `--out`; explicit single-direction requests keep their existing shape.
+- Direct callers and callees only by default (`--depth 1`), with explicit depth
+  and node budgets for broader traces.
 - Cycle protection and repository-source filtering.
 
 ### Working-tree / PR review
@@ -127,15 +130,20 @@ timing under `_meta.phase_ms`. Context separates `resolution`, `prewarm`, and
 
 ## Disclosure / token contract
 
-`--limit` remains the single public item-count control. Concept `find --files-only`
-only suppresses plain-output evidence details; it does not change result selection,
-counts, or JSON evidence.
+`--limit` remains the single public item-count control. `context --lines N` is an
+independent, explicit source-window request rather than an item limit: it begins at
+the written location (line 1 for a file, definition line for a symbol) and does not
+replace semantic context. Concept `find --files-only` only suppresses plain-output
+evidence details; it does not change result selection, counts, or JSON evidence.
 
 Internally:
 
 - top-level item lists follow `--limit`;
 - per-symbol nested details are capped at five;
-- hover/source snippets have hard character budgets;
+- default hover/source snippets have hard character budgets;
+- explicit source windows accept 1-1000 lines, cap individual lines at 500
+  returned characters, and cap the whole window at 100,000 characters;
+- truncated source windows expose the next line and a copyable continuation command;
 - exact-text lines are capped at 500 returned characters;
 - complete counts are retained when payload details are truncated;
 - truncation is explicit.

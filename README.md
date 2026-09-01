@@ -95,7 +95,7 @@ Choose a command by question:
 | --- | --- |
 | Where is this code? | `codeq find QUERY` (`codeq search QUERY` is an alias) |
 | What surrounds this symbol/location/file? | `codeq context TARGET` |
-| Who calls it / what does it call across multiple hops? | `codeq trace TARGET --in/--out` |
+| Who calls it / what does it call across multiple hops? | `codeq trace TARGET` (both by default; narrow with `--in` or `--out`) |
 | What does this branch or worktree affect? | `codeq review --base REF` |
 
 ## Commands
@@ -161,6 +161,7 @@ codeq context auto_research_core.application.research_governance
 codeq context validate_discovery_plan --path packages/research-core/src
 codeq context research_projection.py
 codeq context src/api/orders.py:84
+codeq context src/api/orders.py:84 --lines 120
 codeq context src/api/orders.py:84:21
 ```
 
@@ -183,6 +184,14 @@ and possible dynamic callback/registry evidence. Every bounded evidence array ha
 matching `section_metadata` entry with returned count, exact total when known, lower
 bound, and truncation state. Plain output renders exact totals as `showing X of Y`
 and explicitly marks lower-bound-only totals as `showing X+`.
+
+`--lines N` explicitly adds a raw source window without replacing the semantic
+result. A `PATH:LINE` or `PATH:LINE:COLUMN` window begins at the requested line; a
+file target begins at line 1; and a symbolic target begins at its definition. JSON
+returns the window under `line_window`, including requested/returned counts,
+truncation state, and a copyable continuation command when the 100,000-character
+budget is reached. `N` must be between 1 and 1000; individual lines remain capped
+at 500 returned characters. Without `--lines`, existing compact output is unchanged.
 
 Test evidence keeps its provenance instead of presenting every candidate as direct
 coverage. Direct language-server references remain first, followed by separately
@@ -243,14 +252,19 @@ codeq context OrderService.stream_logs \
 ### `trace` — follow a call hierarchy
 
 ```bash
+codeq trace RetryPolicy.should_retry
 codeq trace RetryPolicy.should_retry --in --depth 2
 codeq trace OrderService.submit --out --depth 3
 ```
 
+- With no direction flag, `trace` returns both incoming and outgoing trees and
+  explicitly suggests `--in` or `--out` when one side is enough.
 - `--in` walks toward callers and entry points.
 - `--out` walks toward callees and implementation.
+- Omitting `--depth` returns direct callers and callees only (`--depth 1`).
 - `--depth 0` returns the root only.
-- `--limit N` is a hard cap on emitted nodes; `--node-limit N` remains as a backward-compatible alias.
+- `--limit N` is a hard cap on emitted nodes per direction; `--node-limit N`
+  remains as a backward-compatible alias.
 
 Traversal is cycle-protected and restricted to repository source.
 

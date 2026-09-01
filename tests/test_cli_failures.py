@@ -140,6 +140,113 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(captured["depth"], 0)
         self.assertEqual(json.loads(stdout.getvalue())["depth"], 0)
 
+    def test_trace_without_direction_requests_both_and_returns_json_hint(self) -> None:
+        captured: dict[str, object] = {}
+        hint = "Use --in for callers or --out for callees to trace one direction and reduce output."
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            root = {"name": "run", "path": "/repo/foo.py", "line": 1}
+            branch = {
+                "depth": 1,
+                "node_count": 1,
+                "node_limit": 100,
+                "truncated": False,
+                "root": root,
+                "tree": {"node": root, "children": []},
+            }
+            return {
+                "status": "ok",
+                "target": "Foo.run",
+                "direction": "both",
+                "depth": 1,
+                "node_limit": 100,
+                "root": root,
+                "traces": {
+                    "in": {**branch, "direction": "in"},
+                    "out": {**branch, "direction": "out"},
+                },
+                "hint": hint,
+            }
+
+        stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(stdout),
+        ):
+            main(["trace", "Foo.run", "--json"])
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(captured["direction"], "both")
+        self.assertEqual(captured["depth"], 1)
+        self.assertEqual(set(payload["traces"]), {"in", "out"})
+        self.assertIn("--in", payload["hint"])
+        self.assertIn("--out", payload["hint"])
+
+    def test_trace_plain_both_labels_directions_and_guides_refinement(self) -> None:
+        root = {"name": "run", "path": "/repo/foo.py", "line": 1}
+        result = {
+            "status": "ok",
+            "target": "Foo.run",
+            "direction": "both",
+            "depth": 2,
+            "node_limit": 5,
+            "root": root,
+            "traces": {
+                "in": {
+                    "direction": "in",
+                    "depth": 2,
+                    "node_count": 2,
+                    "node_limit": 5,
+                    "truncated": False,
+                    "root": root,
+                    "tree": {
+                        "node": root,
+                        "children": [
+                            {
+                                "node": {"name": "caller", "path": "/repo/caller.py", "line": 2},
+                                "children": [],
+                            }
+                        ],
+                    },
+                },
+                "out": {
+                    "direction": "out",
+                    "depth": 2,
+                    "node_count": 2,
+                    "node_limit": 5,
+                    "truncated": False,
+                    "root": root,
+                    "tree": {
+                        "node": root,
+                        "children": [
+                            {
+                                "node": {"name": "callee", "path": "/repo/callee.py", "line": 3},
+                                "children": [],
+                            }
+                        ],
+                    },
+                },
+            },
+            "hint": "Use --in for callers or --out for callees to trace one direction and reduce output.",
+            "_meta": {"duration_ms": 4.5},
+        }
+        stdout = io.StringIO()
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", return_value=result),
+            redirect_stdout(stdout),
+        ):
+            main(["trace", "Foo.run"])
+        output = stdout.getvalue()
+        self.assertIn("Incoming callers", output)
+        self.assertIn("Outgoing callees", output)
+        self.assertIn("caller  caller.py:2", output)
+        self.assertIn("callee  callee.py:3", output)
+        self.assertIn("Hint:", output)
+        self.assertIn("--in", output)
+        self.assertIn("--out", output)
+
     def test_trace_plain_complete_reports_limit_and_completion(self) -> None:
         result = {
             "status": "ok",
@@ -383,6 +490,21 @@ class CliFailureContractTests(unittest.TestCase):
         self.assertEqual(captured["semantic_paths"], [])
         self.assertEqual(captured["lexical_globs"], ["*.ts"])
         self.assertTrue(captured["lexical_exclude_tests"])
+
+    def test_context_lines_reaches_request_payload(self) -> None:
+        captured: dict[str, object] = {}
+
+        def request(payload: dict[str, object], timeout: float) -> dict[str, object]:
+            captured.update(payload)
+            return {"status": "ok"}
+
+        with (
+            patch("codeq.cli.git_root", return_value="/repo"),
+            patch("codeq.cli._request", side_effect=request),
+            redirect_stdout(io.StringIO()),
+        ):
+            main(["context", "src/trial.py:55", "--lines", "120", "--json"])
+        self.assertEqual(captured["line_window_lines"], 120)
 
     def test_find_semantic_scope_reaches_request_payload(self) -> None:
         captured: dict[str, object] = {}

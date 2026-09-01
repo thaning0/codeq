@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any
 
 SCHEMA_VERSION = 1
+MAX_LINE_WINDOW_LINES = 1000
+MAX_LINE_WINDOW_CHARS = 100_000
 
 STATUS_VALUES = frozenset(
     {

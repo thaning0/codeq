@@ -64,7 +64,7 @@ class _FakeWorkspace:
             "exclude_tests_seen": exclude_tests,
         }
 
-    def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100):
+    def trace(self, target: str, direction: str, depth: int = 1, limit: int = 100):
         return {"status": "ok", "target": target, "direction": direction, "depth": depth, "node_count": 1, "node_limit": limit, "tree": {}, "root": {}}
 
     def context(
@@ -72,6 +72,7 @@ class _FakeWorkspace:
         target: str,
         limit: int = 20,
         *,
+        line_window_lines: int | None = None,
         outline_depth: int = 1,
         outline_kind: str | None = None,
         container: str | None = None,
@@ -87,6 +88,7 @@ class _FakeWorkspace:
         return {
             "status": "ok",
             "target": target,
+            "line_window_lines_seen": line_window_lines,
             "_phase_ms": {
                 "resolution": 1.24,
                 "prewarm": 2.26,
@@ -251,6 +253,17 @@ class ServiceLifecycleTests(unittest.TestCase):
             })
             self.assertEqual(result["depth"], 0)
 
+    def test_trace_without_direction_or_depth_defaults_to_both_at_depth_one(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            result = service.handle({
+                "command": "trace",
+                "root": tmp,
+                "target": "Foo.run",
+            })
+            self.assertEqual(result["direction"], "both")
+            self.assertEqual(result["depth"], 1)
+
     def test_negative_trace_depth_is_rejected_by_service(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
             service = CodeqService()
@@ -268,6 +281,17 @@ class ServiceLifecycleTests(unittest.TestCase):
             service = CodeqService()
             result = service.handle({"command": "review", "root": tmp, "base": "main", "merge_base": True})
             self.assertTrue(result["merge_base_seen"])
+
+    def test_context_line_window_reaches_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):
+            service = CodeqService()
+            result = service.handle({
+                "command": "context",
+                "root": tmp,
+                "target": "Service.run",
+                "line_window_lines": 120,
+            })
+            self.assertEqual(result["line_window_lines_seen"], 120)
 
     def test_workspace_phase_timings_are_promoted_to_json_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch("codeq.service.Workspace", _FakeWorkspace):

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
 
+from codeq.contracts import MAX_LINE_WINDOW_CHARS
 from codeq.workspace import Workspace
 
 
@@ -80,6 +81,43 @@ class FileContextDisclosureTests(unittest.TestCase):
             self.assertEqual([item["name"] for item in result["outline"]], ["Service", "helper"])
             self.assertFalse(result["outline_truncated"])
             self.assertFalse(result["topology_loaded"])
+
+    def test_lines_adds_a_source_window_to_a_file_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sample.py"
+            source.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+            workspace = self._workspace(root)
+            with (
+                patch("codeq.workspace.extract_imports", return_value=[]),
+                patch("codeq.workspace.importer_candidate_hits", return_value=[]),
+            ):
+                result = workspace.context(str(source), line_window_lines=3)
+            self.assertEqual(result["line_window"]["start_line"], 1)
+            self.assertEqual(result["line_window"]["end_line"], 3)
+            self.assertEqual(result["line_window"]["returned_line_count"], 3)
+            self.assertNotIn("four", result["line_window"]["text"])
+
+    def test_line_window_character_cap_returns_a_copyable_continuation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sample.py"
+            source.write_text(("x" * 600 + "\n") * 250, encoding="utf-8")
+            workspace = self._workspace(root)
+            with (
+                patch("codeq.workspace.extract_imports", return_value=[]),
+                patch("codeq.workspace.importer_candidate_hits", return_value=[]),
+            ):
+                result = workspace.context(str(source), line_window_lines=250)
+            window = result["line_window"]
+            self.assertTrue(window["payload_truncated"])
+            self.assertLessEqual(len(window["text"]), MAX_LINE_WINDOW_CHARS)
+            self.assertEqual(window["next_line"], window["end_line"] + 1)
+            remaining = 250 - window["returned_line_count"]
+            self.assertEqual(
+                window["recovery_command"],
+                f"codeq context sample.py:{window['next_line']} --lines {remaining}",
+            )
 
     def test_file_context_can_expand_container_or_filter_kind(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

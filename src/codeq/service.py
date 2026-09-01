@@ -141,6 +141,11 @@ class CodeqService:
                 data = ws.context(
                     str(request.get("target") or ""),
                     limit=limit,
+                    line_window_lines=(
+                        int(request["line_window_lines"])
+                        if request.get("line_window_lines") is not None
+                        else None
+                    ),
                     outline_depth=max(0, int(request.get("outline_depth") or 1)),
                     outline_kind=str(request.get("outline_kind") or "") or None,
                     container=str(request.get("container") or "") or None,
@@ -157,12 +162,12 @@ class CodeqService:
                 )
             elif command == "trace":
                 raw_depth = request.get("depth")
-                depth = 3 if raw_depth is None else int(raw_depth)
+                depth = 1 if raw_depth is None else int(raw_depth)
                 if depth < 0:
                     raise ValueError("trace depth must be >= 0")
                 data = ws.trace(
                     str(request.get("target") or ""),
-                    direction=str(request.get("direction") or "in"),
+                    direction=str(request.get("direction") or "both"),
                     depth=depth,
                     limit=max(1, int(request.get("node_limit") or 100)),
                 )

@@ -239,6 +239,72 @@ def source_snippet(
     }
 
 
+def source_window(
+    path: str | Path,
+    start_line: int,
+    line_count: int,
+    *,
+    max_chars: int,
+    max_line_chars: int,
+) -> dict[str, Any]:
+    """Return complete numbered lines beginning at an explicit source position."""
+    p = Path(path)
+    start = max(1, int(start_line))
+    requested_count = max(1, int(line_count))
+    requested_end = start + requested_count - 1
+    try:
+        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return {
+            "start_line": start,
+            "end_line": start - 1,
+            "requested_line_count": requested_count,
+            "returned_line_count": 0,
+            "text": "",
+            "line_truncated": False,
+            "payload_truncated": False,
+            "truncated": False,
+            "next_line": None,
+        }
+
+    available_end = min(len(lines), requested_end)
+    rendered: list[str] = []
+    line_truncated = False
+    payload_truncated = False
+    next_line: int | None = None
+    end_line = start - 1
+    rendered_chars = 0
+    for index in range(start, available_end + 1):
+        content = lines[index - 1]
+        current_line_truncated = False
+        if len(content) > max_line_chars:
+            keep = max(0, max_line_chars - 3)
+            content = content[:keep] + ("..." if max_line_chars >= 3 else "")
+            current_line_truncated = True
+        numbered_line = f"{index:>5}  {content}"
+        separator_chars = 1 if rendered else 0
+        if rendered_chars + separator_chars + len(numbered_line) > max_chars:
+            payload_truncated = True
+            next_line = index
+            break
+        rendered.append(numbered_line)
+        rendered_chars += separator_chars + len(numbered_line)
+        line_truncated = line_truncated or current_line_truncated
+        end_line = index
+
+    return {
+        "start_line": start,
+        "end_line": end_line,
+        "requested_line_count": requested_count,
+        "returned_line_count": len(rendered),
+        "text": "\n".join(rendered),
+        "line_truncated": line_truncated,
+        "payload_truncated": payload_truncated,
+        "truncated": line_truncated or payload_truncated,
+        "next_line": next_line,
+    }
+
+
 def guess_symbol_column(path: str | Path, line: int, preferred: str | None = None) -> int:
     try:
         text = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()[line - 1]

@@ -21,6 +21,8 @@ from .contracts import (
     EVIDENCE_CURRENT_SEMANTIC,
     EVIDENCE_LEXICAL,
     EVIDENCE_SEMANTIC,
+    MAX_LINE_WINDOW_CHARS,
+    MAX_LINE_WINDOW_LINES,
     QueryBudget,
     TEST_EVIDENCE_DIRECT_REFERENCE,
     TEST_EVIDENCE_EXACT_LEXICAL,
@@ -61,8 +63,14 @@ from .util import (
     path_to_uri,
     path_target_intent,
     source_snippet,
+    source_window,
     symbol_kind,
     uri_to_path,
+)
+
+
+_TRACE_DIRECTION_HINT = (
+    "Use --in for callers or --out for callees to trace one direction and reduce output."
 )
 
 
@@ -575,6 +583,41 @@ class Workspace:
         except ValueError:
             rendered_path = str(resolved)
         return shlex.join(["codeq", "context", rendered_path, *options])
+
+    def _attach_line_window(
+        self,
+        data: dict[str, Any],
+        path: str | Path,
+        start_line: int,
+        line_count: int,
+    ) -> None:
+        resolved = Path(path).resolve()
+        window = source_window(
+            resolved,
+            start_line,
+            line_count,
+            max_chars=MAX_LINE_WINDOW_CHARS,
+            max_line_chars=QueryBudget.from_limit(1).text_line_chars,
+        )
+        window["path"] = str(resolved)
+        next_line = window.get("next_line")
+        if window.get("payload_truncated") and isinstance(next_line, int):
+            returned = int(window.get("returned_line_count") or 0)
+            remaining = max(1, line_count - returned)
+            try:
+                rendered_path = resolved.relative_to(self.root).as_posix()
+            except ValueError:
+                rendered_path = str(resolved)
+            window["recovery_command"] = shlex.join(
+                [
+                    "codeq",
+                    "context",
+                    f"{rendered_path}:{next_line}",
+                    "--lines",
+                    str(remaining),
+                ]
+            )
+        data["line_window"] = window
 
     def _with_selection_commands(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [
@@ -2259,6 +2302,7 @@ class Workspace:
         target: str,
         limit: int = 20,
         *,
+        line_window_lines: int | None = None,
         outline_depth: int = 1,
         outline_kind: str | None = None,
         container: str | None = None,
@@ -2292,6 +2336,17 @@ class Workspace:
                 else 0.0,
             }
             return data
+
+        if line_window_lines is not None and not 1 <= line_window_lines <= MAX_LINE_WINDOW_LINES:
+            resolution_finished = time.perf_counter()
+            return with_phase_timing(
+                {
+                    "status": "invalid_query",
+                    "target": target,
+                    "reason": f"--lines must be between 1 and {MAX_LINE_WINDOW_LINES}",
+                },
+                resolution_finished=resolution_finished,
+            )
 
         requested_sections = tuple(
             dict.fromkeys(value.strip() for value in selected_sections if value.strip())
@@ -2374,6 +2429,8 @@ class Workspace:
                 container=container,
                 include_topology=include_topology,
             )
+            if data.get("status") == "ok" and line_window_lines is not None:
+                self._attach_line_window(data, file_target, 1, line_window_lines)
             if data.get("status") == "ok" and lexical_references:
                 data["lexical_references"] = git_text_search(
                     self.root,
@@ -2413,6 +2470,8 @@ class Workspace:
                 container=container,
                 include_topology=include_topology,
             )
+            if data.get("status") == "ok" and line_window_lines is not None:
+                self._attach_line_window(data, module_candidates[0], 1, line_window_lines)
             if data.get("status") == "ok" and lexical_references:
                 data["lexical_references"] = git_text_search(
                     self.root,
@@ -2637,6 +2696,14 @@ class Workspace:
                 data["definition_note"] = resolved["definition_note"]
             if resolved.get("cursor_definition_count"):
                 data["cursor_definition_count"] = int(resolved["cursor_definition_count"])
+        if line_window_lines is not None:
+            anchor = requested_location if isinstance(requested_location, dict) else symbol
+            self._attach_line_window(
+                data,
+                str(anchor.get("path") or path),
+                int(anchor.get("line") or line),
+                line_window_lines,
+            )
         if request_source is not None:
             data["request_source"] = request_source
         if lexical_data is not None:
@@ -2650,14 +2717,16 @@ class Workspace:
             neighborhood_started=prewarm_finished,
         )
 
-    def trace(self, target: str, direction: str, depth: int = 3, limit: int = 100) -> dict[str, Any]:
+    def trace(self, target: str, direction: str, depth: int = 1, limit: int = 100) -> dict[str, Any]:
+        if direction not in {"in", "out", "both"}:
+            raise ValueError("trace direction must be in, out, or both")
         resolved = self.resolve(target)
         if resolved["status"] != "ok":
             return resolved
         symbol = resolved["symbol"]
         try:
             session, project, path, line, column = self._session_and_position(symbol)
-            if direction == "in":
+            if direction in {"in", "both"}:
                 self._prewarm_symbol(
                     project,
                     session,
@@ -2669,63 +2738,106 @@ class Workspace:
             return {"status": "error", "target": target, "error": str(exc), "symbol": symbol}
         limit = max(1, limit)
         roots = session.prepare_call_hierarchy(path, line, column)
-        if not roots:
+
+        def empty_branch(branch_direction: str) -> dict[str, Any]:
             return {
-                "status": "ok", "evidence": EVIDENCE_SEMANTIC, "target": target, "direction": direction, "depth": depth,
-                "root": symbol, "tree": {"node": symbol, "children": []}, "node_count": 1,
-                "node_limit": limit, "truncated": False,
+                "target": target,
+                "direction": branch_direction,
+                "depth": depth,
+                "root": symbol,
+                "tree": {"node": symbol, "children": []},
+                "node_count": 1,
+                "node_limit": limit,
+                "truncated": False,
                 "note": "language server returned no call hierarchy for this position",
             }
-        root_item = roots[0]
-        seen: set[tuple[str, int, str]] = set()
-        count = 0
-        truncated = False
-        def walk(item: dict[str, Any], remaining: int) -> dict[str, Any] | None:
-            nonlocal count, truncated
-            if count >= limit:
-                truncated = True
-                return None
-            entry = _call_item_entry(item)
-            key = (entry["path"], entry["line"], entry["name"])
-            cycle = key in seen
-            count += 1
-            node: dict[str, Any] = {"node": entry, "children": []}
-            if cycle:
-                node["cycle"] = True
-                return node
-            seen.add(key)
-            if remaining <= 0:
-                return node
-            raw = session.incoming_calls(item) if direction == "in" else session.outgoing_calls(item)
-            edge_key = "from" if direction == "in" else "to"
-            for edge in raw:
-                child = edge.get(edge_key)
-                if not isinstance(child, dict):
-                    continue
-                child_entry = _call_item_entry(child)
-                if not self._is_repo_path(child_entry["path"]):
-                    continue
+
+        def build_branch(root_item: dict[str, Any], branch_direction: str) -> dict[str, Any]:
+            seen: set[tuple[str, int, str]] = set()
+            count = 0
+            truncated = False
+
+            def walk(item: dict[str, Any], remaining: int) -> dict[str, Any] | None:
+                nonlocal count, truncated
                 if count >= limit:
                     truncated = True
-                    break
-                child_node = walk(child, remaining - 1)
-                if child_node is not None:
-                    node["children"].append(child_node)
-            return node
+                    return None
+                entry = _call_item_entry(item)
+                key = (entry["path"], entry["line"], entry["name"])
+                cycle = key in seen
+                count += 1
+                node: dict[str, Any] = {"node": entry, "children": []}
+                if cycle:
+                    node["cycle"] = True
+                    return node
+                seen.add(key)
+                if remaining <= 0:
+                    return node
+                raw = (
+                    session.incoming_calls(item)
+                    if branch_direction == "in"
+                    else session.outgoing_calls(item)
+                )
+                edge_key = "from" if branch_direction == "in" else "to"
+                for edge in raw:
+                    child = edge.get(edge_key)
+                    if not isinstance(child, dict):
+                        continue
+                    child_entry = _call_item_entry(child)
+                    if not self._is_repo_path(child_entry["path"]):
+                        continue
+                    if count >= limit:
+                        truncated = True
+                        break
+                    child_node = walk(child, remaining - 1)
+                    if child_node is not None:
+                        node["children"].append(child_node)
+                return node
 
-        tree = walk(root_item, max(0, depth))
-        assert tree is not None
+            tree = walk(root_item, max(0, depth))
+            assert tree is not None
+            return {
+                "target": target,
+                "direction": branch_direction,
+                "depth": depth,
+                "node_count": count,
+                "node_limit": limit,
+                "truncated": truncated,
+                "root": _call_item_entry(root_item),
+                "tree": tree,
+            }
+
+        def finish(branch: dict[str, Any]) -> dict[str, Any]:
+            return {"status": "ok", "evidence": EVIDENCE_SEMANTIC, **branch}
+
+        if not roots:
+            if direction != "both":
+                return finish(empty_branch(direction))
+            traces = {
+                "in": empty_branch("in"),
+                "out": empty_branch("out"),
+            }
+        else:
+            root_item = roots[0]
+            if direction != "both":
+                return finish(build_branch(root_item, direction))
+            traces = {
+                "in": build_branch(root_item, "in"),
+                "out": build_branch(root_item, "out"),
+            }
+
         return {
             "status": "ok",
             "evidence": EVIDENCE_SEMANTIC,
             "target": target,
-            "direction": direction,
+            "direction": "both",
             "depth": depth,
-            "node_count": count,
+            "node_count": sum(int(branch["node_count"]) for branch in traces.values()),
             "node_limit": limit,
-            "truncated": truncated,
-            "root": _call_item_entry(root_item),
-            "tree": tree,
+            "truncated": any(bool(branch["truncated"]) for branch in traces.values()),
+            "root": traces["in"]["root"],
+            "traces": traces,
+            "hint": _TRACE_DIRECTION_HINT,
         }
 
     def _changed_symbols_for_file(self, path: Path, ranges: list[dict[str, int]]) -> list[dict[str, Any]]:
