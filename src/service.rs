@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::path::PathBuf;
@@ -7,13 +8,14 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 use std::time::Instant;
 
-use serde::Serialize;
 use serde_json::Value;
 
 use crate::boundary;
 use crate::cli::{Cli, Command, FindMode};
+use crate::concept;
 use crate::contracts::{SCHEMA_VERSION, Status};
-use crate::runtime;
+use crate::gitreview;
+use crate::semantic;
 use crate::textsearch;
 use crate::workspace::Workspace;
 
@@ -63,8 +65,7 @@ impl DaemonService {
     pub fn query(&self, cli: &Cli) -> Result<Value, String> {
         let root = cli.root.clone();
         let lease = self.acquire(&root, query_timeout(cli.timeout))?;
-        let _workspace = &lease.runtime;
-        Ok(execute(cli, &root, "daemon").data)
+        Ok(execute_with_workspace(cli, &root, "daemon", &lease.runtime).data)
     }
 
     pub fn status(&self) -> Value {
@@ -234,24 +235,6 @@ fn query_timeout(seconds: f64) -> Duration {
     Duration::from_secs_f64(seconds)
 }
 
-#[derive(Serialize)]
-struct DevelopmentMeta {
-    implementation: &'static str,
-    runtime: runtime::RuntimeIdentity,
-    request: Value,
-    transport: &'static str,
-}
-
-#[derive(Serialize)]
-struct UnavailableResponse {
-    status: Status,
-    command: &'static str,
-    reason: &'static str,
-    #[serde(rename = "_meta")]
-    meta: DevelopmentMeta,
-    schema_version: u8,
-}
-
 pub fn execute(cli: &Cli, root: &Path, transport: &'static str) -> QueryResult {
     let started = Instant::now();
     if let Some(failure) = boundary::evaluate(
@@ -273,25 +256,139 @@ pub fn execute(cli: &Cli, root: &Path, transport: &'static str) -> QueryResult {
     {
         return execute_text_search(cli, arguments, root, transport, started);
     }
+    let scratch =
+        std::env::temp_dir().join(format!("codeq-2.0-rust-dev-oneshot-{}", std::process::id()));
+    let workspace = Workspace::new(root, scratch.clone(), query_timeout(cli.timeout));
+    let result = execute_with_workspace(cli, root, transport, &workspace);
+    workspace.close();
+    let _ = fs::remove_dir_all(scratch);
+    result
+}
 
-    let reason = "the Rust semantic runtime is not implemented yet on the 2.0 development branch";
-    let response = UnavailableResponse {
-        status: Status::Unavailable,
-        command: cli.command.name(),
-        reason,
-        meta: DevelopmentMeta {
-            implementation: "rust",
-            runtime: runtime::identity(),
-            request: serde_json::to_value(&cli.command)
-                .expect("CLI request serialization must succeed"),
-            transport,
-        },
-        schema_version: SCHEMA_VERSION,
+fn execute_with_workspace(
+    cli: &Cli,
+    root: &Path,
+    transport: &'static str,
+    workspace: &Workspace,
+) -> QueryResult {
+    let started = Instant::now();
+    if let Some(failure) = boundary::evaluate(cli, root, 0.0, transport) {
+        return QueryResult {
+            data: serde_json::to_value(&failure.response)
+                .expect("boundary response serialization must succeed"),
+            status: failure.status,
+            plain: failure.plain,
+        };
+    }
+    if let Command::Find(arguments) = &cli.command
+        && (arguments.text || arguments.mode == FindMode::Text)
+    {
+        return execute_text_search(cli, arguments, root, transport, started);
+    }
+
+    let sessions_before = workspace.session_stats();
+    let metrics_before = workspace.metrics();
+    let execution_started = Instant::now();
+    let produced = match &cli.command {
+        Command::Context(arguments) => semantic::context(workspace, arguments, cli.limit),
+        Command::Trace(arguments) => semantic::trace(workspace, arguments, cli.limit),
+        Command::Find(arguments)
+            if arguments.mode == FindMode::Concept
+                || (arguments.mode == FindMode::Auto
+                    && concept::has_multiple_terms(&arguments.query)) =>
+        {
+            concept::search(root, arguments, cli.limit)
+        }
+        Command::Review(arguments) => gitreview::review(workspace, arguments, cli.limit),
+        Command::Find(_) => Err(format!(
+            "the Rust {} workflow is not implemented yet on the 2.0 development branch",
+            cli.command.name()
+        )),
     };
+    let mut data = produced.unwrap_or_else(|error| {
+        serde_json::json!({
+            "status": "error",
+            "target": cli.command.target(),
+            "error": error,
+        })
+    });
+    let phase_ms = data
+        .as_object_mut()
+        .and_then(|object| object.remove("_phase_ms"));
+    let sessions = workspace.session_stats();
+    let metrics = workspace.metrics();
+    let mut meta = serde_json::json!({
+        "root": workspace.root(),
+        "duration_ms": started.elapsed().as_secs_f64() * 1000.0,
+        "queue_ms": 0.0,
+        "execution_ms": execution_started.elapsed().as_secs_f64() * 1000.0,
+        "lsp_sessions_before": sessions_before,
+        "lsp_sessions": sessions,
+        "lsp_started": metrics.sessions_started > metrics_before.sessions_started,
+        "lsp_request_count": metrics.lsp_request_count.saturating_sub(metrics_before.lsp_request_count),
+        "prewarm_files": metrics.prewarm_files.saturating_sub(metrics_before.prewarm_files),
+        "prewarm_probes": metrics.prewarm_probes.saturating_sub(metrics_before.prewarm_probes),
+        "prewarm_early_stops": metrics.prewarm_early_stops.saturating_sub(metrics_before.prewarm_early_stops),
+        "cache": {
+            "document_symbols_hit": metrics.document_symbols_hit.saturating_sub(metrics_before.document_symbols_hit),
+            "document_symbols_miss": metrics.document_symbols_miss.saturating_sub(metrics_before.document_symbols_miss),
+            "document_symbols_waited": metrics.document_symbols_waited.saturating_sub(metrics_before.document_symbols_waited),
+            "document_symbols_evicted": metrics.document_symbols_evicted.saturating_sub(metrics_before.document_symbols_evicted),
+            "document_symbol_entries": metrics.document_symbol_entries,
+        },
+        "transport": transport,
+    });
+    if let Some(phase_ms) = phase_ms {
+        meta["phase_ms"] = phase_ms;
+    }
+    data["_meta"] = meta;
+    data["schema_version"] = Value::from(SCHEMA_VERSION);
+    let status = data
+        .get("status")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or(Status::Error);
+    let plain = render_semantic(&data, cli.command.name());
     QueryResult {
-        data: serde_json::to_value(response).expect("response serialization must succeed"),
-        status: Status::Unavailable,
-        plain: format!("codeq: {reason}"),
+        data,
+        status,
+        plain,
+    }
+}
+
+fn render_semantic(data: &Value, command: &str) -> String {
+    if data.get("status").and_then(Value::as_str) != Some("ok") {
+        return data
+            .get("reason")
+            .or_else(|| data.get("error"))
+            .and_then(Value::as_str)
+            .unwrap_or("query failed")
+            .to_owned();
+    }
+    match command {
+        "context" => {
+            let symbol = data.get("symbol").unwrap_or(&Value::Null);
+            format!(
+                "{} {}\n{}:{}:{}",
+                symbol
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Symbol"),
+                symbol.get("name").and_then(Value::as_str).unwrap_or(""),
+                symbol.get("path").and_then(Value::as_str).unwrap_or(""),
+                symbol.get("line").and_then(Value::as_u64).unwrap_or(1),
+                symbol.get("column").and_then(Value::as_u64).unwrap_or(1),
+            )
+        }
+        "trace" => format!(
+            "Trace {} ({}, {} nodes)",
+            data.get("target").and_then(Value::as_str).unwrap_or(""),
+            data.get("direction")
+                .and_then(Value::as_str)
+                .unwrap_or("both"),
+            data.get("node_count").and_then(Value::as_u64).unwrap_or(0),
+        ),
+        _ => "ok".to_owned(),
     }
 }
 

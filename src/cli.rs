@@ -126,6 +126,15 @@ impl Cli {
         }
         Ok(())
     }
+
+    pub fn apply_compatibility_aliases(&mut self, arguments: &[OsString]) {
+        if let Command::Trace(trace) = &mut self.command
+            && argument_was_supplied(arguments, "--limit")
+            && !argument_was_supplied(arguments, "--node-limit")
+        {
+            trace.node_limit = self.limit;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]

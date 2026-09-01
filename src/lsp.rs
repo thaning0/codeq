@@ -203,6 +203,10 @@ impl LspProcess {
         lock(&self.child).id()
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn is_alive(&self) -> bool {
         lock(&self.child)
             .try_wait()

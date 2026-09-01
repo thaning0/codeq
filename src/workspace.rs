@@ -103,8 +103,12 @@ struct DocumentRegistry {
     misses: u64,
     waited: u64,
     evicted: u64,
+    prewarm_files: u64,
+    prewarm_probes: u64,
+    prewarm_early_stops: u64,
     cache: HashMap<PathBuf, DocumentEntry>,
     flights: HashSet<(PathBuf, FileMarker)>,
+    prewarmed: HashSet<(PathBuf, String, u64)>,
 }
 
 pub(crate) struct Workspace {
@@ -117,6 +121,20 @@ pub(crate) struct Workspace {
     documents: Mutex<DocumentRegistry>,
     document_changed: Condvar,
     locator: ServerLocator,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct WorkspaceMetrics {
+    pub(crate) sessions_started: u64,
+    pub(crate) lsp_request_count: u64,
+    pub(crate) document_symbols_hit: u64,
+    pub(crate) document_symbols_miss: u64,
+    pub(crate) document_symbols_waited: u64,
+    pub(crate) document_symbols_evicted: u64,
+    pub(crate) document_symbol_entries: u64,
+    pub(crate) prewarm_files: u64,
+    pub(crate) prewarm_probes: u64,
+    pub(crate) prewarm_early_stops: u64,
 }
 
 impl Workspace {
@@ -141,8 +159,12 @@ impl Workspace {
                 misses: 0,
                 waited: 0,
                 evicted: 0,
+                prewarm_files: 0,
+                prewarm_probes: 0,
+                prewarm_early_stops: 0,
                 cache: HashMap::new(),
                 flights: HashSet::new(),
+                prewarmed: HashSet::new(),
             }),
             document_changed: Condvar::new(),
             locator: ServerLocator::SearchPath,
@@ -168,6 +190,57 @@ impl Workspace {
                 root: self.root.clone(),
                 family,
             })
+        }
+    }
+
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub(crate) fn session_stats(&self) -> Vec<serde_json::Value> {
+        let registry = self.lock_sessions();
+        let mut stats: Vec<_> = registry
+            .sessions
+            .iter()
+            .filter_map(|(project, entry)| match entry {
+                SessionEntry::Starting => None,
+                SessionEntry::Ready(session) => Some(serde_json::json!({
+                    "family": project.family.as_str(),
+                    "root": project.root,
+                    "pid": session.pid(),
+                    "alive": session.is_alive(),
+                    "server": session.name(),
+                    "request_count": session.request_count(),
+                })),
+            })
+            .collect();
+        stats.sort_by_key(|left| left.to_string());
+        stats
+    }
+
+    pub(crate) fn metrics(&self) -> WorkspaceMetrics {
+        let starts = self.lock_sessions().starts;
+        let documents = self.lock_documents();
+        let request_count = self
+            .session_stats()
+            .iter()
+            .filter_map(|session| {
+                session
+                    .get("request_count")
+                    .and_then(serde_json::Value::as_u64)
+            })
+            .sum();
+        WorkspaceMetrics {
+            sessions_started: starts,
+            lsp_request_count: request_count,
+            document_symbols_hit: documents.hits,
+            document_symbols_miss: documents.misses,
+            document_symbols_waited: documents.waited,
+            document_symbols_evicted: documents.evicted,
+            document_symbol_entries: documents.cache.len() as u64,
+            prewarm_files: documents.prewarm_files,
+            prewarm_probes: documents.prewarm_probes,
+            prewarm_early_stops: documents.prewarm_early_stops,
         }
     }
 
@@ -392,34 +465,36 @@ impl Workspace {
                 symbol.name == container_name && container_kinds.contains(&symbol.kind.as_str())
             })
             .collect();
-        let mut seen_files = HashSet::new();
-        for container in &containers {
-            if !seen_files.insert(container.path.clone()) {
-                continue;
-            }
-            let Some(project) = self.project_for_path(&container.path) else {
-                continue;
-            };
-            let Ok(symbols) = self.document_symbols(&container.path, Some(&project)) else {
-                continue;
-            };
-            for symbol in symbols {
-                if symbol.name != member_name {
+        if matches.is_empty() {
+            let mut seen_files = HashSet::new();
+            for container in &containers {
+                if !seen_files.insert(container.path.clone()) {
                     continue;
                 }
-                let mut semantic_parts: Vec<_> = symbol
-                    .container
-                    .split('.')
-                    .filter(|part| !part.is_empty())
-                    .collect();
-                semantic_parts.push(member_name);
-                if parts.ends_with(&semantic_parts)
-                    && self.module_qualifier_matches(
-                        &symbol.path,
-                        &parts[..parts.len() - semantic_parts.len()],
-                    )
-                {
-                    matches.push(symbol);
+                let Some(project) = self.project_for_path(&container.path) else {
+                    continue;
+                };
+                let Ok(symbols) = self.document_symbols(&container.path, Some(&project)) else {
+                    continue;
+                };
+                for symbol in symbols {
+                    if symbol.name != member_name {
+                        continue;
+                    }
+                    let mut semantic_parts: Vec<_> = symbol
+                        .container
+                        .split('.')
+                        .filter(|part| !part.is_empty())
+                        .collect();
+                    semantic_parts.push(member_name);
+                    if parts.ends_with(&semantic_parts)
+                        && self.module_qualifier_matches(
+                            &symbol.path,
+                            &parts[..parts.len() - semantic_parts.len()],
+                        )
+                    {
+                        matches.push(symbol);
+                    }
                 }
             }
         }
@@ -495,6 +570,143 @@ impl Workspace {
             candidates,
             requested_location: None,
             cursor_definition: false,
+        }
+    }
+
+    pub(crate) fn resolve_bare(&self, target: &str) -> Resolution {
+        let mut candidates = self.exact_document_candidates(target, 80);
+        candidates.sort_by(|left, right| {
+            (
+                std::cmp::Reverse(definition_priority(left)),
+                &left.path,
+                left.line,
+            )
+                .cmp(&(
+                    std::cmp::Reverse(definition_priority(right)),
+                    &right.path,
+                    right.line,
+                ))
+        });
+        if candidates.is_empty() {
+            return Resolution::NotFound {
+                reason: format!("target not found: {target}"),
+                candidates,
+            };
+        }
+        let best = definition_priority(&candidates[0]);
+        let top: Vec<_> = candidates
+            .iter()
+            .filter(|candidate| definition_priority(candidate) == best)
+            .cloned()
+            .collect();
+        let unique: HashSet<_> = top
+            .iter()
+            .map(|candidate| (&candidate.path, candidate.line))
+            .collect();
+        if unique.len() > 1 {
+            return Resolution::Ambiguous {
+                reason: format!("multiple exact definitions found for {target}"),
+                candidates: top.into_iter().take(8).collect(),
+            };
+        }
+        let symbol = top[0].clone();
+        Resolution::Found {
+            symbol: Box::new(symbol.clone()),
+            candidates: candidates
+                .into_iter()
+                .filter(|candidate| {
+                    candidate.path != symbol.path
+                        || candidate.line != symbol.line
+                        || candidate.name != symbol.name
+                })
+                .take(4)
+                .collect(),
+            requested_location: None,
+            cursor_definition: false,
+        }
+    }
+
+    pub(crate) fn prewarm_symbol(&self, symbol: &Symbol, desired_results: u64) {
+        self.prewarm(symbol, desired_results, true);
+    }
+
+    pub(crate) fn prewarm_documents(&self, symbol: &Symbol) {
+        self.prewarm(symbol, 1, false);
+    }
+
+    fn prewarm(&self, symbol: &Symbol, desired_results: u64, probe_references: bool) {
+        let Some(project) = self.project_for_path(&symbol.path) else {
+            return;
+        };
+        let desired = desired_results.max(1);
+        let key = (
+            project.root.clone(),
+            symbol.name.clone(),
+            if probe_references { desired } else { 0 },
+        );
+        {
+            let mut documents = self.lock_documents();
+            if !documents.prewarmed.insert(key) {
+                return;
+            }
+        }
+        let mut command = Command::new("rg");
+        command
+            .current_dir(&project.root)
+            .args([
+                "--files-with-matches",
+                "--fixed-strings",
+                "--null",
+                "--hidden",
+            ])
+            .args(["-g", "*.py", "-g", "*.pyi", "-g", "*.ts", "-g", "*.tsx"])
+            .args(["-g", "*.js", "-g", "*.jsx", "-g", "*.mjs", "-g", "*.cjs"])
+            .args([
+                "-g",
+                "!node_modules/**",
+                "-g",
+                "!.git/**",
+                "-g",
+                "!.next/**",
+            ])
+            .args(["-g", "!dist/**", "-g", "!build/**"])
+            .arg(&symbol.name)
+            .arg(".");
+        let Ok(output) = command.output() else {
+            return;
+        };
+        if !matches!(output.status.code(), Some(0 | 1)) {
+            return;
+        }
+        let mut files: Vec<_> = output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|raw| !raw.is_empty())
+            .map(|raw| project.root.join(String::from_utf8_lossy(raw).as_ref()))
+            .map(|path| fs::canonicalize(&path).unwrap_or(path))
+            .filter(|path| self.project_for_path(path).as_ref() == Some(&project))
+            .collect();
+        files.sort();
+        files.dedup();
+        files.truncate(12);
+        for (index, path) in files.into_iter().enumerate() {
+            if self.document_symbols(&path, Some(&project)).is_err() {
+                continue;
+            }
+            self.lock_documents().prewarm_files += 1;
+            if !probe_references || (index + 1) % 2 != 0 {
+                continue;
+            }
+            self.lock_documents().prewarm_probes += 1;
+            let count = self
+                .session(&project)
+                .and_then(|session| session.references(&symbol.path, symbol.line, symbol.column))
+                .map(|items| items.len() as u64)
+                .unwrap_or(0);
+            if count >= desired {
+                self.lock_documents().prewarm_early_stops += 1;
+                break;
+            }
         }
     }
 
@@ -659,7 +871,7 @@ impl Workspace {
         )
     }
 
-    fn exact_document_candidates(&self, name: &str, limit: usize) -> Vec<Symbol> {
+    pub(crate) fn exact_document_candidates(&self, name: &str, limit: usize) -> Vec<Symbol> {
         let mut candidates = Vec::new();
         for path in exact_definition_files(&self.root, name, limit) {
             let Some(project) = self.project_for_path(&path) else {
@@ -710,7 +922,7 @@ impl Workspace {
                 .eq(qualifier.iter().copied())
     }
 
-    fn symbol_at_location(&self, location: &Location) -> Option<Symbol> {
+    pub(crate) fn symbol_at_location(&self, location: &Location) -> Option<Symbol> {
         let project = self.project_for_path(&location.path)?;
         let symbols = self.document_symbols(&location.path, Some(&project)).ok()?;
         let mut candidates: Vec<_> = symbols

@@ -1,13 +1,16 @@
 mod boundary;
 mod cli;
 mod client;
+mod concept;
 mod contracts;
 mod daemon;
+mod gitreview;
 // Phase 3 lands transport and ownership before every semantic handler consumes it.
 #[allow(dead_code)]
 mod lsp;
 mod repository;
 mod runtime;
+mod semantic;
 mod service;
 mod symbol;
 mod target;
@@ -61,12 +64,13 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let cli = Cli::parse_from(&arguments);
+    let mut cli = Cli::parse_from(&arguments);
     if let Err(message) = cli.validate(raw_arguments) {
         Cli::command()
             .error(ErrorKind::ArgumentConflict, message)
             .exit();
     }
+    cli.apply_compatibility_aliases(raw_arguments);
     let root = match repository::resolve_root(&cli.root) {
         Ok(root) => root,
         Err(error) => {
