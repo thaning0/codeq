@@ -6,21 +6,21 @@
   "cold": {
     "context_cursor": {
       "runs": 3,
-      "p50_ms": 3835.4,
-      "p95_ms": 4049.3,
-      "max_ms": 4049.3,
-      "max_process_rss_kb": 10716,
+      "p50_ms": 3589.4,
+      "p95_ms": 3770.9,
+      "max_ms": 3770.9,
+      "max_process_rss_kb": 10752,
       "max_daemon_rss_kb": 0,
-      "max_lsp_rss_kb": 760896,
+      "max_lsp_rss_kb": 755384,
       "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3821.5,
+          "duration_ms": 3589.4,
           "phase_ms": {
-            "prewarm": 215.840074,
-            "resolution": 1535.145568,
-            "semantic_neighborhood": 1836.914504
+            "prewarm": 235.458813,
+            "resolution": 1404.109897,
+            "semantic_neighborhood": 1746.448556
           },
           "lsp_requests": 18,
           "sessions_started": 1,
@@ -29,18 +29,18 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 3,
           "document_symbols_miss": 6,
-          "process_rss_kb": 10540,
+          "process_rss_kb": 10620,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 715948
+          "lsp_rss_kb": 718100
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 4049.3,
+          "duration_ms": 3550.1,
           "phase_ms": {
-            "prewarm": 244.55932,
-            "resolution": 1517.2734060000005,
-            "semantic_neighborhood": 2076.403279
+            "prewarm": 200.040443,
+            "resolution": 1407.110979,
+            "semantic_neighborhood": 1736.7848989999998
           },
           "lsp_requests": 18,
           "sessions_started": 1,
@@ -49,69 +49,18 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 3,
           "document_symbols_miss": 6,
-          "process_rss_kb": 10584,
+          "process_rss_kb": 10752,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 760896
+          "lsp_rss_kb": 715392
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3835.4,
+          "duration_ms": 3770.9,
           "phase_ms": {
-            "prewarm": 219.171541,
-            "resolution": 1549.746315,
-            "semantic_neighborhood": 1843.065651
-          },
-          "lsp_requests": 18,
-          "sessions_started": 1,
-          "prewarm_files": 6,
-          "prewarm_probes": 3,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 3,
-          "document_symbols_miss": 6,
-          "process_rss_kb": 10716,
-          "daemon_rss_kb": 0,
-          "lsp_rss_kb": 716616
-        }
-      ]
-    },
-    "context_lexical": {
-      "runs": 3,
-      "p50_ms": 4000.5,
-      "p95_ms": 4124.9,
-      "max_ms": 4124.9,
-      "max_process_rss_kb": 10772,
-      "max_daemon_rss_kb": 0,
-      "max_lsp_rss_kb": 781524,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 4000.5,
-          "phase_ms": {
-            "prewarm": 233.487591,
-            "resolution": 1480.0523919999998,
-            "semantic_neighborhood": 2000.282394
-          },
-          "lsp_requests": 18,
-          "sessions_started": 1,
-          "prewarm_files": 6,
-          "prewarm_probes": 3,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 3,
-          "document_symbols_miss": 6,
-          "process_rss_kb": 10772,
-          "daemon_rss_kb": 0,
-          "lsp_rss_kb": 741540
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 4124.9,
-          "phase_ms": {
-            "prewarm": 220.939392,
-            "resolution": 1511.28931,
-            "semantic_neighborhood": 2236.102641
+            "prewarm": 228.634494,
+            "resolution": 1405.99038,
+            "semantic_neighborhood": 1957.288735
           },
           "lsp_requests": 18,
           "sessions_started": 1,
@@ -122,16 +71,27 @@
           "document_symbols_miss": 6,
           "process_rss_kb": 10704,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 781524
-        },
+          "lsp_rss_kb": 755384
+        }
+      ]
+    },
+    "context_lexical": {
+      "runs": 3,
+      "p50_ms": 3749.4,
+      "p95_ms": 3878.7,
+      "max_ms": 3878.7,
+      "max_process_rss_kb": 10672,
+      "max_daemon_rss_kb": 0,
+      "max_lsp_rss_kb": 763284,
+      "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3940.3,
+          "duration_ms": 3878.7,
           "phase_ms": {
-            "prewarm": 195.298796,
-            "resolution": 1449.53899,
-            "semantic_neighborhood": 2027.680528
+            "prewarm": 205.515743,
+            "resolution": 1425.770081,
+            "semantic_neighborhood": 1951.761878
           },
           "lsp_requests": 18,
           "sessions_started": 1,
@@ -140,29 +100,69 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 3,
           "document_symbols_miss": 6,
-          "process_rss_kb": 10720,
+          "process_rss_kb": 10540,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 735084
+          "lsp_rss_kb": 757092
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 3746.9,
+          "phase_ms": {
+            "prewarm": 213.058925,
+            "resolution": 1390.976191,
+            "semantic_neighborhood": 1892.442959
+          },
+          "lsp_requests": 18,
+          "sessions_started": 1,
+          "prewarm_files": 6,
+          "prewarm_probes": 3,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 3,
+          "document_symbols_miss": 6,
+          "process_rss_kb": 10624,
+          "daemon_rss_kb": 0,
+          "lsp_rss_kb": 763284
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 3749.4,
+          "phase_ms": {
+            "prewarm": 212.076706,
+            "resolution": 1420.458738,
+            "semantic_neighborhood": 1853.101455
+          },
+          "lsp_requests": 18,
+          "sessions_started": 1,
+          "prewarm_files": 6,
+          "prewarm_probes": 3,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 3,
+          "document_symbols_miss": 6,
+          "process_rss_kb": 10672,
+          "daemon_rss_kb": 0,
+          "lsp_rss_kb": 738236
         }
       ]
     },
     "context_reference_store": {
       "runs": 3,
-      "p50_ms": 1788.4,
-      "p95_ms": 3851.6,
-      "max_ms": 3851.6,
-      "max_process_rss_kb": 14352,
+      "p50_ms": 1698.0,
+      "p95_ms": 1700.8,
+      "max_ms": 1700.8,
+      "max_process_rss_kb": 14396,
       "max_daemon_rss_kb": 0,
-      "max_lsp_rss_kb": 746848,
+      "max_lsp_rss_kb": 366892,
       "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 1773.9,
+          "duration_ms": 1700.8,
           "phase_ms": {
-            "prewarm": 22.496137,
-            "resolution": 450.277077,
-            "semantic_neighborhood": 404.341087
+            "prewarm": 19.768175,
+            "resolution": 435.185653,
+            "semantic_neighborhood": 381.00725
           },
           "lsp_requests": 16,
           "sessions_started": 1,
@@ -171,18 +171,18 @@
           "prewarm_early_stops": 1,
           "document_symbols_hit": 13,
           "document_symbols_miss": 6,
-          "process_rss_kb": 14348,
+          "process_rss_kb": 14292,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 368488
+          "lsp_rss_kb": 365748
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3851.6,
+          "duration_ms": 1662.3,
           "phase_ms": {
-            "prewarm": 48.203357,
-            "resolution": 2677.385461,
-            "semantic_neighborhood": 941.457659
+            "prewarm": 23.169409,
+            "resolution": 426.800748,
+            "semantic_neighborhood": 359.279353
           },
           "lsp_requests": 16,
           "sessions_started": 1,
@@ -191,18 +191,18 @@
           "prewarm_early_stops": 1,
           "document_symbols_hit": 13,
           "document_symbols_miss": 6,
-          "process_rss_kb": 14352,
+          "process_rss_kb": 14220,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 746848
+          "lsp_rss_kb": 366892
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 1788.4,
+          "duration_ms": 1698.0,
           "phase_ms": {
-            "prewarm": 21.919428,
-            "resolution": 464.354519,
-            "semantic_neighborhood": 444.789663
+            "prewarm": 19.254622,
+            "resolution": 459.1915039999999,
+            "semantic_neighborhood": 380.106171
           },
           "lsp_requests": 16,
           "sessions_started": 1,
@@ -211,29 +211,29 @@
           "prewarm_early_stops": 1,
           "document_symbols_hit": 13,
           "document_symbols_miss": 6,
-          "process_rss_kb": 14244,
+          "process_rss_kb": 14396,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 369888
+          "lsp_rss_kb": 364988
         }
       ]
     },
     "context_symbol": {
       "runs": 3,
-      "p50_ms": 3883.8,
-      "p95_ms": 3920.6,
-      "max_ms": 3920.6,
-      "max_process_rss_kb": 10948,
+      "p50_ms": 3612.2,
+      "p95_ms": 3677.0,
+      "max_ms": 3677.0,
+      "max_process_rss_kb": 11020,
       "max_daemon_rss_kb": 0,
-      "max_lsp_rss_kb": 742872,
+      "max_lsp_rss_kb": 743864,
       "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3860.0,
+          "duration_ms": 3677.0,
           "phase_ms": {
-            "prewarm": 1352.572976,
-            "resolution": 388.059298,
-            "semantic_neighborhood": 1890.112198
+            "prewarm": 1284.263062,
+            "resolution": 381.339356,
+            "semantic_neighborhood": 1792.763325
           },
           "lsp_requests": 17,
           "sessions_started": 1,
@@ -242,18 +242,18 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 4,
           "document_symbols_miss": 6,
-          "process_rss_kb": 10948,
+          "process_rss_kb": 10892,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 716924
+          "lsp_rss_kb": 743864
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3920.6,
+          "duration_ms": 3545.4,
           "phase_ms": {
-            "prewarm": 1382.873764,
-            "resolution": 397.098782,
-            "semantic_neighborhood": 1896.218152
+            "prewarm": 1262.019558,
+            "resolution": 378.688077,
+            "semantic_neighborhood": 1711.788661
           },
           "lsp_requests": 17,
           "sessions_started": 1,
@@ -262,18 +262,18 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 4,
           "document_symbols_miss": 6,
-          "process_rss_kb": 10652,
+          "process_rss_kb": 11020,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 742872
+          "lsp_rss_kb": 724896
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3883.8,
+          "duration_ms": 3612.2,
           "phase_ms": {
-            "prewarm": 1373.100273,
-            "resolution": 406.412655,
-            "semantic_neighborhood": 1890.873598
+            "prewarm": 1274.901818,
+            "resolution": 387.267368,
+            "semantic_neighborhood": 1741.424024
           },
           "lsp_requests": 17,
           "sessions_started": 1,
@@ -282,25 +282,25 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 4,
           "document_symbols_miss": 6,
-          "process_rss_kb": 10936,
+          "process_rss_kb": 10952,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 724452
+          "lsp_rss_kb": 734656
         }
       ]
     },
     "find_concept": {
       "runs": 3,
-      "p50_ms": 298.6,
-      "p95_ms": 306.3,
-      "max_ms": 306.3,
-      "max_process_rss_kb": 17104,
+      "p50_ms": 273.2,
+      "p95_ms": 283.9,
+      "max_ms": 283.9,
+      "max_process_rss_kb": 17088,
       "max_daemon_rss_kb": 0,
       "max_lsp_rss_kb": 0,
       "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 261.7,
+          "duration_ms": 273.2,
           "phase_ms": {},
           "lsp_requests": 0,
           "sessions_started": 0,
@@ -309,14 +309,14 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 0,
           "document_symbols_miss": 0,
-          "process_rss_kb": 17072,
+          "process_rss_kb": 16928,
           "daemon_rss_kb": 0,
           "lsp_rss_kb": 0
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 306.3,
+          "duration_ms": 259.2,
           "phase_ms": {},
           "lsp_requests": 0,
           "sessions_started": 0,
@@ -325,14 +325,14 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 0,
           "document_symbols_miss": 0,
-          "process_rss_kb": 17104,
+          "process_rss_kb": 17088,
           "daemon_rss_kb": 0,
           "lsp_rss_kb": 0
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 298.6,
+          "duration_ms": 283.9,
           "phase_ms": {},
           "lsp_requests": 0,
           "sessions_started": 0,
@@ -341,7 +341,7 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 0,
           "document_symbols_miss": 0,
-          "process_rss_kb": 17024,
+          "process_rss_kb": 17036,
           "daemon_rss_kb": 0,
           "lsp_rss_kb": 0
         }
@@ -349,17 +349,17 @@
     },
     "find_exact": {
       "runs": 3,
-      "p50_ms": 492.2,
-      "p95_ms": 515.2,
-      "max_ms": 515.2,
-      "max_process_rss_kb": 8576,
+      "p50_ms": 482.2,
+      "p95_ms": 507.4,
+      "max_ms": 507.4,
+      "max_process_rss_kb": 8936,
       "max_daemon_rss_kb": 0,
-      "max_lsp_rss_kb": 142080,
+      "max_lsp_rss_kb": 145744,
       "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 492.2,
+          "duration_ms": 507.4,
           "phase_ms": {},
           "lsp_requests": 5,
           "sessions_started": 1,
@@ -368,14 +368,14 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 14,
           "document_symbols_miss": 3,
-          "process_rss_kb": 8504,
+          "process_rss_kb": 8548,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 142080
+          "lsp_rss_kb": 133564
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 491.8,
+          "duration_ms": 464.2,
           "phase_ms": {},
           "lsp_requests": 5,
           "sessions_started": 1,
@@ -384,14 +384,14 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 14,
           "document_symbols_miss": 3,
-          "process_rss_kb": 8576,
+          "process_rss_kb": 8936,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 141768
+          "lsp_rss_kb": 145744
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 515.2,
+          "duration_ms": 482.2,
           "phase_ms": {},
           "lsp_requests": 5,
           "sessions_started": 1,
@@ -400,28 +400,28 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 14,
           "document_symbols_miss": 3,
-          "process_rss_kb": 8504,
+          "process_rss_kb": 8560,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 140380
+          "lsp_rss_kb": 141744
         }
       ]
     },
     "review": {
       "runs": 3,
-      "p50_ms": 3232.7,
-      "p95_ms": 3375.7,
-      "max_ms": 3375.7,
-      "max_process_rss_kb": 10792,
+      "p50_ms": 3282.9,
+      "p95_ms": 3327.7,
+      "max_ms": 3327.7,
+      "max_process_rss_kb": 10848,
       "max_daemon_rss_kb": 0,
-      "max_lsp_rss_kb": 641004,
+      "max_lsp_rss_kb": 640400,
       "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3137.8,
+          "duration_ms": 3327.7,
           "phase_ms": {
-            "change_discovery": 28.223276,
-            "review_analysis": 2960.950338
+            "change_discovery": 28.770264,
+            "review_analysis": 3146.230807
           },
           "lsp_requests": 26,
           "sessions_started": 1,
@@ -430,17 +430,17 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 45,
           "document_symbols_miss": 14,
-          "process_rss_kb": 10792,
+          "process_rss_kb": 10784,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 608680
+          "lsp_rss_kb": 615556
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3375.7,
+          "duration_ms": 3223.8,
           "phase_ms": {
-            "change_discovery": 30.774167,
-            "review_analysis": 3172.517933
+            "change_discovery": 31.342158,
+            "review_analysis": 3033.4463189999997
           },
           "lsp_requests": 26,
           "sessions_started": 1,
@@ -449,17 +449,17 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 45,
           "document_symbols_miss": 14,
-          "process_rss_kb": 10720,
+          "process_rss_kb": 10848,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 641004
+          "lsp_rss_kb": 621732
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 3232.7,
+          "duration_ms": 3282.9,
           "phase_ms": {
-            "change_discovery": 27.713886,
-            "review_analysis": 3056.346953
+            "change_discovery": 30.843234,
+            "review_analysis": 3100.698265
           },
           "lsp_requests": 26,
           "sessions_started": 1,
@@ -468,28 +468,28 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 45,
           "document_symbols_miss": 14,
-          "process_rss_kb": 10728,
+          "process_rss_kb": 10216,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 622692
+          "lsp_rss_kb": 640400
         }
       ]
     },
     "review_broad": {
       "runs": 3,
-      "p50_ms": 8696.1,
-      "p95_ms": 8764.9,
-      "max_ms": 8764.9,
-      "max_process_rss_kb": 17652,
+      "p50_ms": 8560.3,
+      "p95_ms": 9524.5,
+      "max_ms": 9524.5,
+      "max_process_rss_kb": 17840,
       "max_daemon_rss_kb": 0,
-      "max_lsp_rss_kb": 3234824,
+      "max_lsp_rss_kb": 3239376,
       "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 8764.9,
+          "duration_ms": 8428.5,
           "phase_ms": {
-            "change_discovery": 35.98612000000001,
-            "review_analysis": 8495.704203000001
+            "change_discovery": 33.161128999999995,
+            "review_analysis": 8171.025312999999
           },
           "lsp_requests": 122,
           "sessions_started": 1,
@@ -498,17 +498,17 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 132,
           "document_symbols_miss": 87,
-          "process_rss_kb": 17604,
+          "process_rss_kb": 17196,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 3234824
+          "lsp_rss_kb": 3230948
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 8082.1,
+          "duration_ms": 8560.3,
           "phase_ms": {
-            "change_discovery": 38.181464,
-            "review_analysis": 7720.731337
+            "change_discovery": 32.891752000000004,
+            "review_analysis": 8288.32322
           },
           "lsp_requests": 122,
           "sessions_started": 1,
@@ -517,17 +517,17 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 132,
           "document_symbols_miss": 87,
-          "process_rss_kb": 17616,
+          "process_rss_kb": 17744,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 3220268
+          "lsp_rss_kb": 3213844
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 8696.1,
+          "duration_ms": 9524.5,
           "phase_ms": {
-            "change_discovery": 32.787065999999996,
-            "review_analysis": 8422.941530999999
+            "change_discovery": 33.755575,
+            "review_analysis": 9246.154829
           },
           "lsp_requests": 122,
           "sessions_started": 1,
@@ -536,21 +536,695 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 132,
           "document_symbols_miss": 87,
-          "process_rss_kb": 17652,
+          "process_rss_kb": 17840,
           "daemon_rss_kb": 0,
-          "lsp_rss_kb": 3213228
+          "lsp_rss_kb": 3239376
         }
       ]
     },
     "text_env": {
       "runs": 3,
-      "p50_ms": 155.2,
-      "p95_ms": 157.4,
-      "max_ms": 157.4,
-      "max_process_rss_kb": 4636,
+      "p50_ms": 149.0,
+      "p95_ms": 149.8,
+      "max_ms": 149.8,
+      "max_process_rss_kb": 5000,
       "max_daemon_rss_kb": 0,
       "max_lsp_rss_kb": 0,
       "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 148.2,
+          "phase_ms": {},
+          "lsp_requests": 0,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 0,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4624,
+          "daemon_rss_kb": 0,
+          "lsp_rss_kb": 0
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 149.8,
+          "phase_ms": {},
+          "lsp_requests": 0,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 0,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 5000,
+          "daemon_rss_kb": 0,
+          "lsp_rss_kb": 0
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 149.0,
+          "phase_ms": {},
+          "lsp_requests": 0,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 0,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4768,
+          "daemon_rss_kb": 0,
+          "lsp_rss_kb": 0
+        }
+      ]
+    },
+    "trace_in": {
+      "runs": 3,
+      "p50_ms": 3947.2,
+      "p95_ms": 3975.3,
+      "max_ms": 3975.3,
+      "max_process_rss_kb": 10380,
+      "max_daemon_rss_kb": 0,
+      "max_lsp_rss_kb": 740144,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 3947.2,
+          "phase_ms": {},
+          "lsp_requests": 19,
+          "sessions_started": 1,
+          "prewarm_files": 6,
+          "prewarm_probes": 3,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 4,
+          "document_symbols_miss": 6,
+          "process_rss_kb": 10336,
+          "daemon_rss_kb": 0,
+          "lsp_rss_kb": 740144
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 3975.3,
+          "phase_ms": {},
+          "lsp_requests": 19,
+          "sessions_started": 1,
+          "prewarm_files": 6,
+          "prewarm_probes": 3,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 4,
+          "document_symbols_miss": 6,
+          "process_rss_kb": 10240,
+          "daemon_rss_kb": 0,
+          "lsp_rss_kb": 733552
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 3882.1,
+          "phase_ms": {},
+          "lsp_requests": 19,
+          "sessions_started": 1,
+          "prewarm_files": 6,
+          "prewarm_probes": 3,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 4,
+          "document_symbols_miss": 6,
+          "process_rss_kb": 10380,
+          "daemon_rss_kb": 0,
+          "lsp_rss_kb": 737776
+        }
+      ]
+    }
+  },
+  "warm": {
+    "context_cursor": {
+      "runs": 3,
+      "p50_ms": 353.0,
+      "p95_ms": 358.6,
+      "max_ms": 358.6,
+      "max_process_rss_kb": 4984,
+      "max_daemon_rss_kb": 28872,
+      "max_lsp_rss_kb": 3628472,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 358.6,
+          "phase_ms": {
+            "prewarm": 0.019142,
+            "resolution": 0.7928329999999999,
+            "semantic_neighborhood": 337.800438
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 3,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4984,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3628108
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 338.8,
+          "phase_ms": {
+            "prewarm": 0.007430999999999999,
+            "resolution": 0.890953,
+            "semantic_neighborhood": 322.12300999999997
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 3,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4808,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3628288
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 353.0,
+          "phase_ms": {
+            "prewarm": 0.007549999999999999,
+            "resolution": 0.869291,
+            "semantic_neighborhood": 341.671478
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 3,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4868,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3628472
+        }
+      ]
+    },
+    "context_lexical": {
+      "runs": 3,
+      "p50_ms": 515.1,
+      "p95_ms": 522.3,
+      "max_ms": 522.3,
+      "max_process_rss_kb": 4836,
+      "max_daemon_rss_kb": 28872,
+      "max_lsp_rss_kb": 3628984,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 515.1,
+          "phase_ms": {
+            "prewarm": 0.010591,
+            "resolution": 1.252797,
+            "semantic_neighborhood": 502.063519
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 3,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4836,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3628640
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 490.5,
+          "phase_ms": {
+            "prewarm": 0.00745,
+            "resolution": 0.901609,
+            "semantic_neighborhood": 478.438377
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 3,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4832,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3628816
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 522.3,
+          "phase_ms": {
+            "prewarm": 0.0078,
+            "resolution": 0.853985,
+            "semantic_neighborhood": 505.8235049999999
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 3,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4768,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3628984
+        }
+      ]
+    },
+    "context_reference_store": {
+      "runs": 3,
+      "p50_ms": 603.6,
+      "p95_ms": 634.1,
+      "max_ms": 634.1,
+      "max_process_rss_kb": 4952,
+      "max_daemon_rss_kb": 29660,
+      "max_lsp_rss_kb": 3627932,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 634.1,
+          "phase_ms": {
+            "prewarm": 0.009081,
+            "resolution": 228.790736,
+            "semantic_neighborhood": 385.161077
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 17,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4924,
+          "daemon_rss_kb": 29656,
+          "lsp_rss_kb": 3495852
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 603.6,
+          "phase_ms": {
+            "prewarm": 0.008591,
+            "resolution": 220.875616,
+            "semantic_neighborhood": 361.002032
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 17,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4936,
+          "daemon_rss_kb": 29660,
+          "lsp_rss_kb": 3562492
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 564.3,
+          "phase_ms": {
+            "prewarm": 0.012041,
+            "resolution": 230.958576,
+            "semantic_neighborhood": 323.204114
+          },
+          "lsp_requests": 8,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 17,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4952,
+          "daemon_rss_kb": 29660,
+          "lsp_rss_kb": 3627932
+        }
+      ]
+    },
+    "context_symbol": {
+      "runs": 3,
+      "p50_ms": 398.2,
+      "p95_ms": 409.8,
+      "max_ms": 409.8,
+      "max_process_rss_kb": 4840,
+      "max_daemon_rss_kb": 28960,
+      "max_lsp_rss_kb": 3430108,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 363.9,
+          "phase_ms": {
+            "prewarm": 0.008401,
+            "resolution": 45.255892,
+            "semantic_neighborhood": 310.127641
+          },
+          "lsp_requests": 7,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 4,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4840,
+          "daemon_rss_kb": 28960,
+          "lsp_rss_kb": 3429760
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 409.8,
+          "phase_ms": {
+            "prewarm": 0.008171,
+            "resolution": 47.453075,
+            "semantic_neighborhood": 343.698623
+          },
+          "lsp_requests": 7,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 4,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4804,
+          "daemon_rss_kb": 28960,
+          "lsp_rss_kb": 3429936
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 398.2,
+          "phase_ms": {
+            "prewarm": 0.007819999999999999,
+            "resolution": 44.550523,
+            "semantic_neighborhood": 330.436477
+          },
+          "lsp_requests": 7,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 4,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4772,
+          "daemon_rss_kb": 28960,
+          "lsp_rss_kb": 3430108
+        }
+      ]
+    },
+    "find_concept": {
+      "runs": 3,
+      "p50_ms": 34.0,
+      "p95_ms": 43.0,
+      "max_ms": 43.0,
+      "max_process_rss_kb": 4940,
+      "max_daemon_rss_kb": 28952,
+      "max_lsp_rss_kb": 3410884,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 43.0,
+          "phase_ms": {},
+          "lsp_requests": 0,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 0,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4816,
+          "daemon_rss_kb": 28788,
+          "lsp_rss_kb": 3410884
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 34.0,
+          "phase_ms": {},
+          "lsp_requests": 0,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 0,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4824,
+          "daemon_rss_kb": 28952,
+          "lsp_rss_kb": 3410884
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 31.1,
+          "phase_ms": {},
+          "lsp_requests": 0,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 0,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4940,
+          "daemon_rss_kb": 28952,
+          "lsp_rss_kb": 3410884
+        }
+      ]
+    },
+    "find_exact": {
+      "runs": 3,
+      "p50_ms": 219.6,
+      "p95_ms": 227.8,
+      "max_ms": 227.8,
+      "max_process_rss_kb": 4868,
+      "max_daemon_rss_kb": 28488,
+      "max_lsp_rss_kb": 3410884,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 219.6,
+          "phase_ms": {},
+          "lsp_requests": 1,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 17,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4808,
+          "daemon_rss_kb": 28488,
+          "lsp_rss_kb": 3291416
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 218.3,
+          "phase_ms": {},
+          "lsp_requests": 1,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 17,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4868,
+          "daemon_rss_kb": 28488,
+          "lsp_rss_kb": 3351216
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 227.8,
+          "phase_ms": {},
+          "lsp_requests": 1,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 17,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4860,
+          "daemon_rss_kb": 28488,
+          "lsp_rss_kb": 3410884
+        }
+      ]
+    },
+    "review": {
+      "runs": 3,
+      "p50_ms": 69.8,
+      "p95_ms": 87.2,
+      "max_ms": 87.2,
+      "max_process_rss_kb": 4944,
+      "max_daemon_rss_kb": 28872,
+      "max_lsp_rss_kb": 3630328,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 87.2,
+          "phase_ms": {
+            "change_discovery": 31.353233,
+            "review_analysis": 29.70525
+          },
+          "lsp_requests": 10,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 36,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4844,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3630264
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 69.8,
+          "phase_ms": {
+            "change_discovery": 27.913387,
+            "review_analysis": 31.736131
+          },
+          "lsp_requests": 10,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 36,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4944,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3630296
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 68.8,
+          "phase_ms": {
+            "change_discovery": 28.542111,
+            "review_analysis": 27.931915
+          },
+          "lsp_requests": 10,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 36,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4828,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3630328
+        }
+      ]
+    },
+    "review_broad": {
+      "runs": 3,
+      "p50_ms": 950.6,
+      "p95_ms": 1203.8,
+      "max_ms": 1203.8,
+      "max_process_rss_kb": 5320,
+      "max_daemon_rss_kb": 28872,
+      "max_lsp_rss_kb": 3805780,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 1203.8,
+          "phase_ms": {
+            "change_discovery": 34.245103,
+            "review_analysis": 1148.45112
+          },
+          "lsp_requests": 31,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 142,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 5036,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3724128
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 950.6,
+          "phase_ms": {
+            "change_discovery": 76.48097700000001,
+            "review_analysis": 859.345667
+          },
+          "lsp_requests": 31,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 142,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 5320,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3764876
+        },
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 943.9,
+          "phase_ms": {
+            "change_discovery": 38.364536,
+            "review_analysis": 881.514606
+          },
+          "lsp_requests": 31,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 142,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 5228,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3805780
+        }
+      ]
+    },
+    "text_env": {
+      "runs": 3,
+      "p50_ms": 153.2,
+      "p95_ms": 157.4,
+      "max_ms": 157.4,
+      "max_process_rss_kb": 4872,
+      "max_daemon_rss_kb": 28872,
+      "max_lsp_rss_kb": 3630228,
+      "samples": [
+        {
+          "status": "ok",
+          "exit_code": 0,
+          "duration_ms": 139.8,
+          "phase_ms": {},
+          "lsp_requests": 0,
+          "sessions_started": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "prewarm_early_stops": 0,
+          "document_symbols_hit": 0,
+          "document_symbols_miss": 0,
+          "process_rss_kb": 4872,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3630228
+        },
         {
           "status": "ok",
           "exit_code": 0,
@@ -563,9 +1237,9 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 0,
           "document_symbols_miss": 0,
-          "process_rss_kb": 4636,
-          "daemon_rss_kb": 0,
-          "lsp_rss_kb": 0
+          "process_rss_kb": 4764,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3630228
         },
         {
           "status": "ok",
@@ -579,699 +1253,25 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 0,
           "document_symbols_miss": 0,
-          "process_rss_kb": 4500,
-          "daemon_rss_kb": 0,
-          "lsp_rss_kb": 0
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 155.2,
-          "phase_ms": {},
-          "lsp_requests": 0,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 0,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4452,
-          "daemon_rss_kb": 0,
-          "lsp_rss_kb": 0
+          "process_rss_kb": 4800,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3630228
         }
       ]
     },
     "trace_in": {
       "runs": 3,
-      "p50_ms": 4032.3,
-      "p95_ms": 4405.6,
-      "max_ms": 4405.6,
-      "max_process_rss_kb": 10324,
-      "max_daemon_rss_kb": 0,
-      "max_lsp_rss_kb": 748944,
+      "p50_ms": 419.1,
+      "p95_ms": 428.5,
+      "max_ms": 428.5,
+      "max_process_rss_kb": 4904,
+      "max_daemon_rss_kb": 28872,
+      "max_lsp_rss_kb": 3630228,
       "samples": [
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 4405.6,
-          "phase_ms": {},
-          "lsp_requests": 19,
-          "sessions_started": 1,
-          "prewarm_files": 6,
-          "prewarm_probes": 3,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 4,
-          "document_symbols_miss": 6,
-          "process_rss_kb": 10324,
-          "daemon_rss_kb": 0,
-          "lsp_rss_kb": 732684
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 4032.3,
-          "phase_ms": {},
-          "lsp_requests": 19,
-          "sessions_started": 1,
-          "prewarm_files": 6,
-          "prewarm_probes": 3,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 4,
-          "document_symbols_miss": 6,
-          "process_rss_kb": 10280,
-          "daemon_rss_kb": 0,
-          "lsp_rss_kb": 743292
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 3939.2,
-          "phase_ms": {},
-          "lsp_requests": 19,
-          "sessions_started": 1,
-          "prewarm_files": 6,
-          "prewarm_probes": 3,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 4,
-          "document_symbols_miss": 6,
-          "process_rss_kb": 10324,
-          "daemon_rss_kb": 0,
-          "lsp_rss_kb": 748944
-        }
-      ]
-    }
-  },
-  "warm": {
-    "context_cursor": {
-      "runs": 3,
-      "p50_ms": 343.6,
-      "p95_ms": 347.7,
-      "max_ms": 347.7,
-      "max_process_rss_kb": 4964,
-      "max_daemon_rss_kb": 27676,
-      "max_lsp_rss_kb": 3669288,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 336.0,
-          "phase_ms": {
-            "prewarm": 0.007501,
-            "resolution": 0.774383,
-            "semantic_neighborhood": 323.14078
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 3,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4636,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3668928
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 347.7,
-          "phase_ms": {
-            "prewarm": 0.007451,
-            "resolution": 0.956261,
-            "semantic_neighborhood": 336.56949000000003
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 3,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4644,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3669104
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 343.6,
-          "phase_ms": {
-            "prewarm": 0.007500000000000001,
-            "resolution": 0.8045110000000001,
-            "semantic_neighborhood": 326.134562
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 3,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4964,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3669288
-        }
-      ]
-    },
-    "context_lexical": {
-      "runs": 3,
-      "p50_ms": 473.8,
-      "p95_ms": 491.8,
-      "max_ms": 491.8,
-      "max_process_rss_kb": 4876,
-      "max_daemon_rss_kb": 27676,
-      "max_lsp_rss_kb": 3669808,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 491.8,
-          "phase_ms": {
-            "prewarm": 0.009001,
-            "resolution": 0.870865,
-            "semantic_neighborhood": 483.773583
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 3,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4876,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3669460
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 404.8,
-          "phase_ms": {
-            "prewarm": 0.00736,
-            "resolution": 0.808861,
-            "semantic_neighborhood": 393.608531
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 3,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4864,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3669636
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 473.8,
-          "phase_ms": {
-            "prewarm": 0.00764,
-            "resolution": 0.7837999999999999,
-            "semantic_neighborhood": 453.8840699999999
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 3,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4696,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3669808
-        }
-      ]
-    },
-    "context_reference_store": {
-      "runs": 3,
-      "p50_ms": 603.6,
-      "p95_ms": 618.7,
-      "max_ms": 618.7,
-      "max_process_rss_kb": 4920,
-      "max_daemon_rss_kb": 28456,
-      "max_lsp_rss_kb": 3668744,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 618.7,
-          "phase_ms": {
-            "prewarm": 0.008831,
-            "resolution": 226.944308,
-            "semantic_neighborhood": 369.337967
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 17,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4872,
-          "daemon_rss_kb": 28452,
-          "lsp_rss_kb": 3536884
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 603.6,
-          "phase_ms": {
-            "prewarm": 0.008321,
-            "resolution": 212.055036,
-            "semantic_neighborhood": 372.663574
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 17,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4624,
-          "daemon_rss_kb": 28456,
-          "lsp_rss_kb": 3602912
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 574.1,
-          "phase_ms": {
-            "prewarm": 0.008721,
-            "resolution": 216.540572,
-            "semantic_neighborhood": 346.564007
-          },
-          "lsp_requests": 8,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 17,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4920,
-          "daemon_rss_kb": 28452,
-          "lsp_rss_kb": 3668744
-        }
-      ]
-    },
-    "context_symbol": {
-      "runs": 3,
-      "p50_ms": 394.1,
-      "p95_ms": 397.0,
-      "max_ms": 397.0,
-      "max_process_rss_kb": 4872,
-      "max_daemon_rss_kb": 27768,
-      "max_lsp_rss_kb": 3471004,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 379.8,
-          "phase_ms": {
-            "prewarm": 0.008401,
-            "resolution": 45.916363,
-            "semantic_neighborhood": 324.616494
-          },
-          "lsp_requests": 7,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 4,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4664,
-          "daemon_rss_kb": 27768,
-          "lsp_rss_kb": 3470532
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 397.0,
-          "phase_ms": {
-            "prewarm": 0.00762,
-            "resolution": 45.628309,
-            "semantic_neighborhood": 327.156335
-          },
-          "lsp_requests": 7,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 4,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4684,
-          "daemon_rss_kb": 27768,
-          "lsp_rss_kb": 3470792
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 394.1,
-          "phase_ms": {
-            "prewarm": 0.00819,
-            "resolution": 48.046481,
-            "semantic_neighborhood": 324.804867
-          },
-          "lsp_requests": 7,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 4,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4872,
-          "daemon_rss_kb": 27768,
-          "lsp_rss_kb": 3471004
-        }
-      ]
-    },
-    "find_concept": {
-      "runs": 3,
-      "p50_ms": 32.5,
-      "p95_ms": 50.9,
-      "max_ms": 50.9,
-      "max_process_rss_kb": 4900,
-      "max_daemon_rss_kb": 27756,
-      "max_lsp_rss_kb": 3446268,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 50.9,
-          "phase_ms": {},
-          "lsp_requests": 0,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 0,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4896,
-          "daemon_rss_kb": 27752,
-          "lsp_rss_kb": 3446268
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 30.7,
-          "phase_ms": {},
-          "lsp_requests": 0,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 0,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4900,
-          "daemon_rss_kb": 27548,
-          "lsp_rss_kb": 3446268
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 32.5,
-          "phase_ms": {},
-          "lsp_requests": 0,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 0,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4812,
-          "daemon_rss_kb": 27756,
-          "lsp_rss_kb": 3446268
-        }
-      ]
-    },
-    "find_exact": {
-      "runs": 3,
-      "p50_ms": 224.8,
-      "p95_ms": 238.3,
-      "max_ms": 238.3,
-      "max_process_rss_kb": 4828,
-      "max_daemon_rss_kb": 27292,
-      "max_lsp_rss_kb": 3446268,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 224.8,
-          "phase_ms": {},
-          "lsp_requests": 1,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 17,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4824,
-          "daemon_rss_kb": 27292,
-          "lsp_rss_kb": 3328084
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 222.9,
-          "phase_ms": {},
-          "lsp_requests": 1,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 17,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4828,
-          "daemon_rss_kb": 27292,
-          "lsp_rss_kb": 3386888
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 238.3,
-          "phase_ms": {},
-          "lsp_requests": 1,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 17,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4804,
-          "daemon_rss_kb": 27292,
-          "lsp_rss_kb": 3446268
-        }
-      ]
-    },
-    "review": {
-      "runs": 3,
-      "p50_ms": 73.5,
-      "p95_ms": 78.0,
-      "max_ms": 78.0,
-      "max_process_rss_kb": 5024,
-      "max_daemon_rss_kb": 27676,
-      "max_lsp_rss_kb": 3671188,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 73.5,
-          "phase_ms": {
-            "change_discovery": 27.246171,
-            "review_analysis": 26.825813
-          },
-          "lsp_requests": 10,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 36,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 5024,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3671120
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 70.7,
-          "phase_ms": {
-            "change_discovery": 26.252764000000003,
-            "review_analysis": 26.13691
-          },
-          "lsp_requests": 10,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 36,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4844,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3671156
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 78.0,
-          "phase_ms": {
-            "change_discovery": 28.694162,
-            "review_analysis": 29.244581
-          },
-          "lsp_requests": 10,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 36,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4940,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3671188
-        }
-      ]
-    },
-    "review_broad": {
-      "runs": 3,
-      "p50_ms": 856.7,
-      "p95_ms": 1018.4,
-      "max_ms": 1018.4,
-      "max_process_rss_kb": 5356,
-      "max_daemon_rss_kb": 27676,
-      "max_lsp_rss_kb": 3841052,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 1018.4,
-          "phase_ms": {
-            "change_discovery": 33.669982000000005,
-            "review_analysis": 966.916885
-          },
-          "lsp_requests": 31,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 142,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 5356,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3761616
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 788.2,
-          "phase_ms": {
-            "change_discovery": 34.251726000000005,
-            "review_analysis": 737.747824
-          },
-          "lsp_requests": 31,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 142,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 5224,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3802108
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 856.7,
-          "phase_ms": {
-            "change_discovery": 36.909981,
-            "review_analysis": 796.452662
-          },
-          "lsp_requests": 31,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 142,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 5088,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3841052
-        }
-      ]
-    },
-    "text_env": {
-      "runs": 3,
-      "p50_ms": 172.2,
-      "p95_ms": 179.6,
-      "max_ms": 179.6,
-      "max_process_rss_kb": 4896,
-      "max_daemon_rss_kb": 27676,
-      "max_lsp_rss_kb": 3671088,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 166.4,
-          "phase_ms": {},
-          "lsp_requests": 0,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 0,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4896,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3671088
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 172.2,
-          "phase_ms": {},
-          "lsp_requests": 0,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 0,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4696,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3671088
-        },
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 179.6,
-          "phase_ms": {},
-          "lsp_requests": 0,
-          "sessions_started": 0,
-          "prewarm_files": 0,
-          "prewarm_probes": 0,
-          "prewarm_early_stops": 0,
-          "document_symbols_hit": 0,
-          "document_symbols_miss": 0,
-          "process_rss_kb": 4640,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3671088
-        }
-      ]
-    },
-    "trace_in": {
-      "runs": 3,
-      "p50_ms": 410.6,
-      "p95_ms": 417.4,
-      "max_ms": 417.4,
-      "max_process_rss_kb": 4932,
-      "max_daemon_rss_kb": 27676,
-      "max_lsp_rss_kb": 3671072,
-      "samples": [
-        {
-          "status": "ok",
-          "exit_code": 0,
-          "duration_ms": 410.6,
+          "duration_ms": 404.6,
           "phase_ms": {},
           "lsp_requests": 6,
           "sessions_started": 0,
@@ -1280,14 +1280,14 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 4,
           "document_symbols_miss": 0,
-          "process_rss_kb": 4932,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3670252
+          "process_rss_kb": 4904,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3629400
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 394.0,
+          "duration_ms": 428.5,
           "phase_ms": {},
           "lsp_requests": 6,
           "sessions_started": 0,
@@ -1296,14 +1296,14 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 4,
           "document_symbols_miss": 0,
-          "process_rss_kb": 4708,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3670636
+          "process_rss_kb": 4744,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3629784
         },
         {
           "status": "ok",
           "exit_code": 0,
-          "duration_ms": 417.4,
+          "duration_ms": 419.1,
           "phase_ms": {},
           "lsp_requests": 6,
           "sessions_started": 0,
@@ -1312,9 +1312,9 @@
           "prewarm_early_stops": 0,
           "document_symbols_hit": 4,
           "document_symbols_miss": 0,
-          "process_rss_kb": 4892,
-          "daemon_rss_kb": 27676,
-          "lsp_rss_kb": 3671072
+          "process_rss_kb": 4836,
+          "daemon_rss_kb": 28872,
+          "lsp_rss_kb": 3630228
         }
       ]
     }

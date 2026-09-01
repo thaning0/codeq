@@ -420,11 +420,11 @@ RC13 black-box oracle, and historical real-agent workflows.
 
 Representative committed 2.0 results (three cold and warm runs per case):
 
-- warm semantic `context` / incoming `trace` P95: **397.0 / 417.4 ms**
-- cold semantic `context` / incoming `trace` P95: **3.92 / 4.41 s**
-- broad review cold/warm P95: **8.76 / 1.02 s**
-- maximum representative semantic/review sample: **8.76 s**
-- Rust query process / daemon peak RSS: **17.2 / 27.8 MiB**, measured
+- warm semantic `context` / incoming `trace` P95: **409.8 / 428.5 ms**
+- cold semantic `context` / incoming `trace` P95: **3.68 / 3.98 s**
+- broad review cold/warm P95: **9.52 / 1.20 s**
+- maximum representative semantic/review sample: **9.52 s**
+- Rust query process / daemon peak RSS: **17.4 / 29.0 MiB**, measured
   separately from external language-server process trees
 - representative four-command workflow replay: **11 / 11 successful and actionable**
 - historical actionable CRG-call mapping: **93.3%**

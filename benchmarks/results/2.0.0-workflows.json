@@ -12,8 +12,8 @@
     "actionable": 11,
     "pass_rate_pct": 100.0,
     "actionable_rate_pct": 100.0,
-    "p50_ms": 358.6,
-    "max_ms": 5511.3,
+    "p50_ms": 340.6,
+    "max_ms": 5532.9,
     "commands": {
       "context": 3,
       "find": 4,
@@ -31,7 +31,7 @@
       "command": "find",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 556.0,
+      "duration_ms": 559.8,
       "actionable": true,
       "passed": true
     },
@@ -41,7 +41,7 @@
       "command": "find",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 139.6,
+      "duration_ms": 116.8,
       "actionable": true,
       "passed": true
     },
@@ -51,7 +51,7 @@
       "command": "find",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 191.5,
+      "duration_ms": 193.7,
       "actionable": true,
       "passed": true
     },
@@ -61,7 +61,7 @@
       "command": "find",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 168.1,
+      "duration_ms": 156.2,
       "actionable": true,
       "passed": true
     },
@@ -71,7 +71,7 @@
       "command": "context",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 3241.9,
+      "duration_ms": 3189.5,
       "actionable": true,
       "passed": true
     },
@@ -81,7 +81,7 @@
       "command": "context",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 1033.8,
+      "duration_ms": 1052.4,
       "actionable": true,
       "passed": true
     },
@@ -91,7 +91,7 @@
       "command": "context",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 358.6,
+      "duration_ms": 340.6,
       "actionable": true,
       "passed": true
     },
@@ -101,7 +101,7 @@
       "command": "trace",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 563.2,
+      "duration_ms": 531.7,
       "actionable": true,
       "passed": true
     },
@@ -111,7 +111,7 @@
       "command": "trace",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 38.3,
+      "duration_ms": 48.1,
       "actionable": true,
       "passed": true
     },
@@ -121,7 +121,7 @@
       "command": "review",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 179.0,
+      "duration_ms": 184.0,
       "actionable": true,
       "passed": true
     },
@@ -131,7 +131,7 @@
       "command": "review",
       "status": "ok",
       "exit_code": 0,
-      "duration_ms": 5511.3,
+      "duration_ms": 5532.9,
       "actionable": true,
       "passed": true
     }

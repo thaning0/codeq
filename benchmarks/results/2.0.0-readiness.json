@@ -5,31 +5,31 @@
     {
       "name": "warm_context_p95",
       "passed": true,
-      "actual": 397.0,
+      "actual": 409.8,
       "requirement": "<= 3000 ms"
     },
     {
       "name": "warm_trace_p95",
       "passed": true,
-      "actual": 417.4,
+      "actual": 428.5,
       "requirement": "<= 3000 ms"
     },
     {
       "name": "cold_context_p95",
       "passed": true,
-      "actual": 3920.6,
+      "actual": 3677.0,
       "requirement": "<= 5000 ms"
     },
     {
       "name": "cold_trace_p95",
       "passed": true,
-      "actual": 4405.6,
+      "actual": 3975.3,
       "requirement": "<= 5000 ms"
     },
     {
       "name": "no_10s_semantic_outlier",
       "passed": true,
-      "actual": 8764.9,
+      "actual": 9524.5,
       "requirement": "< 10000 ms"
     },
     {
