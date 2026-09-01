@@ -1,6 +1,7 @@
 mod boundary;
 mod cli;
 mod contracts;
+mod daemon;
 mod repository;
 mod runtime;
 mod target;
@@ -48,6 +49,18 @@ fn emit_failure(response: &impl Serialize, status: Status, json: bool, plain: &s
 fn main() -> ExitCode {
     let arguments: Vec<_> = env::args_os().collect();
     let raw_arguments = &arguments[1..];
+    if raw_arguments
+        .first()
+        .is_some_and(|value| value == "--internal-daemon")
+    {
+        return match daemon::internal_main(&raw_arguments[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("codeq daemon: {error}");
+                ExitCode::from(2)
+            }
+        };
+    }
     if let Some(output) = cli::early_output(raw_arguments) {
         match output {
             EarlyOutput::Help(help) => print!("{help}"),
