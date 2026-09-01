@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,12 +14,19 @@ mod support;
 use support::{resolve_executable, version};
 
 type Result<T> = std::result::Result<T, String>;
+const FROZEN_ORACLE_COMMIT: &str = "56fadc0a3485531da83851fbde69f2dc1126463b";
 
 #[derive(Debug, Parser)]
 #[command(about = "Run CodeQ black-box parity cases against two arbitrary executables")]
 struct Options {
     #[arg(long, value_name = "PATH")]
     oracle: Option<PathBuf>,
+
+    #[arg(long, value_name = "PATH", default_value = "compat/expected.json")]
+    expected: PathBuf,
+
+    #[arg(long, requires = "oracle")]
+    update_expected: bool,
 
     #[arg(long, value_name = "PATH")]
     candidate: Option<PathBuf>,
@@ -58,11 +65,20 @@ struct Case {
     with_root: bool,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct Invocation {
     exit_code: i32,
     stderr: String,
+    #[serde(rename = "stdout")]
     normalized: Value,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ExpectedManifest {
+    schema_version: u8,
+    oracle_version: String,
+    oracle_commit: String,
+    cases: BTreeMap<String, Invocation>,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,7 +127,6 @@ fn main() -> ExitCode {
 
 fn run(options: Options) -> Result<bool> {
     let current = PathBuf::from(env!("CARGO_BIN_EXE_codeq"));
-    let oracle = resolve_executable(options.oracle.as_deref().unwrap_or(&current))?;
     let candidate = resolve_executable(options.candidate.as_deref().unwrap_or(&current))?;
     let manifest: CaseManifest = serde_json::from_slice(
         &fs::read(&options.cases)
@@ -134,25 +149,105 @@ fn run(options: Options) -> Result<bool> {
     fs::create_dir(&candidate_runtime)
         .map_err(|error| format!("cannot create candidate runtime: {error}"))?;
 
-    let oracle_version = version(&oracle)?;
     let candidate_version = version(&candidate)?;
+    let oracle = options
+        .oracle
+        .as_deref()
+        .map(resolve_executable)
+        .transpose()?;
+    let expected = if oracle.is_none() {
+        let expected: ExpectedManifest = serde_json::from_slice(
+            &fs::read(&options.expected)
+                .map_err(|error| format!("cannot read {}: {error}", options.expected.display()))?,
+        )
+        .map_err(|error| format!("invalid {}: {error}", options.expected.display()))?;
+        if expected.schema_version != 1 {
+            return Err(format!(
+                "unsupported expected-result schema version: {}",
+                expected.schema_version
+            ));
+        }
+        if expected.oracle_commit != FROZEN_ORACLE_COMMIT {
+            return Err(format!(
+                "{} targets oracle commit {}, expected {}",
+                options.expected.display(),
+                expected.oracle_commit,
+                FROZEN_ORACLE_COMMIT
+            ));
+        }
+        let manifest_names = manifest
+            .cases
+            .iter()
+            .map(|case| case.name.as_str())
+            .collect::<BTreeSet<_>>();
+        let expected_names = expected
+            .cases
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        if manifest_names != expected_names {
+            return Err(format!(
+                "{} does not contain exactly the cases declared by {}",
+                options.expected.display(),
+                options.cases.display()
+            ));
+        }
+        Some(expected)
+    } else {
+        None
+    };
+    let oracle_version = match (&oracle, &expected) {
+        (Some(executable), _) => version(executable)?,
+        (None, Some(expected)) => expected.oracle_version.clone(),
+        (None, None) => {
+            return Err("an oracle executable or expected results are required".to_owned());
+        }
+    };
     let mut case_reports = Vec::with_capacity(manifest.cases.len());
-    for case in manifest.cases {
-        let oracle_result = invoke(
-            &oracle,
-            &case,
-            &repository,
-            "CODEQ_RUNTIME_DIR",
-            &oracle_runtime,
-        )?;
+    let mut captured = BTreeMap::new();
+    for case in &manifest.cases {
+        let oracle_result = if let Some(executable) = &oracle {
+            invoke(
+                executable,
+                case,
+                &repository,
+                "CODEQ_RUNTIME_DIR",
+                &oracle_runtime,
+            )?
+        } else {
+            expected
+                .as_ref()
+                .and_then(|expected| expected.cases.get(&case.name))
+                .cloned()
+                .ok_or_else(|| format!("missing expected result for {}", case.name))?
+        };
+        captured.insert(case.name.clone(), oracle_result.clone());
         let candidate_result = invoke(
             &candidate,
-            &case,
+            case,
             &repository,
             "CODEQ2_RUNTIME_DIR",
             &candidate_runtime,
         )?;
-        case_reports.push(compare(case.name, oracle_result, candidate_result));
+        case_reports.push(compare(case.name.clone(), oracle_result, candidate_result));
+    }
+
+    if options.update_expected {
+        let captured = ExpectedManifest {
+            schema_version: 1,
+            oracle_version: oracle_version.clone(),
+            oracle_commit: FROZEN_ORACLE_COMMIT.to_owned(),
+            cases: captured,
+        };
+        let rendered = serde_json::to_string_pretty(&captured)
+            .map_err(|error| format!("cannot serialize expected results: {error}"))?
+            + "\n";
+        if let Some(parent) = options.expected.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+        }
+        fs::write(&options.expected, rendered)
+            .map_err(|error| format!("cannot write {}: {error}", options.expected.display()))?;
     }
 
     let matched = case_reports.iter().filter(|case| case.matched).count();
@@ -165,6 +260,7 @@ fn run(options: Options) -> Result<bool> {
             "JSON object key order",
             "diagnostic fields whose key ends in _ms",
             "process identifiers stored under a pid key",
+            "temporary-corpus Git commit identifiers stored under resolved_base",
             "CRLF line endings in text output",
             "plain-output millisecond timings",
         ],
@@ -296,18 +392,20 @@ fn invoke(
                 case.name
             )
         })?;
-    invocation(case.output, output)
+    invocation(case.output, output, repository)
         .map_err(|error| format!("case {} with {}: {error}", case.name, executable.display()))
 }
 
-fn invocation(kind: OutputKind, output: Output) -> Result<Invocation> {
+fn invocation(kind: OutputKind, output: Output, repository: &Path) -> Result<Invocation> {
     let exit_code = output.status.code().unwrap_or(2);
+    let repository = repository.to_string_lossy();
     let stdout = String::from_utf8(output.stdout)
         .map_err(|error| format!("stdout is not UTF-8: {error}"))?
         .replace("\r\n", "\n");
     let stderr = String::from_utf8(output.stderr)
         .map_err(|error| format!("stderr is not UTF-8: {error}"))?
-        .replace("\r\n", "\n");
+        .replace("\r\n", "\n")
+        .replace(repository.as_ref(), "<ROOT>");
     let normalized = match kind {
         OutputKind::Json => {
             let mut value = serde_json::from_str(&stdout).map_err(|error| {
@@ -315,10 +413,10 @@ fn invocation(kind: OutputKind, output: Output) -> Result<Invocation> {
                     "expected JSON output, got {error}; exit={exit_code}; stderr={stderr:?}; stdout={stdout:?}"
                 )
             })?;
-            normalize_json(&mut value);
+            normalize_json(&mut value, &repository);
             value
         }
-        OutputKind::Text => Value::String(normalize_text(&stdout)),
+        OutputKind::Text => Value::String(normalize_text(&stdout, &repository)),
     };
     Ok(Invocation {
         exit_code,
@@ -327,8 +425,8 @@ fn invocation(kind: OutputKind, output: Output) -> Result<Invocation> {
     })
 }
 
-fn normalize_text(value: &str) -> String {
-    let mut normalized = value.to_owned();
+fn normalize_text(value: &str, repository: &str) -> String {
+    let mut normalized = value.replace(repository, "<ROOT>");
     let mut search_from = 0;
     while let Some(offset) = normalized[search_from..].find(" ms") {
         let end = search_from + offset;
@@ -353,11 +451,11 @@ fn normalize_text(value: &str) -> String {
     normalized
 }
 
-fn normalize_json(value: &mut Value) {
+fn normalize_json(value: &mut Value, repository: &str) {
     match value {
         Value::Array(items) => {
             for item in items {
-                normalize_json(item);
+                normalize_json(item, repository);
             }
         }
         Value::Object(object) => {
@@ -365,11 +463,18 @@ fn normalize_json(value: &mut Value) {
             if object.contains_key("pid") {
                 object.insert("pid".to_owned(), Value::String("<pid>".to_owned()));
             }
+            if object.contains_key("resolved_base") {
+                object.insert(
+                    "resolved_base".to_owned(),
+                    Value::String("<git-commit>".to_owned()),
+                );
+            }
             for nested in object.values_mut() {
-                normalize_json(nested);
+                normalize_json(nested, repository);
             }
         }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        Value::String(text) => *text = text.replace(repository, "<ROOT>"),
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
 }
 
