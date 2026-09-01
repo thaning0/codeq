@@ -85,13 +85,18 @@ impl DaemonService {
         })
     }
 
-    pub fn evict_idle(&self, max_idle: Duration) -> Vec<PathBuf> {
+    pub fn evict_idle(&self, workspace_idle: Duration, lsp_idle: Duration) -> Vec<PathBuf> {
         let mut state = self.lock_state();
         let now = Instant::now();
         let evicted_roots: Vec<_> = state
             .workspaces
             .iter()
             .filter(|(_, workspace)| {
+                let max_idle = if workspace.runtime.has_live_sessions() {
+                    lsp_idle
+                } else {
+                    workspace_idle
+                };
                 workspace.active == 0 && now.duration_since(workspace.last_used) >= max_idle
             })
             .map(|(root, _)| root.clone())

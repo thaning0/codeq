@@ -53,6 +53,7 @@ fn run(options: Options) -> Result<(), String> {
     exercise_stale_restart(&executable, temporary.path())?;
     exercise_workspace_bound(&executable, temporary.path())?;
     exercise_workspace_idle_eviction(&executable, temporary.path())?;
+    exercise_lsp_idle_retention(&executable, temporary.path())?;
     Ok(())
 }
 
@@ -341,6 +342,110 @@ fn exercise_workspace_idle_eviction(executable: &Path, temporary: &Path) -> Resu
     let shutdown = request_path(&socket, json!({"command": "_shutdown"}))?;
     assert_ok_status(&shutdown, "workspace-idle daemon shutdown")?;
     wait_for_path_removal(&socket, "workspace-idle daemon")
+}
+
+fn exercise_lsp_idle_retention(executable: &Path, temporary: &Path) -> Result<(), String> {
+    let runtime = temporary.join("lsp-idle-runtime");
+    let root = temporary.join("lsp-idle-root");
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+    fs::write(
+        root.join("pyproject.toml"),
+        "[project]\nname='runtime-lsp-idle'\nversion='0.0.0'\n",
+    )
+    .map_err(|error| error.to_string())?;
+    fs::write(
+        root.join("app.py"),
+        "class RuntimeIdleGreeter:\n    def greet(self) -> str:\n        return 'hello'\n",
+    )
+    .map_err(|error| error.to_string())?;
+    for arguments in [
+        &["init", "--quiet"][..],
+        &["config", "user.name", "CodeQ runtime contract"][..],
+        &["config", "user.email", "runtime-contract@example.invalid"][..],
+        &["add", "."][..],
+        &["commit", "--quiet", "-m", "lsp idle fixture"][..],
+    ] {
+        run_git(&root, arguments)?;
+    }
+
+    let query = || {
+        Command::new(executable)
+            .env("CODEQ2_RUNTIME_DIR", &runtime)
+            .env("CODEQ2_WORKSPACE_IDLE_SECONDS", "0.05")
+            .env("CODEQ2_LSP_IDLE_SECONDS", "60")
+            .env("CODEQ2_MAINTENANCE_INTERVAL_SECONDS", "0.02")
+            .arg("--root")
+            .arg(&root)
+            .args(["find", "RuntimeIdleGreeter", "--json"])
+            .output()
+            .map_err(|error| error.to_string())
+    };
+    let first = query()?;
+    if !first.status.success() {
+        return Err(format!(
+            "LSP idle fixture query failed: {}",
+            String::from_utf8_lossy(&first.stderr).trim()
+        ));
+    }
+    let first: Value = serde_json::from_slice(&first.stdout).map_err(|error| error.to_string())?;
+    let pid = first
+        .pointer("/_meta/lsp_sessions/0/pid")
+        .and_then(Value::as_i64)
+        .and_then(|pid| i32::try_from(pid).ok())
+        .ok_or_else(|| format!("LSP idle fixture started no language server: {first}"))?;
+
+    thread::sleep(Duration::from_millis(200));
+    let socket = runtime.join("codeq.sock");
+    let status = request_path(&socket, status_request())?;
+    if status.pointer("/data/workspaces").and_then(Value::as_u64) != Some(1) {
+        return Err(format!(
+            "workspace with a live LSP used the short idle timeout: {status}"
+        ));
+    }
+    let second = query()?;
+    let second: Value =
+        serde_json::from_slice(&second.stdout).map_err(|error| error.to_string())?;
+    let reused_pid = second
+        .pointer("/_meta/lsp_sessions/0/pid")
+        .and_then(Value::as_i64)
+        .and_then(|pid| i32::try_from(pid).ok());
+    if reused_pid != Some(pid)
+        || second
+            .pointer("/_meta/lsp_started")
+            .and_then(Value::as_bool)
+            != Some(false)
+    {
+        return Err(format!("retained LSP session was not reused: {second}"));
+    }
+
+    let shutdown = request_path(&socket, json!({"command": "_shutdown"}))?;
+    assert_ok_status(&shutdown, "LSP-idle daemon shutdown")?;
+    wait_for_path_removal(&socket, "LSP-idle daemon")?;
+    wait_for_pid_exit(pid, "LSP-idle daemon shutdown")
+}
+
+fn run_git(root: &Path, arguments: &[&str]) -> Result<(), String> {
+    let output = Command::new("git")
+        .args(arguments)
+        .current_dir(root)
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+fn wait_for_pid_exit(pid: i32, context: &str) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if kill(Pid::from_raw(pid), None).is_err() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    Err(format!("language-server process {pid} survived {context}"))
 }
 
 fn serve_stale(listener: UnixListener, socket: &Path) -> Result<(), String> {

@@ -28,6 +28,7 @@ const ACCEPT_POLL: Duration = Duration::from_millis(20);
 const DEFAULT_DAEMON_IDLE: Duration = Duration::from_secs(900);
 const DEFAULT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_WORKSPACE_IDLE: Duration = Duration::from_secs(300);
+const DEFAULT_LSP_IDLE: Duration = Duration::from_secs(1800);
 const DEFAULT_MAX_WORKSPACES: usize = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -97,6 +98,7 @@ pub fn run(endpoint: Endpoint) -> io::Result<()> {
     );
     let workspace_idle =
         environment_duration("CODEQ2_WORKSPACE_IDLE_SECONDS", DEFAULT_WORKSPACE_IDLE);
+    let lsp_idle = environment_duration("CODEQ2_LSP_IDLE_SECONDS", DEFAULT_LSP_IDLE);
     let service = Arc::new(service::DaemonService::new(
         environment_usize("CODEQ2_MAX_WORKSPACES", DEFAULT_MAX_WORKSPACES),
         runtime_dir.join("workspaces"),
@@ -117,7 +119,7 @@ pub fn run(endpoint: Endpoint) -> io::Result<()> {
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 let now = Instant::now();
                 if now >= next_maintenance {
-                    service.evict_idle(workspace_idle);
+                    service.evict_idle(workspace_idle, lsp_idle);
                     if service.workspace_count() == 0 && service.idle_duration() >= idle_timeout {
                         break;
                     }

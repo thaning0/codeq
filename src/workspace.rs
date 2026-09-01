@@ -238,6 +238,13 @@ impl Workspace {
         stats
     }
 
+    pub(crate) fn has_live_sessions(&self) -> bool {
+        self.lock_sessions()
+            .sessions
+            .values()
+            .any(|entry| matches!(entry, SessionEntry::Ready(session) if session.is_alive()))
+    }
+
     pub(crate) fn metrics(&self) -> WorkspaceMetrics {
         let starts = self.lock_sessions().starts;
         let documents = self.lock_documents();

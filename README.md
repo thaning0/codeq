@@ -340,7 +340,8 @@ These behaviors are part of the 1.0 compatibility boundary:
 
 JSON responses use `schema_version: 1`. Query outcomes use exit code `0` for success, `1` for query outcomes such as `not_found`/`ambiguous`, and `2` for CLI/runtime failures.
 
-See [1.0 readiness and compatibility policy](docs/codeq-1.0-readiness.md) for the full frozen contract.
+See the [2.0 cutover notes](docs/codeq-2.0-rust.md) for the frozen contract and
+acceptance evidence.
 
 ## How it works
 
@@ -364,7 +365,7 @@ symbols, and lazily owns one contentless in-memory FTS index per active worktree
 Releasing an inactive workspace closes both its language servers and FTS database.
 Workspaces without a live language server expire after five minutes; workspaces
 retaining an LSP process expire after 30 minutes. Override those limits with
-`CODEQ_WORKSPACE_IDLE_SECONDS` and `CODEQ_LSP_IDLE_SECONDS`. It does **not** maintain
+`CODEQ2_WORKSPACE_IDLE_SECONDS` and `CODEQ2_LSP_IDLE_SECONDS`. It does **not** maintain
 a persistent repository graph, source index, or embedding index.
 
 Concurrent non-text `find` requests for the same worktree are queued so one cold

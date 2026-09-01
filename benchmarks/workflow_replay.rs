@@ -213,6 +213,7 @@ fn run_case(
         .env("CODEQ2_DAEMON_IDLE_SECONDS", "1")
         .env("CODEQ2_MAINTENANCE_INTERVAL_SECONDS", "1")
         .env("CODEQ2_WORKSPACE_IDLE_SECONDS", "1")
+        .env("CODEQ2_LSP_IDLE_SECONDS", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
