@@ -8,9 +8,10 @@ use std::time::Instant;
 use globset::Glob;
 use serde_json::{Map, Value, json};
 
-use crate::cli::{ContextArgs, FindArgs, TraceArgs};
+use crate::cli::{ContextArgs, FindArgs, FindMode, TraceArgs};
+use crate::dynamic;
 use crate::lsp::LspProcess;
-use crate::symbol::{Location, Resolution, Symbol, lsp_location};
+use crate::symbol::{Location, Position, Range, Resolution, Symbol, lsp_location};
 use crate::target;
 use crate::textsearch;
 use crate::workspace::Workspace;
@@ -250,7 +251,51 @@ pub(crate) fn context(
             "_phase_ms": {"resolution": started.elapsed().as_secs_f64() * 1000.0, "prewarm": 0.0, "semantic_neighborhood": 0.0},
         }));
     }
-    let resolution = resolve(workspace, &arguments.target);
+    let bare_candidate = if target::explicit_path(&arguments.target, workspace.root()).is_none()
+        && !is_qualified(&arguments.target)
+    {
+        find(
+            workspace,
+            &FindArgs {
+                query: arguments.target.clone(),
+                mode: FindMode::Symbol,
+                kind: None,
+                text: false,
+                files_only: false,
+                paths: arguments.symbol_paths.clone(),
+                globs: Vec::new(),
+                exclude_tests: false,
+            },
+            limit.max(1),
+        )
+        .ok()
+        .and_then(|data| data.get("results").and_then(Value::as_array).cloned())
+        .and_then(|results| {
+            let first = results.first()?.clone();
+            let first_score = integer(&first, "score");
+            let unique_top = results
+                .iter()
+                .filter(|candidate| integer(candidate, "score") == first_score)
+                .count()
+                == 1;
+            Some((first, unique_top))
+        })
+    } else {
+        None
+    };
+    let resolution = if let Some((candidate, true)) = &bare_candidate {
+        symbol_from_value(candidate).map_or_else(
+            || resolve(workspace, &arguments.target),
+            |symbol| Resolution::Found {
+                symbol: Box::new(symbol),
+                candidates: Vec::new(),
+                requested_location: None,
+                cursor_definition: false,
+            },
+        )
+    } else {
+        resolve(workspace, &arguments.target)
+    };
     let resolution_ms = started.elapsed().as_secs_f64() * 1000.0;
     let (symbol, requested_location, cursor_definition) = match resolution {
         Resolution::Found {
@@ -268,6 +313,7 @@ pub(crate) fn context(
         .ok_or_else(|| format!("unsupported source file: {}", symbol.path.display()))?;
     if cursor_definition
         || (is_qualified(&arguments.target)
+            && !symbol.container.is_empty()
             && matches!(
                 symbol
                     .path
@@ -303,9 +349,32 @@ pub(crate) fn context(
     data.insert("status".to_owned(), Value::String("ok".to_owned()));
     data.insert("evidence".to_owned(), Value::String("semantic".to_owned()));
     data.insert("target".to_owned(), Value::String(arguments.target.clone()));
-    let mut resolved_symbol = symbol_value(&symbol, qualified_extras(&arguments.target, &symbol));
+    let mut resolved_symbol = symbol_value(
+        &symbol,
+        is_qualified(&arguments.target) && symbol.container.is_empty(),
+    );
     if is_qualified(&arguments.target) {
         resolved_symbol["score"] = Value::from(10_000);
+    }
+    if let Some(candidate) = bare_candidate
+        .map(|(candidate, _)| candidate)
+        .filter(|candidate| {
+            value_path(candidate) == symbol.path
+                && integer(candidate, "line") == symbol.line
+                && candidate.get("name").and_then(Value::as_str) == Some(symbol.name.as_str())
+        })
+    {
+        for key in [
+            "exact_definition",
+            "lexical_match_score",
+            "match_text",
+            "score",
+            "selection_command",
+        ] {
+            if let Some(value) = candidate.get(key) {
+                resolved_symbol[key] = value.clone();
+            }
+        }
     }
     data.insert("symbol".to_owned(), resolved_symbol);
     data.insert(
@@ -446,20 +515,21 @@ pub(crate) fn context(
         );
     }
     if selected.contains(&"tests") {
-        let tests = test_evidence(workspace.root(), &symbol, &references, &callers, budget);
-        let metadata = test_section_metadata(&tests, budget);
-        data.insert(
-            "tests".to_owned(),
-            Value::Array(tests.into_iter().take(budget).collect()),
-        );
+        let (tests, metadata) =
+            test_evidence(workspace.root(), &symbol, &references, &callers, budget);
+        data.insert("tests".to_owned(), Value::Array(tests));
         section_metadata.insert("tests".to_owned(), metadata);
     }
     if selected.contains(&"possible-dynamic-references") {
-        insert_section(
+        insert_bounded_section(
             &mut data,
             &mut section_metadata,
             "possible_dynamic_references",
-            Vec::new(),
+            dynamic::classify_references(
+                &source_references,
+                &symbol.name,
+                budget.saturating_add(1),
+            ),
             budget,
         );
     }
@@ -487,6 +557,24 @@ pub(crate) fn context(
         data.insert(
             "line_window".to_owned(),
             source_window(workspace.root(), anchor_path, anchor_line, u64::from(lines)),
+        );
+    }
+    if selected.contains(&"lexical-references") {
+        let query = arguments
+            .lexical_references
+            .as_deref()
+            .filter(|query| !query.is_empty())
+            .unwrap_or(&symbol.name);
+        data.insert(
+            "lexical_references".to_owned(),
+            textsearch::search(
+                workspace.root(),
+                query,
+                limit,
+                &arguments.paths,
+                &arguments.globs,
+                arguments.exclude_tests,
+            )?,
         );
     }
     data.insert(
@@ -537,8 +625,7 @@ pub(crate) fn trace(
         "both"
     };
     if matches!(direction, "in" | "both") {
-        workspace.prewarm_symbol(&symbol, limit as u64);
-        let _ = session.prepare_call_hierarchy(&symbol.path, symbol.line, symbol.column);
+        workspace.prewarm_trace(&symbol, limit as u64);
     }
     let roots = session
         .prepare_call_hierarchy(&symbol.path, symbol.line, symbol.column)
@@ -1212,23 +1299,41 @@ fn identifier(value: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
 }
 
-fn qualified_extras(target: &str, symbol: &Symbol) -> bool {
-    is_qualified(target)
-        && matches!(
-            symbol
-                .path
-                .extension()
-                .and_then(|extension| extension.to_str()),
-            Some("ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs")
-        )
-}
-
 fn symbol_value(symbol: &Symbol, exact_definition: bool) -> Value {
     let mut value = serde_json::to_value(symbol).expect("symbol serialization");
     if exact_definition {
         value["exact_definition"] = Value::Bool(true);
     }
     value
+}
+
+fn symbol_from_value(value: &Value) -> Option<Symbol> {
+    let range = value.get("range")?;
+    let position = |name: &str| -> Option<Position> {
+        let point = range.get(name)?;
+        Some(Position {
+            line: point.get("line")?.as_u64()?,
+            character: point.get("character")?.as_u64()?,
+        })
+    };
+    Some(Symbol {
+        name: value.get("name")?.as_str()?.to_owned(),
+        kind: value.get("kind")?.as_str()?.to_owned(),
+        container: value
+            .get("container")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        path: PathBuf::from(value.get("path")?.as_str()?),
+        line: integer(value, "line"),
+        column: integer(value, "column"),
+        range: Range {
+            start: position("start")?,
+            end: position("end")?,
+        },
+        source: "lsp",
+        origin: "document",
+    })
 }
 
 fn symbol_summary(symbol: &Symbol) -> Value {
@@ -1485,6 +1590,31 @@ fn insert_section(
     metadata.insert(name.to_owned(), known_metadata(total, limit));
 }
 
+fn insert_bounded_section(
+    data: &mut Map<String, Value>,
+    metadata: &mut Map<String, Value>,
+    name: &str,
+    values: Vec<Value>,
+    limit: usize,
+) {
+    let returned = values.len().min(limit);
+    let overflow = values.len() > returned;
+    data.insert(
+        name.to_owned(),
+        Value::Array(values.iter().take(limit).cloned().collect()),
+    );
+    metadata.insert(
+        name.to_owned(),
+        json!({
+            "returned_count": returned,
+            "total_count": if overflow { Value::Null } else { Value::from(values.len()) },
+            "total_is_exact": !overflow,
+            "total_lower_bound": values.len(),
+            "truncated": overflow,
+        }),
+    );
+}
+
 fn known_metadata(total: usize, limit: usize) -> Value {
     json!({
         "returned_count": total.min(limit),
@@ -1495,12 +1625,12 @@ fn known_metadata(total: usize, limit: usize) -> Value {
     })
 }
 
-fn test_section_metadata(tests: &[Value], limit: usize) -> Value {
+fn test_section_metadata(tests: &[Value], returned: &[Value], discovery_truncated: bool) -> Value {
     let mut direct = 0;
     let mut caller = 0;
     let mut module_import = 0;
     let mut lexical = 0;
-    for test in tests.iter().take(limit) {
+    for test in returned {
         match test.get("evidence_type").and_then(Value::as_str) {
             Some("direct_semantic_reference") => direct += 1,
             Some("semantic_caller") => caller += 1,
@@ -1509,8 +1639,24 @@ fn test_section_metadata(tests: &[Value], limit: usize) -> Value {
             _ => {}
         }
     }
-    let mut metadata = known_metadata(tests.len(), limit);
-    metadata["discovery_truncated"] = Value::Bool(false);
+    let mut metadata = if discovery_truncated {
+        json!({
+            "returned_count": returned.len(),
+            "total_count": null,
+            "total_is_exact": false,
+            "total_lower_bound": tests.len(),
+            "truncated": true,
+        })
+    } else {
+        json!({
+            "returned_count": returned.len(),
+            "total_count": tests.len(),
+            "total_is_exact": true,
+            "total_lower_bound": tests.len(),
+            "truncated": returned.len() < tests.len(),
+        })
+    };
+    metadata["discovery_truncated"] = Value::Bool(discovery_truncated);
     metadata["returned_evidence_counts"] = json!({
         "direct_semantic_reference": direct,
         "semantic_caller": caller,
@@ -1526,7 +1672,7 @@ fn test_evidence(
     references: &[Value],
     callers: &[Value],
     limit: usize,
-) -> Vec<Value> {
+) -> (Vec<Value>, Value) {
     let mut tests = Vec::new();
     for reference in references {
         if !is_test_path(value_path(reference)) {
@@ -1562,19 +1708,25 @@ fn test_evidence(
         });
         tests.push(value);
     }
-    tests.extend(module_import_evidence(root, symbol));
+    let importers = module_import_evidence(root, symbol);
+    let probe_limit = limit.saturating_add(1);
+    let import_discovery_truncated = importers.len() > probe_limit;
+    tests.extend(importers.into_iter().take(probe_limit));
     let direct_lines: HashSet<_> = references
         .iter()
         .filter(|reference| is_test_path(value_path(reference)))
         .map(|reference| (value_path(reference).to_owned(), integer(reference, "line")))
         .collect();
+    let mut lexical_discovery_truncated = false;
     if let Ok(search) = textsearch::search(root, &symbol.name, i64::MAX, &[], &[], false)
         && let Some(results) = search.get("results").and_then(Value::as_array)
     {
-        for result in results {
-            if result.get("is_test").and_then(Value::as_bool) != Some(true) {
-                continue;
-            }
+        let test_results: Vec<_> = results
+            .iter()
+            .filter(|result| result.get("is_test").and_then(Value::as_bool) == Some(true))
+            .collect();
+        lexical_discovery_truncated = test_results.len() > probe_limit;
+        for result in test_results.into_iter().take(probe_limit) {
             if direct_lines.contains(&(value_path(result).to_owned(), integer(result, "line"))) {
                 continue;
             }
@@ -1589,12 +1741,24 @@ fn test_evidence(
                 "query": symbol.name,
             });
             tests.push(value);
-            if tests.len() >= limit.saturating_mul(4).max(20) {
-                break;
-            }
         }
     }
-    tests
+    let mut deduplicated = Vec::new();
+    let mut seen = HashSet::new();
+    for item in tests {
+        let key = (
+            value_path(&item).to_owned(),
+            integer(&item, "line"),
+            integer(&item, "column"),
+        );
+        if seen.insert(key) {
+            deduplicated.push(item);
+        }
+    }
+    let discovery_truncated = import_discovery_truncated || lexical_discovery_truncated;
+    let returned: Vec<_> = deduplicated.iter().take(limit).cloned().collect();
+    let metadata = test_section_metadata(&deduplicated, &returned, discovery_truncated);
+    (returned, metadata)
 }
 
 fn module_import_evidence(root: &Path, symbol: &Symbol) -> Vec<Value> {

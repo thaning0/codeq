@@ -111,6 +111,13 @@ struct DocumentRegistry {
     prewarmed: HashSet<(PathBuf, String, u64)>,
 }
 
+#[derive(Clone, Copy)]
+enum PrewarmProbe {
+    None,
+    References,
+    IncomingCalls,
+}
+
 pub(crate) struct Workspace {
     root: PathBuf,
     scratch: PathBuf,
@@ -631,14 +638,24 @@ impl Workspace {
     }
 
     pub(crate) fn prewarm_symbol(&self, symbol: &Symbol, desired_results: u64) {
-        self.prewarm(symbol, desired_results, true);
+        self.prewarm(symbol, desired_results, PrewarmProbe::References, 12);
     }
 
-    pub(crate) fn prewarm_documents(&self, symbol: &Symbol) {
-        self.prewarm(symbol, 1, false);
+    pub(crate) fn prewarm_trace(&self, symbol: &Symbol, desired_results: u64) {
+        self.prewarm(symbol, desired_results, PrewarmProbe::IncomingCalls, 12);
     }
 
-    fn prewarm(&self, symbol: &Symbol, desired_results: u64, probe_references: bool) {
+    pub(crate) fn prewarm_documents(&self, symbol: &Symbol, max_files: usize) {
+        self.prewarm(symbol, 1, PrewarmProbe::None, max_files);
+    }
+
+    fn prewarm(
+        &self,
+        symbol: &Symbol,
+        desired_results: u64,
+        probe: PrewarmProbe,
+        max_files: usize,
+    ) {
         let Some(project) = self.project_for_path(&symbol.path) else {
             return;
         };
@@ -646,7 +663,11 @@ impl Workspace {
         let key = (
             project.root.clone(),
             symbol.name.clone(),
-            if probe_references { desired } else { 0 },
+            if matches!(probe, PrewarmProbe::None) {
+                0
+            } else {
+                desired
+            },
         );
         {
             let mut documents = self.lock_documents();
@@ -692,21 +713,37 @@ impl Workspace {
             .collect();
         files.sort();
         files.dedup();
-        files.truncate(12);
+        files.truncate(max_files);
         for (index, path) in files.into_iter().enumerate() {
             if self.document_symbols(&path, Some(&project)).is_err() {
                 continue;
             }
             self.lock_documents().prewarm_files += 1;
-            if !probe_references || (index + 1) % 2 != 0 {
+            if matches!(probe, PrewarmProbe::None) || (index + 1) % 2 != 0 {
                 continue;
             }
             self.lock_documents().prewarm_probes += 1;
-            let count = self
-                .session(&project)
-                .and_then(|session| session.references(&symbol.path, symbol.line, symbol.column))
-                .map(|items| items.len() as u64)
-                .unwrap_or(0);
+            let count = match probe {
+                PrewarmProbe::None => 0,
+                PrewarmProbe::References => self
+                    .session(&project)
+                    .and_then(|session| {
+                        session.references(&symbol.path, symbol.line, symbol.column)
+                    })
+                    .map(|items| items.len() as u64)
+                    .unwrap_or(0),
+                PrewarmProbe::IncomingCalls => self
+                    .session(&project)
+                    .and_then(|session| {
+                        let root = session
+                            .prepare_call_hierarchy(&symbol.path, symbol.line, symbol.column)?
+                            .into_iter()
+                            .next();
+                        root.map_or(Ok(Vec::new()), |item| session.incoming_calls(item))
+                    })
+                    .map(|items| items.len() as u64)
+                    .unwrap_or(0),
+            };
             if count >= desired {
                 self.lock_documents().prewarm_early_stops += 1;
                 break;

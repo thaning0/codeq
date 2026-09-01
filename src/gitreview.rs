@@ -7,6 +7,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use crate::cli::ReviewArgs;
+use crate::dynamic;
 use crate::lsp::LspProcess;
 use crate::symbol::{Symbol, lsp_location};
 use crate::target;
@@ -102,6 +103,7 @@ pub(crate) fn review(
     changed_symbols.truncate(budget);
 
     let mut details = Vec::new();
+    let mut dynamic_reference_count = 0usize;
     let mut impacted_files = BTreeSet::new();
     let mut tests: BTreeMap<(PathBuf, u64), Value> = BTreeMap::new();
     for symbol in changed_symbols {
@@ -111,14 +113,31 @@ pub(crate) fn review(
         let Ok(session) = workspace.session(&project) else {
             continue;
         };
-        workspace.prewarm_documents(&symbol);
-        let callers = incoming_callers(root, &session, &symbol);
+        workspace.prewarm_documents(&symbol, 8);
+        let eager_callers =
+            if can_derive_python_callers(&symbol) && session.semantic_navigation_warmed() {
+                None
+            } else {
+                Some(incoming_callers(root, &session, &symbol))
+            };
         let references = semantic_references(root, &session, &symbol);
+        let callers = eager_callers.unwrap_or_else(|| {
+            python_callers_from_references(workspace, &references, &symbol)
+                .unwrap_or_else(|| incoming_callers(root, &session, &symbol))
+        });
         let direct_tests: Vec<_> = references
             .iter()
             .filter(|reference| is_test_path(value_path(reference)))
             .cloned()
             .collect();
+        let source_references: Vec<_> = references
+            .iter()
+            .filter(|reference| !is_test_path(value_path(reference)))
+            .cloned()
+            .collect();
+        let possible_dynamic =
+            dynamic::classify_references(&source_references, &symbol.name, budget.min(5));
+        dynamic_reference_count += possible_dynamic.len();
         for caller in &callers {
             let path = value_path(caller).to_owned();
             impacted_files.insert(path.clone());
@@ -138,7 +157,7 @@ pub(crate) fn review(
         details.push(json!({
             "symbol": symbol_summary(&symbol),
             "callers": callers.into_iter().take(budget.min(5)).collect::<Vec<_>>(),
-            "possible_dynamic_references": [],
+            "possible_dynamic_references": possible_dynamic,
             "tests": direct_tests.into_iter().take(budget.min(5)).collect::<Vec<_>>(),
             "reference_count": references.len(),
         }));
@@ -180,7 +199,7 @@ pub(crate) fn review(
         "tests": returned_tests,
         "test_count": test_count,
         "tests_truncated": test_count > budget,
-        "possible_dynamic_reference_count": 0,
+        "possible_dynamic_reference_count": dynamic_reference_count,
         "unsupported_changed_files": unsupported,
         "truncated": truncated,
         "limitations": LIMITATIONS,
@@ -442,6 +461,59 @@ fn incoming_callers(root: &Path, session: &Arc<LspProcess>, symbol: &Symbol) -> 
     out
 }
 
+fn python_callers_from_references(
+    workspace: &Workspace,
+    references: &[Value],
+    symbol: &Symbol,
+) -> Option<Vec<Value>> {
+    if !can_derive_python_callers(symbol) {
+        return None;
+    }
+    let mut callers = Vec::new();
+    let mut seen = HashSet::new();
+    for reference in references {
+        if !dynamic::classify_python_call_reference(reference, &symbol.name)? {
+            continue;
+        }
+        let location = crate::symbol::Location {
+            path: value_path(reference).to_owned(),
+            line: integer(reference, "line"),
+            column: integer(reference, "column").max(1),
+            source: "lsp",
+        };
+        let caller = workspace.symbol_at_location(&location)?;
+        if !seen.insert((caller.path.clone(), caller.line, caller.name.clone())) {
+            continue;
+        }
+        callers.push(json!({
+            "name": caller.name,
+            "kind": if matches!(caller.kind.as_str(), "Function" | "Method" | "Constructor") {
+                "Function"
+            } else {
+                caller.kind.as_str()
+            },
+            "path": caller.path,
+            "line": caller.line,
+            "column": caller.column,
+            "detail": "",
+        }));
+    }
+    Some(callers)
+}
+
+fn can_derive_python_callers(symbol: &Symbol) -> bool {
+    matches!(
+        symbol
+            .path
+            .extension()
+            .and_then(|extension| extension.to_str()),
+        Some("py" | "pyi")
+    ) && matches!(
+        symbol.kind.as_str(),
+        "Function" | "Method" | "Constructor" | "Class"
+    ) && !dynamic::is_python_property(&symbol.path, symbol.line)
+}
+
 fn python_call_item(symbol: &Symbol) -> Option<Value> {
     if !matches!(
         symbol
@@ -606,7 +678,7 @@ fn rename_analysis(workspace: &Workspace, path: &Path, limit: usize) -> Value {
                 | "Constant"
         )
     }) {
-        workspace.prewarm_documents(&symbol);
+        workspace.prewarm_documents(&symbol, 12);
         let references = semantic_references(workspace.root(), &session, &symbol);
         let (tests, sources): (Vec<_>, Vec<_>) = references
             .into_iter()

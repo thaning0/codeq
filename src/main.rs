@@ -4,6 +4,7 @@ mod client;
 mod concept;
 mod contracts;
 mod daemon;
+mod dynamic;
 mod gitreview;
 // Phase 3 lands transport and ownership before every semantic handler consumes it.
 #[allow(dead_code)]

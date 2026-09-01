@@ -212,6 +212,48 @@
       "with_root": true
     },
     {
+      "name": "typescript_cursor_context_with_lines",
+      "args": ["context", "web.ts:6:10", "--lines", "4", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "incoming_typescript_trace",
+      "args": ["trace", "web.formatGreeting", "--in", "--depth", "1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "typescript_file_context",
+      "args": ["context", "web.ts", "--topology", "--lines", "5", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "focused_python_context",
+      "args": ["context", "app.Greeter.greet", "--section", "callers", "--section", "tests", "--limit", "2", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_context_lexical_evidence",
+      "args": ["context", "app.Greeter.greet", "--section", "lexical-references", "--lexical-references", "RUST_PARITY_MARKER", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_dynamic_reference_classification",
+      "args": ["context", "dynamic.dispatch_order", "--section", "possible-dynamic-references", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "typescript_dynamic_reference_classification",
+      "args": ["context", "dispatchEvent", "--section", "possible-dynamic-references", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
       "name": "working_tree_review",
       "args": ["review", "--base", "HEAD", "--json", "--no-daemon"],
       "output": "json",

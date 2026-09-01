@@ -338,6 +338,13 @@ fn execute_with_workspace(
     if let Some(phase_ms) = phase_ms {
         meta["phase_ms"] = phase_ms;
     }
+    if let Some(lexical) = data.get("lexical_references") {
+        meta["text"] = serde_json::json!({
+            "matching_file_count": integer(lexical, "matching_file_count"),
+            "tracked_matching_lines": integer(lexical, "tracked_line_count"),
+            "untracked_matching_lines": integer(lexical, "untracked_line_count"),
+        });
+    }
     data["_meta"] = meta;
     data["schema_version"] = Value::from(SCHEMA_VERSION);
     let status = data

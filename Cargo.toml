@@ -29,10 +29,9 @@ name = "runtime_contract"
 path = "compat/runtime.rs"
 harness = false
 
-[[bench]]
+[[example]]
 name = "readiness"
 path = "benchmarks/readiness.rs"
-harness = false
 
 [lints.rust]
 unsafe_code = "forbid"

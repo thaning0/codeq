@@ -24,9 +24,6 @@ type Measurements = (
 #[derive(Debug, Parser)]
 #[command(about = "Run the committed end-to-end CodeQ readiness workload")]
 struct Options {
-    #[arg(long, hide = true)]
-    bench: bool,
-
     #[arg(long, value_name = "PATH")]
     codeq: PathBuf,
 
@@ -41,6 +38,9 @@ struct Options {
 
     #[arg(long, value_name = "SEC", default_value_t = 7)]
     cleanup_wait: u64,
+
+    #[arg(long, value_name = "SEC", default_value_t = 15)]
+    case_timeout: u64,
 }
 
 struct BenchmarkCase {
@@ -104,7 +104,6 @@ fn main() -> ExitCode {
 }
 
 fn run(options: Options) -> Result<()> {
-    let _cargo_bench_mode = options.bench;
     let executable = resolve_executable(&options.codeq)?;
     let root = options
         .root
@@ -114,8 +113,14 @@ fn run(options: Options) -> Result<()> {
     let runtime_path = runtime.path().join("codeq");
     fs::create_dir(&runtime_path)
         .map_err(|error| format!("cannot create {}: {error}", runtime_path.display()))?;
-    let measurements =
-        collect_measurements(&executable, &root, &runtime_path, options.reps, &cases());
+    let measurements = collect_measurements(
+        &executable,
+        &root,
+        &runtime_path,
+        options.reps,
+        options.case_timeout,
+        &cases(),
+    );
 
     thread::sleep(Duration::from_secs(options.cleanup_wait));
     let survivors = runtime_processes(&runtime_path)?;
@@ -158,25 +163,43 @@ fn collect_measurements(
     root: &Path,
     runtime: &Path,
     reps: u16,
+    case_timeout: u64,
     cases: &[BenchmarkCase],
 ) -> Result<Measurements> {
     let mut cold = BTreeMap::new();
     for case in cases {
         let mut samples = Vec::with_capacity(usize::from(reps));
         for _ in 0..reps {
-            samples.push(run_case(executable, root, runtime, case, true)?);
+            eprintln!("readiness: cold {}", case.name);
+            samples.push(run_case(
+                executable,
+                root,
+                runtime,
+                case,
+                true,
+                case_timeout,
+            )?);
         }
         cold.insert(case.name, summarize(samples));
     }
 
     for case in cases {
-        run_case(executable, root, runtime, case, false)?;
+        eprintln!("readiness: warmup {}", case.name);
+        run_case(executable, root, runtime, case, false, case_timeout)?;
     }
     let mut warm = BTreeMap::new();
     for case in cases {
         let mut samples = Vec::with_capacity(usize::from(reps));
         for _ in 0..reps {
-            samples.push(run_case(executable, root, runtime, case, false)?);
+            eprintln!("readiness: warm {}", case.name);
+            samples.push(run_case(
+                executable,
+                root,
+                runtime,
+                case,
+                false,
+                case_timeout,
+            )?);
         }
         warm.insert(case.name, summarize(samples));
     }
@@ -268,6 +291,7 @@ fn run_case(
     runtime: &Path,
     case: &BenchmarkCase,
     cold: bool,
+    timeout_seconds: u64,
 ) -> Result<Sample> {
     let mut command = Command::new(executable);
     command
@@ -280,6 +304,9 @@ fn run_case(
         .env("CODEQ_DAEMON_IDLE_SECONDS", "1")
         .env("CODEQ_WORKSPACE_IDLE_SECONDS", "1")
         .env("CODEQ_LSP_IDLE_SECONDS", "1")
+        .env("CODEQ2_DAEMON_IDLE_SECONDS", "1")
+        .env("CODEQ2_MAINTENANCE_INTERVAL_SECONDS", "1")
+        .env("CODEQ2_WORKSPACE_IDLE_SECONDS", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if cold {
@@ -327,6 +354,14 @@ fn run_case(
             .map_err(|error| format!("cannot wait for {}: {error}", case.name))?
         {
             break status;
+        }
+        if started.elapsed() > Duration::from_secs(timeout_seconds) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "{} exceeded the {} second hard limit",
+                case.name, timeout_seconds
+            ));
         }
         thread::sleep(Duration::from_micros(200));
     };
@@ -501,15 +536,33 @@ fn runtime_rss(runtime: &Path, lsp_roots: &BTreeSet<u32>) -> Result<RuntimeRss> 
         .iter()
         .map(|process| (process.pid, process.parent))
         .collect();
+    let mut effective_lsp_roots = lsp_roots.clone();
+    effective_lsp_roots.extend(
+        processes
+            .iter()
+            .filter(|process| is_language_server(&process.command))
+            .map(|process| process.pid),
+    );
     let mut result = RuntimeRss::default();
     for process in processes {
-        if has_ancestor(process.pid, lsp_roots, &parents) {
+        if has_ancestor(process.pid, &effective_lsp_roots, &parents) {
             result.lsp_kb += process.rss_kb;
         } else {
             result.daemon_kb += process.rss_kb;
         }
     }
     Ok(result)
+}
+
+fn is_language_server(command: &str) -> bool {
+    [
+        "basedpyright-langserver",
+        "pyright-langserver",
+        "typescript-language-server",
+        "tsserver.js",
+    ]
+    .iter()
+    .any(|marker| command.contains(marker))
 }
 
 fn process_tree_snapshot(root: u32) -> Result<Vec<ProcessRecord>> {

@@ -52,6 +52,7 @@ pub struct LspProcess {
     document_version: AtomicU64,
     open_documents: Mutex<HashMap<String, (u128, u64)>>,
     navigation: Mutex<()>,
+    semantic_navigation_warmed: AtomicBool,
     closed: Arc<AtomicBool>,
     reader: Mutex<Option<JoinHandle<()>>>,
     stderr_reader: Mutex<Option<JoinHandle<()>>>,
@@ -128,6 +129,7 @@ impl LspProcess {
             document_version: AtomicU64::new(2),
             open_documents: Mutex::new(HashMap::new()),
             navigation: Mutex::new(()),
+            semantic_navigation_warmed: AtomicBool::new(false),
             closed,
             reader: Mutex::new(Some(reader)),
             stderr_reader: Mutex::new(Some(stderr_reader)),
@@ -319,7 +321,10 @@ impl LspProcess {
         let _navigation = lock(&self.navigation);
         let mut params = self.position_params(path, line, column)?;
         params["context"] = json!({"includeDeclaration": false});
-        self.request_array("textDocument/references", params)
+        let result = self.request_array("textDocument/references", params)?;
+        self.semantic_navigation_warmed
+            .store(true, Ordering::Release);
+        Ok(result)
     }
 
     pub fn implementations(
@@ -344,7 +349,14 @@ impl LspProcess {
 
     pub fn incoming_calls(&self, item: Value) -> Result<Vec<Value>, LspError> {
         let _navigation = lock(&self.navigation);
-        self.request_array("callHierarchy/incomingCalls", json!({"item": item}))
+        let result = self.request_array("callHierarchy/incomingCalls", json!({"item": item}))?;
+        self.semantic_navigation_warmed
+            .store(true, Ordering::Release);
+        Ok(result)
+    }
+
+    pub fn semantic_navigation_warmed(&self) -> bool {
+        self.semantic_navigation_warmed.load(Ordering::Acquire)
     }
 
     pub fn outgoing_calls(&self, item: Value) -> Result<Vec<Value>, LspError> {

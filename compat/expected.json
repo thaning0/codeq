@@ -32,10 +32,10 @@
           "paths": []
         },
         "index": {
-          "file_count": 3,
+          "file_count": 5,
           "index_bytes": 28672,
           "refreshed": true,
-          "source_bytes": 791,
+          "source_bytes": 1542,
           "storage": "memory_contentless"
         },
         "kind": null,
@@ -54,7 +54,7 @@
         "result_count": 2,
         "results": [
           {
-            "bm25": -3.264193792581378e-6,
+            "bm25": -1.1194306900135742,
             "column": 26,
             "container": "",
             "evidence": "lexical",
@@ -85,7 +85,7 @@
             "source": "fts5"
           },
           {
-            "bm25": -2.3402985074626867e-6,
+            "bm25": -0.8201094721846516,
             "column": 5,
             "container": "",
             "evidence": "lexical",
@@ -499,6 +499,144 @@
         "truncated": false
       }
     },
+    "focused_python_context": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": {
+        "_meta": {
+          "cache": {
+            "document_symbol_entries": 2,
+            "document_symbols_evicted": 0,
+            "document_symbols_hit": 3,
+            "document_symbols_miss": 2,
+            "document_symbols_waited": 0
+          },
+          "lsp_request_count": 7,
+          "lsp_sessions": [
+            {
+              "alive": true,
+              "family": "python",
+              "pid": "<pid>",
+              "request_count": 7,
+              "root": "<ROOT>",
+              "server": "basedpyright-langserver"
+            }
+          ],
+          "lsp_sessions_before": [],
+          "lsp_started": true,
+          "prewarm_early_stops": 1,
+          "prewarm_files": 2,
+          "prewarm_probes": 1,
+          "root": "<ROOT>",
+          "transport": "in_process"
+        },
+        "callers": [
+          {
+            "column": 5,
+            "detail": "",
+            "kind": "Function",
+            "line": 18,
+            "name": "run",
+            "path": "<ROOT>/app.py"
+          },
+          {
+            "column": 5,
+            "detail": "",
+            "kind": "Function",
+            "line": 8,
+            "name": "test_greeter",
+            "path": "<ROOT>/test_app.py"
+          }
+        ],
+        "evidence": "semantic",
+        "schema_version": 1,
+        "section_metadata": {
+          "callers": {
+            "returned_count": 2,
+            "total_count": 2,
+            "total_is_exact": true,
+            "total_lower_bound": 2,
+            "truncated": false
+          },
+          "tests": {
+            "discovery_truncated": true,
+            "returned_count": 2,
+            "returned_evidence_counts": {
+              "direct_semantic_reference": 1,
+              "exact_lexical_reference": 0,
+              "module_import": 0,
+              "semantic_caller": 1
+            },
+            "total_count": null,
+            "total_is_exact": false,
+            "total_lower_bound": 6,
+            "truncated": true
+          }
+        },
+        "section_selection": {
+          "mode": "focused",
+          "selected": [
+            "callers",
+            "tests"
+          ]
+        },
+        "status": "ok",
+        "symbol": {
+          "column": 9,
+          "container": "Greeter",
+          "kind": "Method",
+          "line": 14,
+          "name": "greet",
+          "origin": "document",
+          "path": "<ROOT>/app.py",
+          "range": {
+            "end": {
+              "character": 36,
+              "line": 14
+            },
+            "start": {
+              "character": 4,
+              "line": 13
+            }
+          },
+          "score": 10000,
+          "source": "lsp"
+        },
+        "target": "app.Greeter.greet",
+        "tests": [
+          {
+            "column": 22,
+            "confidence": "direct",
+            "evidence": "semantic",
+            "evidence_type": "direct_semantic_reference",
+            "line": 9,
+            "path": "<ROOT>/test_app.py",
+            "reason": {
+              "relationship": "references_symbol",
+              "source": "language_server",
+              "symbol": "greet"
+            }
+          },
+          {
+            "column": 5,
+            "confidence": "candidate",
+            "detail": "",
+            "evidence": "semantic",
+            "evidence_type": "semantic_caller",
+            "kind": "Function",
+            "line": 8,
+            "name": "test_greeter",
+            "path": "<ROOT>/test_app.py",
+            "reason": {
+              "caller": "test_greeter",
+              "relationship": "contains_incoming_caller",
+              "source": "language_server",
+              "symbol": "greet"
+            }
+          }
+        ]
+      }
+    },
     "incoming_python_trace": {
       "exit_code": 0,
       "stderr": "",
@@ -587,6 +725,79 @@
       "exit_code": 0,
       "stderr": "",
       "stdout": "greet  app.py:14\n├─ run  app.py:18\n└─ test_greeter  test_app.py:8\n\n[3 nodes; depth=1; node_limit=100; truncated=false; <timing> ms]\n"
+    },
+    "incoming_typescript_trace": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": {
+        "_meta": {
+          "cache": {
+            "document_symbol_entries": 1,
+            "document_symbols_evicted": 0,
+            "document_symbols_hit": 1,
+            "document_symbols_miss": 1,
+            "document_symbols_waited": 0
+          },
+          "lsp_request_count": 4,
+          "lsp_sessions": [
+            {
+              "alive": true,
+              "family": "typescript",
+              "pid": "<pid>",
+              "request_count": 4,
+              "root": "<ROOT>",
+              "server": "typescript-language-server"
+            }
+          ],
+          "lsp_sessions_before": [],
+          "lsp_started": true,
+          "prewarm_early_stops": 0,
+          "prewarm_files": 1,
+          "prewarm_probes": 0,
+          "root": "<ROOT>",
+          "transport": "in_process"
+        },
+        "depth": 1,
+        "direction": "in",
+        "evidence": "semantic",
+        "node_count": 2,
+        "node_limit": 100,
+        "root": {
+          "column": 10,
+          "detail": "",
+          "kind": "Function",
+          "line": 1,
+          "name": "formatGreeting",
+          "path": "<ROOT>/web.ts"
+        },
+        "schema_version": 1,
+        "status": "ok",
+        "target": "web.formatGreeting",
+        "tree": {
+          "children": [
+            {
+              "children": [],
+              "node": {
+                "column": 17,
+                "detail": "",
+                "kind": "Function",
+                "line": 5,
+                "name": "renderGreeting",
+                "path": "<ROOT>/web.ts"
+              }
+            }
+          ],
+          "node": {
+            "column": 10,
+            "detail": "",
+            "kind": "Function",
+            "line": 1,
+            "name": "formatGreeting",
+            "path": "<ROOT>/web.ts"
+          }
+        },
+        "truncated": false
+      }
     },
     "invalid_context_section": {
       "exit_code": 1,
@@ -704,6 +915,130 @@
       "exit_code": 1,
       "stderr": "file not found: missing/module.py\n",
       "stdout": ""
+    },
+    "python_context_lexical_evidence": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": {
+        "_meta": {
+          "cache": {
+            "document_symbol_entries": 1,
+            "document_symbols_evicted": 0,
+            "document_symbols_hit": 2,
+            "document_symbols_miss": 1,
+            "document_symbols_waited": 0
+          },
+          "lsp_request_count": 2,
+          "lsp_sessions": [
+            {
+              "alive": true,
+              "family": "python",
+              "pid": "<pid>",
+              "request_count": 2,
+              "root": "<ROOT>",
+              "server": "basedpyright-langserver"
+            }
+          ],
+          "lsp_sessions_before": [],
+          "lsp_started": true,
+          "prewarm_early_stops": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "root": "<ROOT>",
+          "text": {
+            "matching_file_count": 2,
+            "tracked_matching_lines": 2,
+            "untracked_matching_lines": 0
+          },
+          "transport": "in_process"
+        },
+        "evidence": "semantic",
+        "lexical_references": {
+          "evidence": "lexical",
+          "filters": {
+            "exclude_tests": false,
+            "globs": [],
+            "include_untracked": true,
+            "only_tests": false,
+            "paths": []
+          },
+          "match_count": 2,
+          "matching_file_count": 2,
+          "matching_line_count": 2,
+          "mode": "text",
+          "query": "RUST_PARITY_MARKER",
+          "results": [
+            {
+              "column": 1,
+              "evidence": "lexical",
+              "git_status": "tracked",
+              "is_test": false,
+              "line": 1,
+              "occurrences": 1,
+              "path": "<ROOT>/app.py",
+              "relative_path": "app.py",
+              "source": "git-grep",
+              "text": "RUST_PARITY_MARKER = \"codeq-rust-parity\"",
+              "text_start_column": 1,
+              "text_truncated": false,
+              "tracked": true
+            },
+            {
+              "column": 9,
+              "evidence": "lexical",
+              "git_status": "tracked",
+              "is_test": false,
+              "line": 1,
+              "occurrences": 1,
+              "path": "<ROOT>/contracts.yaml",
+              "relative_path": "contracts.yaml",
+              "source": "git-grep",
+              "text": "marker: RUST_PARITY_MARKER",
+              "text_start_column": 1,
+              "text_truncated": false,
+              "tracked": true
+            }
+          ],
+          "returned_line_count": 2,
+          "returned_match_count": 2,
+          "status": "ok",
+          "test_line_count": 0,
+          "tracked_line_count": 2,
+          "truncated": false,
+          "untracked_line_count": 0
+        },
+        "schema_version": 1,
+        "section_metadata": {},
+        "section_selection": {
+          "mode": "focused",
+          "selected": [
+            "lexical-references"
+          ]
+        },
+        "status": "ok",
+        "symbol": {
+          "column": 9,
+          "container": "Greeter",
+          "kind": "Method",
+          "line": 14,
+          "name": "greet",
+          "origin": "document",
+          "path": "<ROOT>/app.py",
+          "range": {
+            "end": {
+              "character": 36,
+              "line": 14
+            },
+            "start": {
+              "character": 4,
+              "line": 13
+            }
+          },
+          "score": 10000,
+          "source": "lsp"
+        },
+        "target": "app.Greeter.greet"
+      }
     },
     "python_cursor_context": {
       "exit_code": 0,
@@ -965,6 +1300,109 @@
             "tracked": true
           }
         ]
+      }
+    },
+    "python_dynamic_reference_classification": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": {
+        "_meta": {
+          "cache": {
+            "document_symbol_entries": 1,
+            "document_symbols_evicted": 0,
+            "document_symbols_hit": 1,
+            "document_symbols_miss": 1,
+            "document_symbols_waited": 0
+          },
+          "lsp_request_count": 3,
+          "lsp_sessions": [
+            {
+              "alive": true,
+              "family": "python",
+              "pid": "<pid>",
+              "request_count": 3,
+              "root": "<ROOT>",
+              "server": "basedpyright-langserver"
+            }
+          ],
+          "lsp_sessions_before": [],
+          "lsp_started": true,
+          "prewarm_early_stops": 0,
+          "prewarm_files": 1,
+          "prewarm_probes": 0,
+          "root": "<ROOT>",
+          "transport": "in_process"
+        },
+        "evidence": "semantic",
+        "possible_dynamic_references": [
+          {
+            "column": 23,
+            "confidence": "possible",
+            "evidence": "possible_dynamic",
+            "line": 12,
+            "path": "<ROOT>/dynamic.py",
+            "reason": "mapping_value",
+            "text": "CALLBACKS = {\"order\": dispatch_order}"
+          },
+          {
+            "column": 9,
+            "confidence": "possible",
+            "evidence": "possible_dynamic",
+            "line": 13,
+            "path": "<ROOT>/dynamic.py",
+            "reason": "assigned_callable",
+            "text": "alias = dispatch_order"
+          },
+          {
+            "column": 26,
+            "confidence": "possible",
+            "evidence": "possible_dynamic",
+            "line": 14,
+            "path": "<ROOT>/dynamic.py",
+            "reason": "callback_argument",
+            "text": "callback_result = invoke(dispatch_order)"
+          }
+        ],
+        "schema_version": 1,
+        "section_metadata": {
+          "possible_dynamic_references": {
+            "returned_count": 3,
+            "total_count": 3,
+            "total_is_exact": true,
+            "total_lower_bound": 3,
+            "truncated": false
+          }
+        },
+        "section_selection": {
+          "mode": "focused",
+          "selected": [
+            "possible-dynamic-references"
+          ]
+        },
+        "status": "ok",
+        "symbol": {
+          "column": 5,
+          "container": "",
+          "exact_definition": true,
+          "kind": "Function",
+          "line": 4,
+          "name": "dispatch_order",
+          "origin": "document",
+          "path": "<ROOT>/dynamic.py",
+          "range": {
+            "end": {
+              "character": 27,
+              "line": 4
+            },
+            "start": {
+              "character": 0,
+              "line": 3
+            }
+          },
+          "score": 10000,
+          "source": "lsp"
+        },
+        "target": "dynamic.dispatch_order"
       }
     },
     "python_file_context": {
@@ -2039,6 +2477,371 @@
         "schema_version": 1,
         "status": "unsupported_language",
         "target": "contracts.yaml:1"
+      }
+    },
+    "typescript_cursor_context_with_lines": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": {
+        "_meta": {
+          "cache": {
+            "document_symbol_entries": 1,
+            "document_symbols_evicted": 0,
+            "document_symbols_hit": 3,
+            "document_symbols_miss": 1,
+            "document_symbols_waited": 0
+          },
+          "lsp_request_count": 10,
+          "lsp_sessions": [
+            {
+              "alive": true,
+              "family": "typescript",
+              "pid": "<pid>",
+              "request_count": 10,
+              "root": "<ROOT>",
+              "server": "typescript-language-server"
+            }
+          ],
+          "lsp_sessions_before": [],
+          "lsp_started": true,
+          "prewarm_early_stops": 0,
+          "prewarm_files": 1,
+          "prewarm_probes": 0,
+          "root": "<ROOT>",
+          "transport": "in_process"
+        },
+        "callees": [],
+        "callers": [
+          {
+            "column": 17,
+            "detail": "",
+            "kind": "Function",
+            "line": 5,
+            "name": "renderGreeting",
+            "path": "<ROOT>/web.ts"
+          }
+        ],
+        "cursor_definition": true,
+        "evidence": "semantic",
+        "hover": "\n```typescript\nfunction formatGreeting(name: string): string\n```\n",
+        "hover_truncated": false,
+        "implementations": [],
+        "line_window": {
+          "end_line": 7,
+          "line_truncated": false,
+          "next_line": null,
+          "path": "<ROOT>/web.ts",
+          "payload_truncated": false,
+          "requested_line_count": 4,
+          "returned_line_count": 2,
+          "start_line": 6,
+          "text": "    6    return formatGreeting(name);\n    7  }",
+          "truncated": false
+        },
+        "possible_dynamic_references": [],
+        "references": [
+          {
+            "column": 10,
+            "line": 6,
+            "path": "<ROOT>/web.ts"
+          }
+        ],
+        "request_source": {
+          "end_line": 7,
+          "start_line": 4,
+          "text": "    4  \n    5  export function renderGreeting(name: string): string {\n    6    return formatGreeting(name);\n    7  }",
+          "truncated": false
+        },
+        "requested_location": {
+          "column": 10,
+          "line": 6,
+          "path": "<ROOT>/web.ts",
+          "source": "explicit"
+        },
+        "schema_version": 1,
+        "section_metadata": {
+          "callees": {
+            "returned_count": 0,
+            "total_count": 0,
+            "total_is_exact": true,
+            "total_lower_bound": 0,
+            "truncated": false
+          },
+          "callers": {
+            "returned_count": 1,
+            "total_count": 1,
+            "total_is_exact": true,
+            "total_lower_bound": 1,
+            "truncated": false
+          },
+          "implementations": {
+            "returned_count": 0,
+            "total_count": 0,
+            "total_is_exact": true,
+            "total_lower_bound": 0,
+            "truncated": false
+          },
+          "possible_dynamic_references": {
+            "returned_count": 0,
+            "total_count": 0,
+            "total_is_exact": true,
+            "total_lower_bound": 0,
+            "truncated": false
+          },
+          "references": {
+            "returned_count": 1,
+            "total_count": 1,
+            "total_is_exact": true,
+            "total_lower_bound": 1,
+            "truncated": false
+          },
+          "tests": {
+            "discovery_truncated": false,
+            "returned_count": 0,
+            "returned_evidence_counts": {
+              "direct_semantic_reference": 0,
+              "exact_lexical_reference": 0,
+              "module_import": 0,
+              "semantic_caller": 0
+            },
+            "total_count": 0,
+            "total_is_exact": true,
+            "total_lower_bound": 0,
+            "truncated": false
+          }
+        },
+        "section_selection": {
+          "mode": "default",
+          "selected": [
+            "source",
+            "callers",
+            "callees",
+            "implementations",
+            "tests",
+            "references",
+            "possible-dynamic-references"
+          ]
+        },
+        "source": {
+          "end_line": 7,
+          "start_line": 1,
+          "text": "    1  function formatGreeting(name: string): string {\n    2    return `Hello, ${name.trim()}`;\n    3  }\n    4  \n    5  export function renderGreeting(name: string): string {\n    6    return formatGreeting(name);\n    7  }",
+          "truncated": false
+        },
+        "status": "ok",
+        "symbol": {
+          "column": 10,
+          "container": "",
+          "kind": "Function",
+          "line": 1,
+          "name": "formatGreeting",
+          "origin": "document",
+          "path": "<ROOT>/web.ts",
+          "range": {
+            "end": {
+              "character": 1,
+              "line": 2
+            },
+            "start": {
+              "character": 0,
+              "line": 0
+            }
+          },
+          "source": "lsp"
+        },
+        "target": "web.ts:6:10",
+        "tests": []
+      }
+    },
+    "typescript_dynamic_reference_classification": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": {
+        "_meta": {
+          "cache": {
+            "document_symbol_entries": 1,
+            "document_symbols_evicted": 0,
+            "document_symbols_hit": 10,
+            "document_symbols_miss": 1,
+            "document_symbols_waited": 0
+          },
+          "lsp_request_count": 4,
+          "lsp_sessions": [
+            {
+              "alive": true,
+              "family": "typescript",
+              "pid": "<pid>",
+              "request_count": 4,
+              "root": "<ROOT>",
+              "server": "typescript-language-server"
+            }
+          ],
+          "lsp_sessions_before": [],
+          "lsp_started": true,
+          "prewarm_early_stops": 0,
+          "prewarm_files": 1,
+          "prewarm_probes": 0,
+          "root": "<ROOT>",
+          "transport": "in_process"
+        },
+        "evidence": "semantic",
+        "possible_dynamic_references": [
+          {
+            "column": 30,
+            "confidence": "possible",
+            "evidence": "possible_dynamic",
+            "line": 9,
+            "path": "<ROOT>/dynamic.ts",
+            "reason": "mapping_value",
+            "text": "const callbacks = { created: dispatchEvent };"
+          },
+          {
+            "column": 15,
+            "confidence": "possible",
+            "evidence": "possible_dynamic",
+            "line": 10,
+            "path": "<ROOT>/dynamic.ts",
+            "reason": "assigned_callable",
+            "text": "const alias = dispatchEvent;"
+          },
+          {
+            "column": 31,
+            "confidence": "possible",
+            "evidence": "possible_dynamic",
+            "line": 11,
+            "path": "<ROOT>/dynamic.ts",
+            "reason": "callback_argument",
+            "text": "const callbackResult = invoke(dispatchEvent);"
+          }
+        ],
+        "schema_version": 1,
+        "section_metadata": {
+          "possible_dynamic_references": {
+            "returned_count": 3,
+            "total_count": 3,
+            "total_is_exact": true,
+            "total_lower_bound": 3,
+            "truncated": false
+          }
+        },
+        "section_selection": {
+          "mode": "focused",
+          "selected": [
+            "possible-dynamic-references"
+          ]
+        },
+        "status": "ok",
+        "symbol": {
+          "column": 17,
+          "container": "",
+          "kind": "Function",
+          "lexical_match_score": 4,
+          "line": 1,
+          "match_text": "export function dispatchEvent(event: string): string {",
+          "name": "dispatchEvent",
+          "origin": "document",
+          "path": "<ROOT>/dynamic.ts",
+          "range": {
+            "end": {
+              "character": 1,
+              "line": 2
+            },
+            "start": {
+              "character": 0,
+              "line": 0
+            }
+          },
+          "score": 12950,
+          "selection_command": "codeq context dynamic.ts:1:17",
+          "source": "lsp"
+        },
+        "target": "dispatchEvent"
+      }
+    },
+    "typescript_file_context": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": {
+        "_meta": {
+          "cache": {
+            "document_symbol_entries": 1,
+            "document_symbols_evicted": 0,
+            "document_symbols_hit": 0,
+            "document_symbols_miss": 1,
+            "document_symbols_waited": 0
+          },
+          "lsp_request_count": 2,
+          "lsp_sessions": [
+            {
+              "alive": true,
+              "family": "typescript",
+              "pid": "<pid>",
+              "request_count": 2,
+              "root": "<ROOT>",
+              "server": "typescript-language-server"
+            }
+          ],
+          "lsp_sessions_before": [],
+          "lsp_started": true,
+          "prewarm_early_stops": 0,
+          "prewarm_files": 0,
+          "prewarm_probes": 0,
+          "root": "<ROOT>",
+          "transport": "in_process"
+        },
+        "container": null,
+        "file": {
+          "language": "typescript",
+          "path": "<ROOT>/web.ts",
+          "project_root": "<ROOT>"
+        },
+        "import_count": 0,
+        "importer_count": 0,
+        "importers": [],
+        "importers_truncated": false,
+        "imports": [],
+        "imports_truncated": false,
+        "kind": "file",
+        "line_window": {
+          "end_line": 5,
+          "line_truncated": false,
+          "next_line": null,
+          "path": "<ROOT>/web.ts",
+          "payload_truncated": false,
+          "requested_line_count": 5,
+          "returned_line_count": 5,
+          "start_line": 1,
+          "text": "    1  function formatGreeting(name: string): string {\n    2    return `Hello, ${name.trim()}`;\n    3  }\n    4  \n    5  export function renderGreeting(name: string): string {",
+          "truncated": false
+        },
+        "outline": [
+          {
+            "column": 10,
+            "container": "",
+            "kind": "Function",
+            "line": 1,
+            "name": "formatGreeting",
+            "path": "<ROOT>/web.ts"
+          },
+          {
+            "column": 17,
+            "container": "",
+            "kind": "Function",
+            "line": 5,
+            "name": "renderGreeting",
+            "path": "<ROOT>/web.ts"
+          }
+        ],
+        "outline_count": 2,
+        "outline_depth": 1,
+        "outline_kind": null,
+        "outline_matching_count": 2,
+        "outline_truncated": false,
+        "schema_version": 1,
+        "status": "ok",
+        "symbol_count": 2,
+        "target": "<ROOT>/web.ts",
+        "topology_loaded": true
       }
     },
     "unsupported_explicit_language_fails_closed": {

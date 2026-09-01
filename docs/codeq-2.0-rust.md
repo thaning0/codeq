@@ -62,7 +62,7 @@ it directly. Executable paths are runtime inputs and must not be committed.
 The end-to-end readiness workload is also executable-agnostic:
 
 ```bash
-cargo bench --bench readiness -- \
+cargo run --release --example readiness -- \
   --codeq /path/to/codeq \
   --root /path/to/representative/repository \
   --reps 3 \
