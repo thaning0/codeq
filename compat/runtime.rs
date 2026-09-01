@@ -51,6 +51,8 @@ fn run(options: Options) -> Result<(), String> {
     exercise_abstract_daemon(&executable)?;
     exercise_cli_transport(&executable, temporary.path())?;
     exercise_stale_restart(&executable, temporary.path())?;
+    exercise_workspace_bound(&executable, temporary.path())?;
+    exercise_workspace_idle_eviction(&executable, temporary.path())?;
     Ok(())
 }
 
@@ -133,6 +135,7 @@ fn exercise_idle_exit(executable: &Path, temporary: &Path) -> Result<(), String>
     let socket = temporary.join("idle-runtime/codeq.sock");
     let mut daemon = Command::new(executable)
         .env("CODEQ2_DAEMON_IDLE_SECONDS", "0.1")
+        .env("CODEQ2_MAINTENANCE_INTERVAL_SECONDS", "0.02")
         .arg("--internal-daemon")
         .arg("--socket")
         .arg(&socket)
@@ -207,6 +210,11 @@ fn exercise_cli_transport(executable: &Path, temporary: &Path) -> Result<(), Str
         ));
     }
 
+    let status = request_path(&socket, status_request())?;
+    if status.pointer("/data/workspaces").and_then(Value::as_u64) != Some(1) {
+        return Err(format!("daemon did not retain one worktree: {status}"));
+    }
+
     let shutdown = request_path(&socket, json!({"command": "_shutdown"}))?;
     assert_ok_status(&shutdown, "spawned CLI daemon shutdown")?;
     wait_for_path_removal(&socket, "CLI-spawned daemon")
@@ -255,6 +263,84 @@ fn exercise_stale_restart(executable: &Path, temporary: &Path) -> Result<(), Str
     let shutdown = request_path(&socket, json!({"command": "_shutdown"}))?;
     assert_ok_status(&shutdown, "restarted daemon shutdown")?;
     wait_for_path_removal(&socket, "restarted daemon")
+}
+
+fn exercise_workspace_bound(executable: &Path, temporary: &Path) -> Result<(), String> {
+    let runtime = temporary.join("bounded-runtime");
+    let roots = [
+        temporary.join("workspace-a"),
+        temporary.join("workspace-b"),
+        temporary.join("workspace-c"),
+    ];
+    for root in &roots {
+        fs::create_dir_all(root).map_err(|error| error.to_string())?;
+        let output = Command::new(executable)
+            .env("CODEQ2_RUNTIME_DIR", &runtime)
+            .env("CODEQ2_MAX_WORKSPACES", "2")
+            .arg("--root")
+            .arg(root)
+            .arg("context")
+            .arg("missing.py:1")
+            .arg("--json")
+            .output()
+            .map_err(|error| error.to_string())?;
+        if output.status.code() != Some(1) {
+            return Err(format!("bounded workspace query failed: {output:?}"));
+        }
+    }
+    let socket = runtime.join("codeq.sock");
+    let status = request_path(&socket, status_request())?;
+    let retained = status
+        .pointer("/data/roots")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("workspace status has no roots: {status}"))?;
+    let expected: Vec<_> = roots[1..]
+        .iter()
+        .map(|root| Value::String(root.to_string_lossy().into_owned()))
+        .collect();
+    if retained != &expected {
+        return Err(format!(
+            "workspace LRU bound differs: expected {expected:?}, got {retained:?}"
+        ));
+    }
+    let shutdown = request_path(&socket, json!({"command": "_shutdown"}))?;
+    assert_ok_status(&shutdown, "bounded daemon shutdown")?;
+    wait_for_path_removal(&socket, "bounded daemon")
+}
+
+fn exercise_workspace_idle_eviction(executable: &Path, temporary: &Path) -> Result<(), String> {
+    let runtime = temporary.join("workspace-idle-runtime");
+    let root = temporary.join("workspace-idle-root");
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+    let output = Command::new(executable)
+        .env("CODEQ2_RUNTIME_DIR", &runtime)
+        .env("CODEQ2_WORKSPACE_IDLE_SECONDS", "0.05")
+        .env("CODEQ2_MAINTENANCE_INTERVAL_SECONDS", "0.02")
+        .arg("--root")
+        .arg(&root)
+        .arg("context")
+        .arg("missing.py:1")
+        .arg("--json")
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.code() != Some(1) {
+        return Err("workspace idle fixture query failed".to_owned());
+    }
+    let socket = runtime.join("codeq.sock");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let status = request_path(&socket, status_request())?;
+        if status.pointer("/data/workspaces").and_then(Value::as_u64) == Some(0) {
+            break;
+        }
+        if Instant::now() >= deadline {
+            return Err(format!("idle workspace was not evicted: {status}"));
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let shutdown = request_path(&socket, json!({"command": "_shutdown"}))?;
+    assert_ok_status(&shutdown, "workspace-idle daemon shutdown")?;
+    wait_for_path_removal(&socket, "workspace-idle daemon")
 }
 
 fn serve_stale(listener: UnixListener, socket: &Path) -> Result<(), String> {

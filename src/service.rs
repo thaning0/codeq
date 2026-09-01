@@ -1,4 +1,8 @@
+use std::collections::HashMap;
 use std::path::Path;
+use std::path::PathBuf;
+use std::sync::{Condvar, Mutex, MutexGuard};
+use std::time::Duration;
 use std::time::Instant;
 
 use serde::Serialize;
@@ -9,10 +13,185 @@ use crate::cli::Cli;
 use crate::contracts::{SCHEMA_VERSION, Status};
 use crate::runtime;
 
+pub struct DaemonService {
+    state: Mutex<DaemonState>,
+    workspace_available: Condvar,
+    max_workspaces: usize,
+}
+
+struct DaemonState {
+    workspaces: HashMap<PathBuf, WorkspaceState>,
+    last_activity: Instant,
+}
+
+struct WorkspaceState {
+    active: usize,
+    last_used: Instant,
+}
+
+struct WorkspaceLease<'a> {
+    service: &'a DaemonService,
+    root: PathBuf,
+}
+
 pub struct QueryResult {
     pub data: Value,
     pub status: Status,
     pub plain: String,
+}
+
+impl DaemonService {
+    pub fn new(max_workspaces: usize) -> Self {
+        Self {
+            state: Mutex::new(DaemonState {
+                workspaces: HashMap::new(),
+                last_activity: Instant::now(),
+            }),
+            workspace_available: Condvar::new(),
+            max_workspaces: max_workspaces.max(1),
+        }
+    }
+
+    pub fn query(&self, cli: &Cli) -> Result<Value, String> {
+        let root = cli.root.clone();
+        let _lease = self.acquire(&root, query_timeout(cli.timeout))?;
+        Ok(execute(cli, &root, "daemon").data)
+    }
+
+    pub fn status(&self) -> Value {
+        let mut state = self.lock_state();
+        state.last_activity = Instant::now();
+        let mut roots: Vec<_> = state
+            .workspaces
+            .keys()
+            .map(|root| root.to_string_lossy().into_owned())
+            .collect();
+        roots.sort();
+        serde_json::json!({
+            "status": "ok",
+            "workspaces": roots.len(),
+            "roots": roots,
+            "schema_version": SCHEMA_VERSION,
+        })
+    }
+
+    pub fn evict_idle(&self, max_idle: Duration) -> Vec<PathBuf> {
+        let mut state = self.lock_state();
+        let now = Instant::now();
+        let mut evicted = Vec::new();
+        state.workspaces.retain(|root, workspace| {
+            let keep = workspace.active != 0 || now.duration_since(workspace.last_used) < max_idle;
+            if !keep {
+                evicted.push(root.clone());
+            }
+            keep
+        });
+        if !evicted.is_empty() {
+            self.workspace_available.notify_all();
+        }
+        evicted
+    }
+
+    pub fn workspace_count(&self) -> usize {
+        self.lock_state().workspaces.len()
+    }
+
+    pub fn idle_duration(&self) -> Duration {
+        Instant::now().duration_since(self.lock_state().last_activity)
+    }
+
+    fn acquire<'a>(&'a self, root: &Path, timeout: Duration) -> Result<WorkspaceLease<'a>, String> {
+        let deadline = Instant::now() + timeout;
+        let root = root.to_owned();
+        let mut state = self.lock_state();
+        loop {
+            let now = Instant::now();
+            if let Some(workspace) = state.workspaces.get_mut(&root) {
+                workspace.active += 1;
+                workspace.last_used = now;
+                state.last_activity = now;
+                return Ok(WorkspaceLease {
+                    service: self,
+                    root,
+                });
+            }
+            if state.workspaces.len() >= self.max_workspaces {
+                let victim = state
+                    .workspaces
+                    .iter()
+                    .filter(|(_, workspace)| workspace.active == 0)
+                    .min_by_key(|(_, workspace)| workspace.last_used)
+                    .map(|(candidate, _)| candidate.clone());
+                if let Some(victim) = victim {
+                    state.workspaces.remove(&victim);
+                } else {
+                    let remaining = deadline.saturating_duration_since(now);
+                    if remaining.is_zero() {
+                        return Err(format!(
+                            "workspace capacity timed out after {}s",
+                            timeout.as_secs_f64()
+                        ));
+                    }
+                    let waited = self
+                        .workspace_available
+                        .wait_timeout(state, remaining)
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    state = waited.0;
+                    if waited.1.timed_out() {
+                        return Err(format!(
+                            "workspace capacity timed out after {}s",
+                            timeout.as_secs_f64()
+                        ));
+                    }
+                    continue;
+                }
+            }
+            state.workspaces.insert(
+                root.clone(),
+                WorkspaceState {
+                    active: 1,
+                    last_used: now,
+                },
+            );
+            state.last_activity = now;
+            return Ok(WorkspaceLease {
+                service: self,
+                root,
+            });
+        }
+    }
+
+    fn release(&self, root: &Path) {
+        let mut state = self.lock_state();
+        let now = Instant::now();
+        if let Some(workspace) = state.workspaces.get_mut(root) {
+            workspace.active = workspace.active.saturating_sub(1);
+            workspace.last_used = now;
+        }
+        state.last_activity = now;
+        self.workspace_available.notify_all();
+    }
+
+    fn lock_state(&self) -> MutexGuard<'_, DaemonState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+impl Drop for WorkspaceLease<'_> {
+    fn drop(&mut self) {
+        self.service.release(&self.root);
+    }
+}
+
+fn query_timeout(seconds: f64) -> Duration {
+    let seconds = if seconds.is_nan() {
+        1.0
+    } else {
+        seconds.clamp(1.0, 3600.0)
+    };
+    Duration::from_secs_f64(seconds)
 }
 
 #[derive(Serialize)]

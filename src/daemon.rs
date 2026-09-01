@@ -18,7 +18,6 @@ use nix::unistd::Uid;
 use serde_json::{Value, json};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
-use crate::contracts::SCHEMA_VERSION;
 use crate::runtime::{DAEMON_PROTOCOL_VERSION, DEVELOPMENT_NAMESPACE, DEVELOPMENT_RUNTIME_ENV};
 use crate::{cli::Cli, service};
 
@@ -27,6 +26,9 @@ const SOCKET_MODE: u32 = 0o600;
 const RUNTIME_MODE: u32 = 0o700;
 const ACCEPT_POLL: Duration = Duration::from_millis(20);
 const DEFAULT_DAEMON_IDLE: Duration = Duration::from_secs(900);
+const DEFAULT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
+const DEFAULT_WORKSPACE_IDLE: Duration = Duration::from_secs(300);
+const DEFAULT_MAX_WORKSPACES: usize = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Endpoint {
@@ -88,22 +90,37 @@ pub fn run(endpoint: Endpoint) -> io::Result<()> {
     signal_hook::flag::register(SIGTERM, Arc::clone(&stopping))?;
     signal_hook::flag::register(SIGINT, Arc::clone(&stopping))?;
     let idle_timeout = daemon_idle_timeout();
-    let mut last_activity = Instant::now();
+    let maintenance_interval = environment_duration(
+        "CODEQ2_MAINTENANCE_INTERVAL_SECONDS",
+        DEFAULT_MAINTENANCE_INTERVAL,
+    );
+    let workspace_idle =
+        environment_duration("CODEQ2_WORKSPACE_IDLE_SECONDS", DEFAULT_WORKSPACE_IDLE);
+    let service = Arc::new(service::DaemonService::new(environment_usize(
+        "CODEQ2_MAX_WORKSPACES",
+        DEFAULT_MAX_WORKSPACES,
+    )));
+    let mut next_maintenance = Instant::now() + maintenance_interval;
     while !stopping.load(Ordering::Acquire) {
         match listener.accept() {
             Ok((stream, _)) => {
                 if !trusted_peer(&stream) {
                     continue;
                 }
-                last_activity = Instant::now();
                 let connection_stop = Arc::clone(&stopping);
+                let connection_service = Arc::clone(&service);
                 thread::spawn(move || {
-                    let _ = serve_connection(stream, &connection_stop);
+                    let _ = serve_connection(stream, &connection_stop, &connection_service);
                 });
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                if last_activity.elapsed() >= idle_timeout {
-                    break;
+                let now = Instant::now();
+                if now >= next_maintenance {
+                    service.evict_idle(workspace_idle);
+                    if service.workspace_count() == 0 && service.idle_duration() >= idle_timeout {
+                        break;
+                    }
+                    next_maintenance = now + maintenance_interval;
                 }
                 thread::sleep(ACCEPT_POLL);
             }
@@ -160,7 +177,11 @@ fn bind(endpoint: &Endpoint) -> io::Result<Option<UnixListener>> {
     }
 }
 
-fn serve_connection(mut stream: UnixStream, stopping: &AtomicBool) -> io::Result<()> {
+fn serve_connection(
+    mut stream: UnixStream,
+    stopping: &AtomicBool,
+    service: &service::DaemonService,
+) -> io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     stream.set_write_timeout(Some(Duration::from_secs(30)))?;
     let mut line = String::new();
@@ -171,7 +192,7 @@ fn serve_connection(mut stream: UnixStream, stopping: &AtomicBool) -> io::Result
         return Ok(());
     }
     let (response, shutdown_requested) = match serde_json::from_str::<Value>(&line) {
-        Ok(request) => response(&request),
+        Ok(request) => response(&request, service),
         Err(error) => (
             wire_error(None, format!("invalid JSON request: {error}")),
             false,
@@ -186,7 +207,7 @@ fn serve_connection(mut stream: UnixStream, stopping: &AtomicBool) -> io::Result
     Ok(())
 }
 
-fn response(request: &Value) -> (Value, bool) {
+fn response(request: &Value, service: &service::DaemonService) -> (Value, bool) {
     let command = request.get("command").and_then(Value::as_str);
     if command == Some("_shutdown") {
         return (wire_ok(json!({"status": "ok"})), true);
@@ -205,15 +226,7 @@ fn response(request: &Value) -> (Value, bool) {
         );
     }
     if command == Some("_status") {
-        return (
-            wire_ok(json!({
-                "status": "ok",
-                "workspaces": 0,
-                "roots": [],
-                "schema_version": SCHEMA_VERSION,
-            })),
-            false,
-        );
+        return (wire_ok(service.status()), false);
     }
     if command == Some("_query") {
         let Some(query) = request.get("request") else {
@@ -231,8 +244,10 @@ fn response(request: &Value) -> (Value, bool) {
                 );
             }
         };
-        let root = cli.root.clone();
-        return (wire_ok(service::execute(&cli, &root, "daemon").data), false);
+        return match service.query(&cli) {
+            Ok(data) => (wire_ok(data), false),
+            Err(error) => (wire_error(None, error), false),
+        };
     }
     (wire_error(None, "unknown daemon command".to_owned()), false)
 }
@@ -307,12 +322,24 @@ fn abstract_name(uid: u32) -> String {
 }
 
 fn daemon_idle_timeout() -> Duration {
-    env::var("CODEQ2_DAEMON_IDLE_SECONDS")
+    environment_duration("CODEQ2_DAEMON_IDLE_SECONDS", DEFAULT_DAEMON_IDLE)
+}
+
+fn environment_duration(name: &str, default: Duration) -> Duration {
+    env::var(name)
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
         .filter(|value| value.is_finite() && *value >= 0.0)
         .map(Duration::from_secs_f64)
-        .unwrap_or(DEFAULT_DAEMON_IDLE)
+        .unwrap_or(default)
+}
+
+fn environment_usize(name: &str, default: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
 }
 
 #[cfg(test)]
