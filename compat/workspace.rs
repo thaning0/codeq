@@ -56,6 +56,8 @@ fn run(options: Options) -> Result<()> {
     assert_u64(&initial, "/result_count", 1)?;
     let reused = concept(&executable, &runtime, &first, "alpha cache")?;
     assert_bool(&reused, "/index/refreshed", false)?;
+    let rust = concept(&executable, &runtime, &first, "rustonlytoken")?;
+    assert_u64(&rust, "/result_count", 1)?;
 
     let isolated = concept(&executable, &runtime, &second, "alpha cache")?;
     assert_bool(&isolated, "/index/refreshed", true)?;
@@ -79,6 +81,11 @@ fn prepare_repository(path: &Path, marker: &str) -> Result<()> {
     fs::write(
         path.join("source.py"),
         format!("def marker() -> str:\n    return {marker:?}\n"),
+    )
+    .map_err(|error| error.to_string())?;
+    fs::write(
+        path.join("source.rs"),
+        "pub const RUST_MARKER: &str = \"rustonlytoken\";\n",
     )
     .map_err(|error| error.to_string())?;
     git(path, &["init", "--quiet"])?;

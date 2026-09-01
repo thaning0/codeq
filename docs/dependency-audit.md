@@ -24,11 +24,12 @@ External product boundaries are deliberately not Rust dependencies:
 
 - Git owns repository and diff semantics.
 - ripgrep owns exact working-tree text search.
-- BasedPyright/Pyright and TypeScript Language Server own language semantics.
+- BasedPyright/Pyright, rust-analyzer, and TypeScript Language Server own language semantics.
 - SQLite owns FTS; CodeQ uses it in memory and does not introduce a persistent
   index.
 
 There is no parser framework, async runtime, HTTP stack, persistent database,
-graph engine, embedding client, or language-specific Rust parser in the
-dependency graph. Adding one requires a concrete product or ownership boundary,
-not anticipation of future features.
+graph engine, embedding client, or full language parser in the dependency graph.
+Small lexical adapters cover language-specific discovery and topology around the
+language-server boundary. Adding a parser requires a concrete product or ownership
+boundary, not anticipation of future features.
