@@ -83,7 +83,7 @@ fn main() -> ExitCode {
         service::execute(&cli, &root, "in_process")
     } else {
         match client::request(&cli, &root) {
-            Ok(Some(data)) => match service::received(data, &root) {
+            Ok(Some(data)) => match service::received(data, &cli, &root) {
                 Ok(result) => result,
                 Err(error) => {
                     eprintln!("codeq: {error}");

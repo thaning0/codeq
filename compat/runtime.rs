@@ -394,6 +394,29 @@ fn exercise_lsp_idle_retention(executable: &Path, temporary: &Path) -> Result<()
         .and_then(|pid| i32::try_from(pid).ok())
         .ok_or_else(|| format!("LSP idle fixture started no language server: {first}"))?;
 
+    let plain = Command::new(executable)
+        .env("CODEQ2_RUNTIME_DIR", &runtime)
+        .env("CODEQ2_WORKSPACE_IDLE_SECONDS", "0.05")
+        .env("CODEQ2_LSP_IDLE_SECONDS", "60")
+        .env("CODEQ2_MAINTENANCE_INTERVAL_SECONDS", "0.02")
+        .arg("--root")
+        .arg(&root)
+        .args(["find", "RuntimeIdleGreeter"])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !plain.status.success() {
+        return Err(format!(
+            "plain daemon query failed: {}",
+            String::from_utf8_lossy(&plain.stderr).trim()
+        ));
+    }
+    let plain = String::from_utf8_lossy(&plain.stdout);
+    if !plain.contains("RuntimeIdleGreeter") || plain.contains("query failed") {
+        return Err(format!(
+            "plain daemon response did not render successful results: {plain:?}"
+        ));
+    }
+
     thread::sleep(Duration::from_millis(200));
     let socket = runtime.join("codeq.sock");
     let status = request_path(&socket, status_request())?;

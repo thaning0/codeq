@@ -929,7 +929,7 @@ fn shell_word(value: &str) -> String {
     }
 }
 
-pub fn received(data: Value, root: &Path) -> Result<QueryResult, String> {
+pub fn received(data: Value, cli: &Cli, root: &Path) -> Result<QueryResult, String> {
     let status = data
         .get("status")
         .cloned()
@@ -938,18 +938,29 @@ pub fn received(data: Value, root: &Path) -> Result<QueryResult, String> {
             serde_json::from_value(value)
                 .map_err(|error| format!("daemon returned an invalid status: {error}"))
         })?;
-    let reason = data
-        .get("reason")
-        .and_then(Value::as_str)
-        .unwrap_or("query failed");
-    let prefix = format!("{}{}", root.display(), std::path::MAIN_SEPARATOR);
-    let mut plain = reason.replace(&prefix, "");
-    if status == Status::Unavailable {
-        plain = format!("codeq: {plain}");
-    } else if let Some(recovery) = data.get("recovery_command").and_then(Value::as_str) {
-        plain.push_str("\n  try: ");
-        plain.push_str(recovery);
-    }
+    let plain = if status == Status::Ok {
+        match &cli.command {
+            Command::Find(arguments) if arguments.text || arguments.mode == FindMode::Text => {
+                render_text_search(&data, root)
+            }
+            command => render_semantic(&data, command.name()),
+        }
+    } else {
+        let reason = data
+            .get("reason")
+            .or_else(|| data.get("error"))
+            .and_then(Value::as_str)
+            .unwrap_or("query failed");
+        let prefix = format!("{}{}", root.display(), std::path::MAIN_SEPARATOR);
+        let mut plain = reason.replace(&prefix, "");
+        if status == Status::Unavailable {
+            plain = format!("codeq: {plain}");
+        } else if let Some(recovery) = data.get("recovery_command").and_then(Value::as_str) {
+            plain.push_str("\n  try: ");
+            plain.push_str(recovery);
+        }
+        plain
+    };
     Ok(QueryResult {
         data,
         status,
