@@ -9,3 +9,4 @@ dist/
 .acceptance*/
 .worktree-smoke.json
 debug_lsp.py
+/target/

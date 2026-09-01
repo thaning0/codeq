@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "oracle": {
+    "git_commit": "56fadc0a3485531da83851fbde69f2dc1126463b",
+    "codeq_version": "1.0.0rc13",
+    "daemon_protocol_version": 8
+  },
+  "captured_on": "2026-09-01",
+  "external_tools": {
+    "git": "2.52.0",
+    "ripgrep": "15.2.0",
+    "node": "24.14.1",
+    "basedpyright": "1.37.1",
+    "typescript_language_server": "6.0.0",
+    "typescript": "5.9.3"
+  },
+  "notes": [
+    "The executable path is intentionally not recorded because it is machine-specific.",
+    "Parity runners must accept the oracle executable explicitly.",
+    "The Python CodeQ source installed for this capture matched the frozen commit byte-for-byte."
+  ]
+}

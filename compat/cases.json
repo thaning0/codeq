@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "top_level_help",
+      "args": ["--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "find_help",
+      "args": ["find", "--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "context_help",
+      "args": ["context", "--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "trace_help",
+      "args": ["trace", "--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "review_help",
+      "args": ["review", "--help"],
+      "output": "text",
+      "with_root": false
+    },
+    {
+      "name": "missing_explicit_path_fails_closed",
+      "args": ["context", "missing/module.py:12", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "exact_text_search",
+      "args": ["find", "RUST_PARITY_MARKER", "--mode", "text", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "concept_file_discovery",
+      "args": ["find", "format greeting", "--mode", "concept", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "qualified_python_context",
+      "args": ["context", "app.Greeter.greet", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_cursor_context",
+      "args": ["context", "app.py:15:16", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "incoming_python_trace",
+      "args": ["trace", "app.Greeter.greet", "--in", "--depth", "1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "qualified_typescript_context",
+      "args": ["context", "web.renderGreeting", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "working_tree_review",
+      "args": ["review", "--base", "HEAD", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    }
+  ]
+}

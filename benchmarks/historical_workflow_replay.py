@@ -357,7 +357,11 @@ def validation_candidates(sample: list[Workflow], limit: int) -> list[tuple[str,
     return candidates
 
 
-def run_current_validation(root: Path, candidates: list[tuple[str, list[str]]]) -> dict[str, Any]:
+def run_current_validation(
+    root: Path,
+    candidates: list[tuple[str, list[str]]],
+    codeq_executable: str = "codeq",
+) -> dict[str, Any]:
     statuses: Counter[str] = Counter()
     kinds: Counter[str] = Counter()
     durations: list[float] = []
@@ -365,7 +369,7 @@ def run_current_validation(root: Path, candidates: list[tuple[str, list[str]]]) 
         started = time.perf_counter()
         try:
             proc = subprocess.run(
-                ["codeq", "--root", str(root), *args],
+                [codeq_executable, "--root", str(root), *args],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -391,7 +395,12 @@ def run_current_validation(root: Path, candidates: list[tuple[str, list[str]]]) 
     }
 
 
-def summarize(workflows: list[Workflow], sample: list[Workflow], validation: dict[str, Any]) -> dict[str, Any]:
+def summarize(
+    workflows: list[Workflow],
+    sample: list[Workflow],
+    validation: dict[str, Any],
+    codeq_version: str = __version__,
+) -> dict[str, Any]:
     all_quant = [workflow for workflow in workflows if workflow.quant_related]
     call_counts: Counter[str] = Counter(call.name for workflow in all_quant for call in workflow.calls)
     pattern_counts: Counter[str] = Counter(
@@ -435,7 +444,7 @@ def summarize(workflows: list[Workflow], sample: list[Workflow], validation: dic
     actionable = sum(value for key, value in coverage.items() if key != "eliminated")
     directly_covered = coverage["direct"] + coverage["approximate"]
     return {
-        "codeq_version": __version__,
+        "codeq_version": codeq_version,
         "corpus": {
             "all_crg_workflows": len(workflows),
             "quant_crg_workflows": len(all_quant),
@@ -550,6 +559,11 @@ def main() -> None:
     parser.add_argument("--pi-root", type=Path, default=Path.home() / ".pi/agent/sessions")
     parser.add_argument("--quant-root", type=Path, default=Path.home() / "Quant")
     parser.add_argument("--validate", type=int, default=30)
+    parser.add_argument(
+        "--codeq-executable",
+        default="codeq",
+        help="CodeQ executable used for current-query validation (default: PATH lookup).",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--markdown", type=Path, required=True)
     args = parser.parse_args()
@@ -557,8 +571,16 @@ def main() -> None:
     workflows = load_workflows(args.codex_root, args.pi_root)
     sample = sample_workflows(workflows)
     candidates = validation_candidates(sample, max(0, args.validate))
-    validation = run_current_validation(args.quant_root, candidates)
-    data = summarize(workflows, sample, validation)
+    validation = run_current_validation(args.quant_root, candidates, args.codeq_executable)
+    version_proc = subprocess.run(
+        [args.codeq_executable, "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    running_version = version_proc.stdout.strip().removeprefix("codeq ") or "unknown"
+    data = summarize(workflows, sample, validation, running_version)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     args.markdown.parent.mkdir(parents=True, exist_ok=True)

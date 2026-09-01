@@ -4,7 +4,11 @@ A small, CLI-first code-intelligence tool for coding agents.
 
 `codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
 
-> **Status:** `1.0.0rc12` is the active release candidate. The four-command surface is feature-frozen for 1.0.
+> **Status:** this `2.0-rust` branch is an incomplete Rust rewrite and is not the
+> shipping product. Its frozen behavioral oracle is `1.0.0rc13` at commit
+> `56fadc0a3485531da83851fbde69f2dc1126463b`; see
+> [the migration notes](docs/codeq-2.0-rust.md). The four-command product
+> surface remains frozen during the rewrite.
 
 ## Why codeq
 
@@ -70,7 +74,7 @@ codeq --help
 The current release candidate reports:
 
 ```text
-codeq 1.0.0rc12
+codeq 1.0.0rc13
 ```
 
 ## The workflow

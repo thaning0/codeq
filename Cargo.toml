@@ -1,0 +1,32 @@
+[package]
+name = "codeq"
+version = "2.0.0-alpha.0"
+edition = "2024"
+rust-version = "1.98"
+description = "Small CLI-first code intelligence for coding agents"
+repository = "https://github.com/thaning0/codeq"
+publish = false
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[test]]
+name = "parity"
+path = "compat/parity.rs"
+harness = false
+
+[[bench]]
+name = "readiness"
+path = "benchmarks/readiness.rs"
+harness = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
