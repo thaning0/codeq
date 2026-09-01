@@ -3,6 +3,7 @@ mod cli;
 mod client;
 mod contracts;
 mod daemon;
+pub mod lsp;
 mod repository;
 mod runtime;
 mod service;
