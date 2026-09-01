@@ -85,6 +85,7 @@ pub fn run(endpoint: Endpoint) -> io::Result<()> {
     let Some(listener) = listener else {
         return Ok(());
     };
+    let runtime_dir = runtime_directory(&endpoint)?;
     listener.set_nonblocking(true)?;
     let stopping = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(SIGTERM, Arc::clone(&stopping))?;
@@ -96,10 +97,10 @@ pub fn run(endpoint: Endpoint) -> io::Result<()> {
     );
     let workspace_idle =
         environment_duration("CODEQ2_WORKSPACE_IDLE_SECONDS", DEFAULT_WORKSPACE_IDLE);
-    let service = Arc::new(service::DaemonService::new(environment_usize(
-        "CODEQ2_MAX_WORKSPACES",
-        DEFAULT_MAX_WORKSPACES,
-    )));
+    let service = Arc::new(service::DaemonService::new(
+        environment_usize("CODEQ2_MAX_WORKSPACES", DEFAULT_MAX_WORKSPACES),
+        runtime_dir.join("workspaces"),
+    ));
     let mut next_maintenance = Instant::now() + maintenance_interval;
     while !stopping.load(Ordering::Acquire) {
         match listener.accept() {
@@ -309,6 +310,16 @@ fn default_runtime_dir() -> Result<PathBuf, String> {
     ));
     prepare_runtime_dir(&fallback)
         .map_err(|error| format!("no usable Rust codeq runtime directory: {error}"))
+}
+
+fn runtime_directory(endpoint: &Endpoint) -> io::Result<PathBuf> {
+    match endpoint {
+        Endpoint::Filesystem(path) => path
+            .parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "socket path has no parent"))
+            .and_then(prepare_runtime_dir),
+        Endpoint::Abstract(_) => default_runtime_dir().map_err(io::Error::other),
+    }
 }
 
 fn cleanup(endpoint: &Endpoint) {

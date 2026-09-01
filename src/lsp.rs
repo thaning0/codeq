@@ -24,6 +24,12 @@ const STDERR_LINES: usize = 50;
 #[derive(Debug, Clone)]
 pub struct LspError(String);
 
+impl LspError {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+}
+
 impl fmt::Display for LspError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
@@ -425,7 +431,7 @@ fn spawn_stderr_reader<R: Read + Send + 'static>(
     })
 }
 
-fn read_message(reader: &mut impl BufRead) -> Result<Option<Value>, LspError> {
+pub(crate) fn read_message(reader: &mut impl BufRead) -> Result<Option<Value>, LspError> {
     let length = loop {
         let mut length = None;
         loop {
@@ -578,20 +584,25 @@ fn value_array(value: Value) -> Vec<Value> {
 }
 
 fn prepare_temp_dir(scratch: &Path) -> Result<PathBuf, LspError> {
+    prepare_private_dir(scratch, "LSP scratch directory")?;
     let temp = scratch.join("lsp-tmp");
-    fs::create_dir_all(&temp)
-        .map_err(|error| LspError(format!("cannot create LSP temp directory: {error}")))?;
-    let metadata = fs::metadata(&temp)
-        .map_err(|error| LspError(format!("cannot inspect LSP temp directory: {error}")))?;
+    prepare_private_dir(&temp, "LSP temp directory")?;
+    Ok(temp)
+}
+
+fn prepare_private_dir(path: &Path, label: &str) -> Result<(), LspError> {
+    fs::create_dir_all(path)
+        .map_err(|error| LspError(format!("cannot create {label}: {error}")))?;
+    let metadata =
+        fs::metadata(path).map_err(|error| LspError(format!("cannot inspect {label}: {error}")))?;
     if metadata.uid() != Uid::current().as_raw() {
         return Err(LspError(format!(
-            "LSP temp directory is not owned by current user: {}",
-            temp.display()
+            "{label} is not owned by current user: {}",
+            path.display()
         )));
     }
-    fs::set_permissions(&temp, fs::Permissions::from_mode(0o700))
-        .map_err(|error| LspError(format!("cannot protect LSP temp directory: {error}")))?;
-    Ok(temp)
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .map_err(|error| LspError(format!("cannot protect {label}: {error}")))
 }
 
 fn file_uri(path: &Path) -> String {

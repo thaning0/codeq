@@ -3,11 +3,15 @@ mod cli;
 mod client;
 mod contracts;
 mod daemon;
-pub mod lsp;
+// Phase 3 lands transport and ownership before every semantic handler consumes it.
+#[allow(dead_code)]
+mod lsp;
 mod repository;
 mod runtime;
 mod service;
 mod target;
+#[allow(dead_code)]
+mod workspace;
 
 use std::env;
 use std::process::ExitCode;

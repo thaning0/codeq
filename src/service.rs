@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::{Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 use std::time::Instant;
 
@@ -12,11 +14,13 @@ use crate::boundary;
 use crate::cli::Cli;
 use crate::contracts::{SCHEMA_VERSION, Status};
 use crate::runtime;
+use crate::workspace::Workspace;
 
 pub struct DaemonService {
     state: Mutex<DaemonState>,
     workspace_available: Condvar,
     max_workspaces: usize,
+    scratch_root: PathBuf,
 }
 
 struct DaemonState {
@@ -27,11 +31,13 @@ struct DaemonState {
 struct WorkspaceState {
     active: usize,
     last_used: Instant,
+    runtime: Arc<Workspace>,
 }
 
 struct WorkspaceLease<'a> {
     service: &'a DaemonService,
     root: PathBuf,
+    runtime: Arc<Workspace>,
 }
 
 pub struct QueryResult {
@@ -41,7 +47,7 @@ pub struct QueryResult {
 }
 
 impl DaemonService {
-    pub fn new(max_workspaces: usize) -> Self {
+    pub fn new(max_workspaces: usize, scratch_root: PathBuf) -> Self {
         Self {
             state: Mutex::new(DaemonState {
                 workspaces: HashMap::new(),
@@ -49,12 +55,14 @@ impl DaemonService {
             }),
             workspace_available: Condvar::new(),
             max_workspaces: max_workspaces.max(1),
+            scratch_root,
         }
     }
 
     pub fn query(&self, cli: &Cli) -> Result<Value, String> {
         let root = cli.root.clone();
-        let _lease = self.acquire(&root, query_timeout(cli.timeout))?;
+        let lease = self.acquire(&root, query_timeout(cli.timeout))?;
+        let _workspace = &lease.runtime;
         Ok(execute(cli, &root, "daemon").data)
     }
 
@@ -78,18 +86,24 @@ impl DaemonService {
     pub fn evict_idle(&self, max_idle: Duration) -> Vec<PathBuf> {
         let mut state = self.lock_state();
         let now = Instant::now();
-        let mut evicted = Vec::new();
-        state.workspaces.retain(|root, workspace| {
-            let keep = workspace.active != 0 || now.duration_since(workspace.last_used) < max_idle;
-            if !keep {
-                evicted.push(root.clone());
-            }
-            keep
-        });
-        if !evicted.is_empty() {
+        let evicted_roots: Vec<_> = state
+            .workspaces
+            .iter()
+            .filter(|(_, workspace)| {
+                workspace.active == 0 && now.duration_since(workspace.last_used) >= max_idle
+            })
+            .map(|(root, _)| root.clone())
+            .collect();
+        let evicted: Vec<_> = evicted_roots
+            .iter()
+            .filter_map(|root| state.workspaces.remove(root))
+            .collect();
+        if !evicted_roots.is_empty() {
             self.workspace_available.notify_all();
         }
-        evicted
+        drop(state);
+        drop(evicted);
+        evicted_roots
     }
 
     pub fn workspace_count(&self) -> usize {
@@ -109,10 +123,12 @@ impl DaemonService {
             if let Some(workspace) = state.workspaces.get_mut(&root) {
                 workspace.active += 1;
                 workspace.last_used = now;
+                let runtime = Arc::clone(&workspace.runtime);
                 state.last_activity = now;
                 return Ok(WorkspaceLease {
                     service: self,
                     root,
+                    runtime,
                 });
             }
             if state.workspaces.len() >= self.max_workspaces {
@@ -123,7 +139,11 @@ impl DaemonService {
                     .min_by_key(|(_, workspace)| workspace.last_used)
                     .map(|(candidate, _)| candidate.clone());
                 if let Some(victim) = victim {
-                    state.workspaces.remove(&victim);
+                    let evicted = state.workspaces.remove(&victim);
+                    drop(state);
+                    drop(evicted);
+                    state = self.lock_state();
+                    continue;
                 } else {
                     let remaining = deadline.saturating_duration_since(now);
                     if remaining.is_zero() {
@@ -151,12 +171,25 @@ impl DaemonService {
                 WorkspaceState {
                     active: 1,
                     last_used: now,
+                    runtime: Arc::new(Workspace::new(
+                        &root,
+                        self.workspace_scratch(&root),
+                        timeout,
+                    )),
                 },
             );
             state.last_activity = now;
+            let runtime = Arc::clone(
+                &state
+                    .workspaces
+                    .get(&root)
+                    .expect("inserted workspace must exist")
+                    .runtime,
+            );
             return Ok(WorkspaceLease {
                 service: self,
                 root,
+                runtime,
             });
         }
     }
@@ -176,6 +209,12 @@ impl DaemonService {
         self.state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn workspace_scratch(&self, root: &Path) -> PathBuf {
+        let mut hasher = DefaultHasher::new();
+        root.hash(&mut hasher);
+        self.scratch_root.join(format!("{:016x}", hasher.finish()))
     }
 }
 
