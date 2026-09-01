@@ -3,6 +3,312 @@
   "oracle_version": "codeq 1.0.0rc13",
   "oracle_commit": "56fadc0a3485531da83851fbde69f2dc1126463b",
   "cases": {
+    "added_modified_deleted_renamed_review": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": {
+        "_meta": {
+          "cache": {
+            "document_symbol_entries": 4,
+            "document_symbols_evicted": 0,
+            "document_symbols_hit": 4,
+            "document_symbols_miss": 4,
+            "document_symbols_waited": 0
+          },
+          "lsp_request_count": 11,
+          "lsp_sessions": [
+            {
+              "alive": true,
+              "family": "python",
+              "pid": "<pid>",
+              "request_count": 7,
+              "root": "<ROOT>",
+              "server": "basedpyright-langserver"
+            },
+            {
+              "alive": true,
+              "family": "typescript",
+              "pid": "<pid>",
+              "request_count": 4,
+              "root": "<ROOT>",
+              "server": "typescript-language-server"
+            }
+          ],
+          "lsp_sessions_before": [],
+          "lsp_started": true,
+          "prewarm_early_stops": 0,
+          "prewarm_files": 5,
+          "prewarm_probes": 0,
+          "root": "<ROOT>",
+          "transport": "in_process"
+        },
+        "base": "HEAD",
+        "base_mode": "direct",
+        "changed_file_count": 4,
+        "changed_files": [
+          "<ROOT>/app.py",
+          "<ROOT>/dynamic.py",
+          "<ROOT>/renamed_web.ts",
+          "<ROOT>/added.py"
+        ],
+        "changed_symbol_count": 2,
+        "changed_symbols": [
+          {
+            "callers": [
+              {
+                "column": 9,
+                "detail": "",
+                "kind": "Function",
+                "line": 14,
+                "name": "greet",
+                "path": "<ROOT>/app.py"
+              },
+              {
+                "column": 5,
+                "detail": "",
+                "kind": "Function",
+                "line": 4,
+                "name": "test_format_greeting",
+                "path": "<ROOT>/test_app.py"
+              }
+            ],
+            "possible_dynamic_references": [],
+            "reference_count": 3,
+            "symbol": {
+              "column": 5,
+              "container": "",
+              "kind": "Function",
+              "line": 8,
+              "name": "format_greeting",
+              "path": "<ROOT>/app.py"
+            },
+            "tests": [
+              {
+                "column": 26,
+                "line": 1,
+                "path": "<ROOT>/test_app.py"
+              },
+              {
+                "column": 12,
+                "line": 5,
+                "path": "<ROOT>/test_app.py"
+              }
+            ]
+          },
+          {
+            "callers": [],
+            "possible_dynamic_references": [],
+            "reference_count": 0,
+            "symbol": {
+              "column": 5,
+              "container": "",
+              "kind": "Function",
+              "line": 1,
+              "name": "newly_added",
+              "path": "<ROOT>/added.py"
+            },
+            "tests": []
+          }
+        ],
+        "deleted_file_count": 1,
+        "file_changes": [
+          {
+            "old_path": null,
+            "path": "<ROOT>/app.py",
+            "semantic_status": "analyzed",
+            "similarity": null,
+            "status": "M"
+          },
+          {
+            "base_analysis": {
+              "base_symbol_count": 3,
+              "base_symbols": [
+                {
+                  "evidence": "lexical",
+                  "residual_match_count": 0,
+                  "residual_matching_line_count": 0,
+                  "residual_references": [],
+                  "symbol": {
+                    "kind": "Function",
+                    "line": 4,
+                    "name": "dispatch_order",
+                    "path": "<ROOT>/dynamic.py"
+                  },
+                  "tests": [],
+                  "truncated": false
+                },
+                {
+                  "evidence": "lexical",
+                  "residual_match_count": 2,
+                  "residual_matching_line_count": 2,
+                  "residual_references": [
+                    {
+                      "column": 10,
+                      "evidence": "lexical",
+                      "git_status": "tracked",
+                      "is_test": false,
+                      "line": 5,
+                      "occurrences": 1,
+                      "path": "<ROOT>/dynamic.ts",
+                      "relative_path": "dynamic.ts",
+                      "source": "git-grep",
+                      "text": "function invoke(callback: (event: string) => string): string {",
+                      "text_start_column": 1,
+                      "text_truncated": false,
+                      "tracked": true
+                    },
+                    {
+                      "column": 24,
+                      "evidence": "lexical",
+                      "git_status": "tracked",
+                      "is_test": false,
+                      "line": 11,
+                      "occurrences": 1,
+                      "path": "<ROOT>/dynamic.ts",
+                      "relative_path": "dynamic.ts",
+                      "source": "git-grep",
+                      "text": "const callbackResult = invoke(dispatchEvent);",
+                      "text_start_column": 1,
+                      "text_truncated": false,
+                      "tracked": true
+                    }
+                  ],
+                  "symbol": {
+                    "kind": "Function",
+                    "line": 8,
+                    "name": "invoke",
+                    "path": "<ROOT>/dynamic.py"
+                  },
+                  "tests": [],
+                  "truncated": false
+                },
+                {
+                  "evidence": "lexical",
+                  "residual_match_count": 0,
+                  "residual_matching_line_count": 0,
+                  "residual_references": [],
+                  "symbol": {
+                    "kind": "Constant",
+                    "line": 12,
+                    "name": "CALLBACKS",
+                    "path": "<ROOT>/dynamic.py"
+                  },
+                  "tests": [],
+                  "truncated": false
+                }
+              ],
+              "evidence": "base_side_lexical",
+              "status": "ok",
+              "truncated": false
+            },
+            "old_path": null,
+            "path": "<ROOT>/dynamic.py",
+            "semantic_status": "deleted_base_analyzed",
+            "similarity": null,
+            "status": "D"
+          },
+          {
+            "old_path": "<ROOT>/web.ts",
+            "path": "<ROOT>/renamed_web.ts",
+            "rename_analysis": {
+              "evidence": "current_semantic",
+              "importer_count": 0,
+              "importers": [],
+              "importers_truncated": false,
+              "status": "ok",
+              "symbols": [
+                {
+                  "reference_count": 1,
+                  "references": [
+                    {
+                      "column": 10,
+                      "line": 6,
+                      "path": "<ROOT>/renamed_web.ts"
+                    }
+                  ],
+                  "symbol": {
+                    "column": 10,
+                    "container": "",
+                    "kind": "Function",
+                    "line": 1,
+                    "name": "formatGreeting",
+                    "path": "<ROOT>/renamed_web.ts"
+                  },
+                  "tests": []
+                },
+                {
+                  "reference_count": 0,
+                  "references": [],
+                  "symbol": {
+                    "column": 17,
+                    "container": "",
+                    "kind": "Function",
+                    "line": 5,
+                    "name": "renderGreeting",
+                    "path": "<ROOT>/renamed_web.ts"
+                  },
+                  "tests": []
+                }
+              ],
+              "symbols_truncated": false
+            },
+            "semantic_status": "rename_analyzed",
+            "similarity": "100",
+            "status": "R"
+          },
+          {
+            "old_path": null,
+            "path": "<ROOT>/added.py",
+            "semantic_status": "analyzed",
+            "similarity": null,
+            "status": "U"
+          }
+        ],
+        "impacted_file_count": 1,
+        "impacted_files": [
+          "<ROOT>/test_app.py"
+        ],
+        "impacted_files_truncated": false,
+        "limitations": [
+          "deleted-file impact uses conservative base-side declaration extraction plus exact current-worktree lexical evidence; it is not an LSP call graph",
+          "pure-rename impact uses current-path importers/references and may still miss runtime-only loading",
+          "exact call edges are language-server-resolved and may omit runtime-only dispatch",
+          "possible_dynamic_references classify exact LSP references heuristically; they are not runtime-proof call edges",
+          "test discovery uses semantic references/callers plus test-path classification"
+        ],
+        "possible_dynamic_reference_count": 0,
+        "renamed_file_count": 1,
+        "requested_base": "HEAD",
+        "resolved_base": "<git-commit>",
+        "schema_version": 1,
+        "status": "ok",
+        "test_count": 3,
+        "tests": [
+          {
+            "column": 26,
+            "line": 1,
+            "path": "<ROOT>/test_app.py"
+          },
+          {
+            "column": 5,
+            "detail": "",
+            "kind": "Function",
+            "line": 4,
+            "name": "test_format_greeting",
+            "path": "<ROOT>/test_app.py"
+          },
+          {
+            "column": 12,
+            "line": 5,
+            "path": "<ROOT>/test_app.py"
+          }
+        ],
+        "tests_truncated": false,
+        "truncated": false,
+        "unsupported_changed_files": [],
+        "untracked_file_count": 1
+      }
+    },
     "concept_file_discovery": {
       "exit_code": 0,
       "stderr": "",

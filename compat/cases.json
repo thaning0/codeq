@@ -258,6 +258,13 @@
       "args": ["review", "--base", "HEAD", "--json", "--no-daemon"],
       "output": "json",
       "with_root": true
+    },
+    {
+      "name": "added_modified_deleted_renamed_review",
+      "args": ["review", "--base", "HEAD", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true,
+      "scenario": "review_statuses"
     }
   ]
 }

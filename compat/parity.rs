@@ -63,6 +63,8 @@ struct Case {
     args: Vec<String>,
     output: OutputKind,
     with_root: bool,
+    #[serde(default)]
+    scenario: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -206,6 +208,9 @@ fn run(options: Options) -> Result<bool> {
     let mut case_reports = Vec::with_capacity(manifest.cases.len());
     let mut captured = BTreeMap::new();
     for case in &manifest.cases {
+        if let Some(scenario) = &case.scenario {
+            apply_scenario(&repository, scenario)?;
+        }
         let oracle_result = if let Some(executable) = &oracle {
             invoke(
                 executable,
@@ -230,6 +235,9 @@ fn run(options: Options) -> Result<bool> {
             &candidate_runtime,
         )?;
         case_reports.push(compare(case.name.clone(), oracle_result, candidate_result));
+        if case.scenario.is_some() {
+            restore_default_mutation(&repository)?;
+        }
     }
 
     if options.update_expected {
@@ -307,6 +315,11 @@ fn prepare_corpus(source: &Path) -> Result<TempDir> {
     git(&repository, ["add", "."])?;
     git(&repository, ["commit", "--quiet", "-m", "parity baseline"])?;
 
+    apply_default_mutation(&repository)?;
+    Ok(sandbox)
+}
+
+fn apply_default_mutation(repository: &Path) -> Result<()> {
     let app = repository.join("app.py");
     let current = fs::read_to_string(&app)
         .map_err(|error| format!("cannot read {}: {error}", app.display()))?;
@@ -319,7 +332,31 @@ fn prepare_corpus(source: &Path) -> Result<TempDir> {
     }
     fs::write(&app, changed)
         .map_err(|error| format!("cannot update {}: {error}", app.display()))?;
-    Ok(sandbox)
+    Ok(())
+}
+
+fn restore_default_mutation(repository: &Path) -> Result<()> {
+    git(repository, ["reset", "--hard", "--quiet", "HEAD"])?;
+    git(repository, ["clean", "-fdq"])?;
+    apply_default_mutation(repository)
+}
+
+fn apply_scenario(repository: &Path, scenario: &str) -> Result<()> {
+    restore_default_mutation(repository)?;
+    match scenario {
+        "review_statuses" => {
+            git(repository, ["mv", "web.ts", "renamed_web.ts"])?;
+            fs::remove_file(repository.join("dynamic.py"))
+                .map_err(|error| format!("cannot delete scenario file: {error}"))?;
+            fs::write(
+                repository.join("added.py"),
+                "def newly_added(value: str) -> str:\n    return value.casefold()\n",
+            )
+            .map_err(|error| format!("cannot add scenario file: {error}"))?;
+            Ok(())
+        }
+        other => Err(format!("unknown parity scenario: {other}")),
+    }
 }
 
 fn copy_tree(source: &Path, destination: &Path) -> Result<()> {

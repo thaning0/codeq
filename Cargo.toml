@@ -29,6 +29,11 @@ name = "runtime_contract"
 path = "compat/runtime.rs"
 harness = false
 
+[[test]]
+name = "workspace_contract"
+path = "compat/workspace.rs"
+harness = false
+
 [[example]]
 name = "readiness"
 path = "benchmarks/readiness.rs"

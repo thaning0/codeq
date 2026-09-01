@@ -297,7 +297,7 @@ fn execute_with_workspace(
                 || (arguments.mode == FindMode::Auto
                     && concept::has_multiple_terms(&arguments.query)) =>
         {
-            concept::search(root, arguments, cli.limit)
+            concept::search(workspace, arguments, cli.limit)
         }
         Command::Find(arguments) => semantic::find(workspace, arguments, cli.limit),
         Command::Review(arguments) => gitreview::review(workspace, arguments, cli.limit),

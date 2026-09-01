@@ -55,7 +55,16 @@ pub(crate) fn review(
             .into_iter()
             .filter(|change| !tracked.contains(&change.path)),
     );
-    let ranges = changed_ranges(root, &resolved_base)?;
+    let mut ranges = changed_ranges(root, &resolved_base)?;
+    for change in &changes {
+        if change.status != 'U' || !change.path.is_file() {
+            continue;
+        }
+        let line_count = std::fs::read_to_string(&change.path)
+            .map(|source| source.lines().count().max(1) as u64)
+            .unwrap_or(1);
+        ranges.insert(change.path.clone(), vec![(1, line_count)]);
+    }
     let discovery_ms = started.elapsed().as_secs_f64() * 1000.0;
     let analysis_started = Instant::now();
     let budget = limit.max(1) as usize;
@@ -93,11 +102,9 @@ pub(crate) fn review(
         }
         annotated.push(item);
     }
-    changed_symbols.sort_by(|left, right| {
-        (&left.path, left.line, &left.name).cmp(&(&right.path, right.line, &right.name))
-    });
-    changed_symbols.dedup_by(|left, right| {
-        left.path == right.path && left.line == right.line && left.name == right.name
+    let mut seen_changed_symbols = HashSet::new();
+    changed_symbols.retain(|symbol| {
+        seen_changed_symbols.insert((symbol.path.clone(), symbol.line, symbol.name.clone()))
     });
     let truncated = changed_symbols.len() > budget;
     changed_symbols.truncate(budget);
@@ -622,6 +629,14 @@ fn base_declarations(path: &Path, text: &str) -> Vec<Value> {
             ("Function", tail)
         } else if let Some(tail) = trimmed.strip_prefix("class ") {
             ("Class", tail)
+        } else if let Some((name, _)) = trimmed.split_once('=')
+            && !name.trim().is_empty()
+            && name
+                .trim()
+                .chars()
+                .all(|character| character.is_ascii_uppercase() || character == '_')
+        {
+            ("Constant", name.trim())
         } else if let Some(at) = ["function ", "class ", "interface ", "enum "]
             .iter()
             .find_map(|marker| trimmed.find(marker).map(|at| (marker, at)))

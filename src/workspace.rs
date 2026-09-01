@@ -8,6 +8,7 @@ use std::process::Command;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::concept::ConceptIndex;
 use crate::lsp::{LspError, LspProcess};
 use crate::symbol::{
     Location, Position, Range, Resolution, Symbol, flatten_document_symbols, lsp_location,
@@ -127,6 +128,7 @@ pub(crate) struct Workspace {
     session_changed: Condvar,
     documents: Mutex<DocumentRegistry>,
     document_changed: Condvar,
+    concept: Mutex<ConceptIndex>,
     locator: ServerLocator,
 }
 
@@ -174,6 +176,7 @@ impl Workspace {
                 prewarmed: HashSet::new(),
             }),
             document_changed: Condvar::new(),
+            concept: Mutex::new(ConceptIndex::default()),
             locator: ServerLocator::SearchPath,
         }
     }
@@ -206,6 +209,12 @@ impl Workspace {
 
     pub(crate) fn projects(&self) -> &[Project] {
         &self.projects
+    }
+
+    pub(crate) fn concept_index(&self) -> MutexGuard<'_, ConceptIndex> {
+        self.concept
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub(crate) fn session_stats(&self) -> Vec<serde_json::Value> {

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
+use std::time::UNIX_EPOCH;
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use rusqlite::{Connection, params};
@@ -10,11 +11,21 @@ use serde_json::{Value, json};
 
 use crate::cli::FindArgs;
 use crate::target;
+use crate::workspace::Workspace;
+
+#[derive(Default)]
+pub(crate) struct ConceptIndex {
+    connection: Option<Connection>,
+    fingerprint: Vec<(String, u64, u128)>,
+    source_bytes: u64,
+    index_bytes: u64,
+}
 
 struct SourceFile {
     path: PathBuf,
     relative: String,
     size: u64,
+    modified_ns: u128,
 }
 
 struct Evidence {
@@ -22,7 +33,12 @@ struct Evidence {
     terms: Vec<String>,
 }
 
-pub(crate) fn search(root: &Path, arguments: &FindArgs, limit: i64) -> Result<Value, String> {
+pub(crate) fn search(
+    workspace: &Workspace,
+    arguments: &FindArgs,
+    limit: i64,
+) -> Result<Value, String> {
+    let root = workspace.root();
     let terms = lexical_terms(&arguments.query);
     let expression = terms
         .iter()
@@ -66,59 +82,29 @@ pub(crate) fn search(root: &Path, arguments: &FindArgs, limit: i64) -> Result<Va
     }
 
     let files = visible_sources(root)?;
-    let build_started = Instant::now();
-    let mut connection = Connection::open_in_memory()
-        .map_err(|error| format!("cannot open in-memory SQLite: {error}"))?;
-    connection
-        .execute_batch(
-            "CREATE TABLE files(rowid INTEGER PRIMARY KEY, relative_path TEXT NOT NULL UNIQUE);
-             CREATE VIRTUAL TABLE source_fts USING fts5(body, content='', tokenize='unicode61');",
-        )
-        .map_err(|error| {
-            let detail = error.to_string();
-            if detail.to_ascii_lowercase().contains("fts5") {
-                "SQLite FTS5 is unavailable; use an FTS5-enabled build or `codeq find --text QUERY`"
-                    .to_owned()
-            } else {
-                format!("cannot initialize in-memory FTS5 index: {error}")
-            }
-        })?;
-    let transaction = connection
-        .transaction()
-        .map_err(|error| format!("cannot start FTS5 build: {error}"))?;
-    let mut source_bytes = 0u64;
-    for (index, file) in files.iter().enumerate() {
-        let Ok(body) = fs::read_to_string(&file.path) else {
-            continue;
-        };
-        let rowid = (index + 1) as i64;
-        transaction
-            .execute(
-                "INSERT INTO files(rowid, relative_path) VALUES (?1, ?2)",
-                params![rowid, file.relative],
-            )
-            .and_then(|_| {
-                transaction.execute(
-                    "INSERT INTO source_fts(rowid, body) VALUES (?1, ?2)",
-                    params![rowid, body],
-                )
-            })
-            .map_err(|error| format!("cannot build FTS5 index: {error}"))?;
-        source_bytes += file.size;
-    }
-    transaction
-        .commit()
-        .map_err(|error| format!("cannot commit FTS5 index: {error}"))?;
-    let page_count: u64 = connection
-        .query_row("PRAGMA page_count", [], |row| row.get(0))
-        .map_err(|error| error.to_string())?;
-    let page_size: u64 = connection
-        .query_row("PRAGMA page_size", [], |row| row.get(0))
-        .map_err(|error| error.to_string())?;
-    let build_ms = build_started.elapsed().as_secs_f64() * 1000.0;
+    let fingerprint: Vec<_> = files
+        .iter()
+        .map(|file| (file.relative.clone(), file.size, file.modified_ns))
+        .collect();
+    let mut index = workspace.concept_index();
+    let refreshed = index.connection.is_none() || index.fingerprint != fingerprint;
+    let build_ms = if refreshed {
+        let build_started = Instant::now();
+        let (connection, source_bytes, index_bytes) = build_index(&files)?;
+        index.connection = Some(connection);
+        index.fingerprint = fingerprint;
+        index.source_bytes = source_bytes;
+        index.index_bytes = index_bytes;
+        build_started.elapsed().as_secs_f64() * 1000.0
+    } else {
+        0.0
+    };
 
     let query_started = Instant::now();
-    let mut statement = connection
+    let mut statement = index
+        .connection
+        .as_ref()
+        .expect("concept connection must exist after refresh")
         .prepare(
             "SELECT files.relative_path, bm25(source_fts) AS rank
              FROM source_fts JOIN files ON files.rowid = source_fts.rowid
@@ -197,9 +183,9 @@ pub(crate) fn search(root: &Path, arguments: &FindArgs, limit: i64) -> Result<Va
     value["index"] = json!({
         "storage": "memory_contentless",
         "file_count": files.len(),
-        "source_bytes": source_bytes,
-        "index_bytes": page_count * page_size,
-        "refreshed": true,
+        "source_bytes": index.source_bytes,
+        "index_bytes": index.index_bytes,
+        "refreshed": refreshed,
         "build_ms": build_ms,
         "query_ms": query_ms,
     });
@@ -246,9 +232,66 @@ fn visible_sources(root: &Path) -> Result<Vec<SourceFile>, String> {
             path,
             relative: relative.replace('\\', "/"),
             size: metadata.len(),
+            modified_ns: metadata
+                .modified()
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |duration| duration.as_nanos()),
         });
     }
     Ok(files)
+}
+
+fn build_index(files: &[SourceFile]) -> Result<(Connection, u64, u64), String> {
+    let mut connection = Connection::open_in_memory()
+        .map_err(|error| format!("cannot open in-memory SQLite: {error}"))?;
+    connection
+        .execute_batch(
+            "CREATE TABLE files(rowid INTEGER PRIMARY KEY, relative_path TEXT NOT NULL UNIQUE);
+             CREATE VIRTUAL TABLE source_fts USING fts5(body, content='', tokenize='unicode61');",
+        )
+        .map_err(|error| {
+            let detail = error.to_string();
+            if detail.to_ascii_lowercase().contains("fts5") {
+                "SQLite FTS5 is unavailable; use an FTS5-enabled build or `codeq find --text QUERY`"
+                    .to_owned()
+            } else {
+                format!("cannot initialize in-memory FTS5 index: {error}")
+            }
+        })?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("cannot start FTS5 build: {error}"))?;
+    let mut source_bytes = 0u64;
+    for (position, file) in files.iter().enumerate() {
+        let Ok(body) = fs::read_to_string(&file.path) else {
+            continue;
+        };
+        let rowid = (position + 1) as i64;
+        transaction
+            .execute(
+                "INSERT INTO files(rowid, relative_path) VALUES (?1, ?2)",
+                params![rowid, file.relative],
+            )
+            .and_then(|_| {
+                transaction.execute(
+                    "INSERT INTO source_fts(rowid, body) VALUES (?1, ?2)",
+                    params![rowid, body],
+                )
+            })
+            .map_err(|error| format!("cannot build FTS5 index: {error}"))?;
+        source_bytes += file.size;
+    }
+    transaction
+        .commit()
+        .map_err(|error| format!("cannot commit FTS5 index: {error}"))?;
+    let page_count: u64 = connection
+        .query_row("PRAGMA page_count", [], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    let page_size: u64 = connection
+        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    Ok((connection, source_bytes, page_count * page_size))
 }
 
 fn lexical_terms(query: &str) -> Vec<String> {
