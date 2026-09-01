@@ -87,6 +87,7 @@ struct ReplayResult {
     schema_version: u64,
     codeq_version: String,
     root: String,
+    root_revision: String,
     workload: String,
     provenance: String,
     privacy: String,
@@ -150,7 +151,8 @@ fn run(options: Options) -> Result<bool> {
             .strip_prefix("codeq ")
             .unwrap_or(&running_version)
             .to_owned(),
-        root: root.display().to_string(),
+        root: repository_label(&root),
+        root_revision: repository_revision(&root)?,
         workload: workload.name,
         provenance: workload.provenance,
         privacy: workload.privacy,
@@ -165,6 +167,25 @@ fn run(options: Options) -> Result<bool> {
     }
     print!("{rendered}");
     Ok(passed)
+}
+
+fn repository_label(root: &Path) -> String {
+    root.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("repository")
+        .to_owned()
+}
+
+fn repository_revision(root: &Path) -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("cannot inspect replay revision: {error}"))?;
+    if !output.status.success() {
+        return Err("workflow root has no Git revision".to_owned());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 fn run_case(

@@ -82,6 +82,7 @@ struct Series {
 struct BenchmarkResult {
     codeq_version: String,
     root: String,
+    root_revision: String,
     reps: u16,
     cold: BTreeMap<&'static str, Series>,
     warm: BTreeMap<&'static str, Series>,
@@ -138,7 +139,8 @@ fn run(options: Options) -> Result<()> {
             .strip_prefix("codeq ")
             .unwrap_or(&codeq_version)
             .to_owned(),
-        root: root.display().to_string(),
+        root: repository_label(&root),
+        root_revision: repository_revision(&root)?,
         reps: options.reps,
         cold,
         warm,
@@ -156,6 +158,25 @@ fn run(options: Options) -> Result<()> {
     }
     print!("{rendered}");
     Ok(())
+}
+
+fn repository_label(root: &Path) -> String {
+    root.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("repository")
+        .to_owned()
+}
+
+fn repository_revision(root: &Path) -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("cannot inspect benchmark revision: {error}"))?;
+    if !output.status.success() {
+        return Err("benchmark root has no Git revision".to_owned());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 fn collect_measurements(
