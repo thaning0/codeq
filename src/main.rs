@@ -10,6 +10,7 @@ mod repository;
 mod runtime;
 mod service;
 mod target;
+mod textsearch;
 #[allow(dead_code)]
 mod workspace;
 
@@ -28,6 +29,8 @@ fn emit_result(result: service::QueryResult, json: bool) -> ExitCode {
             serde_json::to_string_pretty(&result.data)
                 .expect("response serialization must succeed")
         );
+    } else if result.status == contracts::Status::Ok {
+        println!("{}", result.plain);
     } else {
         eprintln!("{}", result.plain);
     }

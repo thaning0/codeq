@@ -11,9 +11,10 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::boundary;
-use crate::cli::Cli;
+use crate::cli::{Cli, Command, FindMode};
 use crate::contracts::{SCHEMA_VERSION, Status};
 use crate::runtime;
+use crate::textsearch;
 use crate::workspace::Workspace;
 
 pub struct DaemonService {
@@ -267,6 +268,12 @@ pub fn execute(cli: &Cli, root: &Path, transport: &'static str) -> QueryResult {
         };
     }
 
+    if let Command::Find(arguments) = &cli.command
+        && (arguments.text || arguments.mode == FindMode::Text)
+    {
+        return execute_text_search(cli, arguments, root, transport, started);
+    }
+
     let reason = "the Rust semantic runtime is not implemented yet on the 2.0 development branch";
     let response = UnavailableResponse {
         status: Status::Unavailable,
@@ -285,6 +292,176 @@ pub fn execute(cli: &Cli, root: &Path, transport: &'static str) -> QueryResult {
         data: serde_json::to_value(response).expect("response serialization must succeed"),
         status: Status::Unavailable,
         plain: format!("codeq: {reason}"),
+    }
+}
+
+fn execute_text_search(
+    cli: &Cli,
+    arguments: &crate::cli::FindArgs,
+    root: &Path,
+    transport: &'static str,
+    started: Instant,
+) -> QueryResult {
+    let mut data = match textsearch::search(
+        root,
+        &arguments.query,
+        cli.limit,
+        &arguments.paths,
+        &arguments.globs,
+        arguments.exclude_tests,
+    ) {
+        Ok(data) => data,
+        Err(error) => serde_json::json!({
+            "status": "error",
+            "mode": "text",
+            "search_mode": "text",
+            "query": arguments.query,
+            "reason": error,
+            "results": [],
+        }),
+    };
+    data["search_mode"] = Value::String("text".to_owned());
+    let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
+    data["_meta"] = serde_json::json!({
+        "root": root,
+        "duration_ms": duration_ms,
+        "queue_ms": 0.0,
+        "execution_ms": duration_ms,
+        "lsp_sessions_before": [],
+        "lsp_sessions": [],
+        "lsp_started": false,
+        "lsp_request_count": 0,
+        "prewarm_files": 0,
+        "prewarm_probes": 0,
+        "prewarm_early_stops": 0,
+        "cache": {
+            "document_symbols_hit": 0,
+            "document_symbols_miss": 0,
+            "document_symbols_waited": 0,
+            "document_symbols_evicted": 0,
+            "document_symbol_entries": 0,
+        },
+        "text": {
+            "matching_file_count": data.get("matching_file_count").and_then(Value::as_u64).unwrap_or(0),
+            "tracked_matching_lines": data.get("tracked_line_count").and_then(Value::as_u64).unwrap_or(0),
+            "untracked_matching_lines": data.get("untracked_line_count").and_then(Value::as_u64).unwrap_or(0),
+        },
+        "transport": transport,
+    });
+    data["schema_version"] = Value::from(SCHEMA_VERSION);
+    let status = data
+        .get("status")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or(Status::Error);
+    let plain = render_text_search(&data, root);
+    QueryResult {
+        data,
+        status,
+        plain,
+    }
+}
+
+fn render_text_search(data: &Value, root: &Path) -> String {
+    if data.get("status").and_then(Value::as_str) != Some("ok") {
+        return data
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("find failed")
+            .to_owned();
+    }
+    let query = data.get("query").and_then(Value::as_str).unwrap_or("");
+    let mut lines = vec![
+        format!("Exact text search: {}", python_repr(query)),
+        String::new(),
+    ];
+    if let Some(results) = data.get("results").and_then(Value::as_array) {
+        for item in results {
+            let path = item.get("path").and_then(Value::as_str).unwrap_or("");
+            let displayed = Path::new(path)
+                .strip_prefix(root)
+                .map(|relative| relative.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| path.to_owned());
+            let line = item.get("line").and_then(Value::as_u64).unwrap_or(1);
+            let column = item.get("column").and_then(Value::as_u64).unwrap_or(1);
+            let mut markers = Vec::new();
+            if item.get("tracked").and_then(Value::as_bool) == Some(false) {
+                markers.push("untracked");
+            }
+            if item.get("is_test").and_then(Value::as_bool) == Some(true) {
+                markers.push("test");
+            }
+            let marker = if markers.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", markers.join(" "))
+            };
+            let occurrences = item.get("occurrences").and_then(Value::as_u64).unwrap_or(1);
+            let repeated = if occurrences > 1 {
+                format!(" x{occurrences}")
+            } else {
+                String::new()
+            };
+            let text = item.get("text").and_then(Value::as_str).unwrap_or("");
+            lines.push(format!(
+                "{displayed}:{line}:{column}{marker}{repeated}  {}",
+                text.trim()
+            ));
+        }
+        if results.is_empty() {
+            lines.push("No matches.".to_owned());
+            lines.push("Try:".to_owned());
+            lines.push(format!("  codeq find --mode concept {}", shell_word(query)));
+        }
+    }
+    if data.get("truncated").and_then(Value::as_bool) == Some(true) {
+        lines.push("... more matching lines available; increase --limit".to_owned());
+    }
+    lines.push(String::new());
+    let duration = data
+        .pointer("/_meta/duration_ms")
+        .and_then(Value::as_f64)
+        .map(|value| format!("{value:.1}"))
+        .unwrap_or_else(|| "?".to_owned());
+    lines.push(format!(
+        "[{} exact matches across {} lines / {} files; tracked={} untracked={} tests={}; showing {} lines; {} ms]",
+        integer(data, "match_count"),
+        integer(data, "matching_line_count"),
+        integer(data, "matching_file_count"),
+        integer(data, "tracked_line_count"),
+        integer(data, "untracked_line_count"),
+        integer(data, "test_line_count"),
+        integer(data, "returned_line_count"),
+        duration,
+    ));
+    lines.join("\n")
+}
+
+fn integer(data: &Value, key: &str) -> u64 {
+    data.get(key).and_then(Value::as_u64).unwrap_or(0)
+}
+
+fn python_repr(value: &str) -> String {
+    format!(
+        "'{}'",
+        value
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t")
+    )
+}
+
+fn shell_word(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_@%+=:,./-".contains(&byte))
+    {
+        value.to_owned()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
     }
 }
 
