@@ -13,12 +13,14 @@ use crate::lsp::{LspError, LspProcess};
 use crate::symbol::{
     Location, Position, Range, Resolution, Symbol, flatten_document_symbols, lsp_location,
 };
+use crate::target;
 
 const PROJECT_SCAN_DEPTH: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum LanguageFamily {
     Python,
+    Rust,
     TypeScript,
 }
 
@@ -26,6 +28,7 @@ impl LanguageFamily {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Python => "python",
+            Self::Rust => "rust",
             Self::TypeScript => "typescript",
         }
     }
@@ -38,6 +41,7 @@ impl LanguageFamily {
             .as_deref()
         {
             Some("py" | "pyi") => Some(Self::Python),
+            Some("rs") => Some(Self::Rust),
             Some("ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs") => Some(Self::TypeScript),
             _ => None,
         }
@@ -184,13 +188,29 @@ impl Workspace {
     pub(crate) fn project_for_path(&self, path: &Path) -> Option<Project> {
         let path = fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
         let family = LanguageFamily::for_path(&path)?;
-        if let Some(project) = self
+        let matching: Vec<_> = self
             .projects
             .iter()
             .filter(|project| project.family == family && path.starts_with(&project.root))
-            .max_by_key(|project| project.root.components().count())
-            .cloned()
-        {
+            .collect();
+        let selected = if family == LanguageFamily::Rust {
+            matching
+                .iter()
+                .copied()
+                .filter(|project| cargo_manifest_is_workspace(&project.root))
+                .max_by_key(|project| project.root.components().count())
+                .or_else(|| {
+                    matching
+                        .iter()
+                        .copied()
+                        .max_by_key(|project| project.root.components().count())
+                })
+        } else {
+            matching
+                .into_iter()
+                .max_by_key(|project| project.root.components().count())
+        };
+        if let Some(project) = selected.cloned() {
             return Some(project);
         }
         if self.projects.iter().any(|project| project.family == family) {
@@ -449,13 +469,12 @@ impl Workspace {
     }
 
     pub(crate) fn resolve_qualified(&self, target: &str) -> Resolution {
-        let parts: Vec<_> = target.split('.').filter(|part| !part.is_empty()).collect();
-        if parts.len() < 2 {
+        let Some(parts) = target::qualified_symbol_parts(target) else {
             return Resolution::NotFound {
                 reason: format!("qualified target not found: {target}"),
                 candidates: Vec::new(),
             };
-        }
+        };
         let container_name = parts[parts.len() - 2];
         let member_name = parts[parts.len() - 1];
         let leaf_candidates = self.exact_document_candidates(member_name, 80);
@@ -692,16 +711,16 @@ impl Workspace {
             }
         }
         let mut command = Command::new("rg");
+        command.current_dir(&project.root).args([
+            "--files-with-matches",
+            "--fixed-strings",
+            "--null",
+            "--hidden",
+        ]);
+        for suffix in target::SEMANTIC_SOURCE_SUFFIXES {
+            command.args(["-g", &format!("*.{suffix}")]);
+        }
         command
-            .current_dir(&project.root)
-            .args([
-                "--files-with-matches",
-                "--fixed-strings",
-                "--null",
-                "--hidden",
-            ])
-            .args(["-g", "*.py", "-g", "*.pyi", "-g", "*.ts", "-g", "*.tsx"])
-            .args(["-g", "*.js", "-g", "*.jsx", "-g", "*.mjs", "-g", "*.cjs"])
             .args([
                 "-g",
                 "!node_modules/**",
@@ -958,6 +977,11 @@ impl Workspace {
     }
 
     fn module_qualifier_matches(&self, path: &Path, qualifier: &[&str]) -> bool {
+        let qualifier = if matches!(qualifier.first(), Some(&"crate" | &"self")) {
+            &qualifier[1..]
+        } else {
+            qualifier
+        };
         if qualifier.is_empty() {
             return true;
         }
@@ -1023,6 +1047,11 @@ impl Workspace {
     }
 }
 
+fn cargo_manifest_is_workspace(root: &Path) -> bool {
+    fs::read_to_string(root.join("Cargo.toml"))
+        .is_ok_and(|manifest| manifest.lines().any(|line| line.trim() == "[workspace]"))
+}
+
 fn exact_definition_files(root: &Path, name: &str, limit: usize) -> Vec<PathBuf> {
     if !is_identifier(name) {
         return Vec::new();
@@ -1034,13 +1063,20 @@ fn exact_definition_files(root: &Path, name: &str, limit: usize) -> Vec<PathBuf>
             r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+{escaped}\b"
         ),
         format!(r"^\s*(?:export\s+)?(?:const|let|var)\s+{escaped}\b"),
+        format!(
+            r#"^\s*(?:(?:pub(?:\([^)]*\))?|default|async|const|unsafe)\s+)*(?:extern\s+\"[^\"]+\"\s+)?(?:fn|struct|enum|trait|type|union|mod|const|static)\s+{escaped}\b"#
+        ),
+        format!(r"^\s*(?:pub(?:\([^)]*\))?\s+)?macro_rules!\s*{escaped}\b"),
     ];
     let mut command = Command::new("rg");
     command
         .current_dir(root)
-        .args(["--files-with-matches", "--null", "--hidden"])
-        .args(["-g", "*.py", "-g", "*.pyi", "-g", "*.ts", "-g", "*.tsx"])
-        .args(["-g", "*.js", "-g", "*.jsx", "-g", "!node_modules/**"])
+        .args(["--files-with-matches", "--null", "--hidden"]);
+    for suffix in target::SEMANTIC_SOURCE_SUFFIXES {
+        command.args(["-g", &format!("*.{suffix}")]);
+    }
+    command
+        .args(["-g", "!node_modules/**"])
         .args(["-g", "!.git/**", "-g", "!.next/**", "-g", "!dist/**"])
         .args(["-g", "!build/**", "-g", "!Quant-worktrees/**"])
         .args(["-g", "!worktrees/**", "-g", "!.worktrees/**"]);
@@ -1250,6 +1286,12 @@ fn scan_projects(root: &Path, path: &Path, depth: usize, projects: &mut HashSet<
             family: LanguageFamily::TypeScript,
         });
     }
+    if names.contains("Cargo.toml") {
+        projects.insert(Project {
+            root: path.to_owned(),
+            family: LanguageFamily::Rust,
+        });
+    }
     if depth >= PROJECT_SCAN_DEPTH {
         return;
     }
@@ -1271,6 +1313,7 @@ fn skip_directory(name: &str) -> bool {
             | ".next"
             | "dist"
             | "build"
+            | "target"
             | "coverage"
             | "__pycache__"
             | ".mypy_cache"
@@ -1292,6 +1335,12 @@ fn locate_server(project: &Project) -> Option<ServerCommand> {
                     name: name.to_owned(),
                 })
             }),
+        LanguageFamily::Rust => executable_on_path("rust-analyzer").map(|program| ServerCommand {
+            program,
+            arguments: Vec::new(),
+            environment: Vec::new(),
+            name: "rust-analyzer".to_owned(),
+        }),
         LanguageFamily::TypeScript => {
             let global = executable_on_path("typescript-language-server");
             let local = project
@@ -1350,6 +1399,11 @@ mod tests {
         let temporary = TempDir::new().expect("temporary directory");
         let root = temporary.path();
         fs::write(root.join("pyproject.toml"), "[project]\nname='root'\n").expect("root project");
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = ['packages/rust']\nresolver = '3'\n",
+        )
+        .expect("Rust workspace");
         fs::create_dir_all(root.join("packages/web/src")).expect("web tree");
         fs::write(root.join("packages/web/tsconfig.json"), "{}\n").expect("TypeScript project");
         fs::create_dir_all(root.join("packages/python/lib")).expect("Python tree");
@@ -1358,17 +1412,30 @@ mod tests {
             "[tool.basedpyright]\n",
         )
         .expect("nested Python project");
+        fs::create_dir_all(root.join("packages/rust/src")).expect("Rust tree");
+        fs::write(
+            root.join("packages/rust/Cargo.toml"),
+            "[package]\nname='nested-rust'\nversion='0.0.0'\nedition='2024'\n",
+        )
+        .expect("nested Rust package");
+        let rust_source = root.join("packages/rust/src/lib.rs");
+        fs::write(&rust_source, "pub fn value() -> u8 { 1 }\n").expect("Rust source");
         let source = root.join("packages/python/lib/example.py");
         fs::write(&source, "value = 1\n").expect("Python source");
 
         let projects = discover_projects(root);
-        assert_eq!(projects.len(), 3);
+        assert_eq!(projects.len(), 5);
         let workspace = Workspace::new(root, root.join("scratch"), Duration::from_secs(1));
         let project = workspace
             .project_for_path(&source)
             .expect("project for source");
         assert_eq!(project.family, LanguageFamily::Python);
         assert_eq!(project.root, root.join("packages/python"));
+        let rust_project = workspace
+            .project_for_path(&rust_source)
+            .expect("project for Rust source");
+        assert_eq!(rust_project.family, LanguageFamily::Rust);
+        assert_eq!(rust_project.root, root);
     }
 
     #[test]
@@ -1505,7 +1572,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires basedpyright and typescript-language-server on PATH"]
+    #[ignore = "requires basedpyright, typescript-language-server, and rust-analyzer on PATH"]
     fn supported_real_language_servers_complete_document_symbol_round_trips() {
         let temporary = TempDir::new().expect("temporary directory");
         fs::write(
@@ -1530,13 +1597,29 @@ mod tests {
             "export function renderGreeting(name: string): string { return `Hi ${name}`; }\n",
         )
         .expect("TypeScript source");
+        fs::write(
+            temporary.path().join("Cargo.toml"),
+            "[package]\nname='lsp-smoke'\nversion='0.0.0'\nedition='2024'\n",
+        )
+        .expect("Rust project");
+        fs::create_dir_all(temporary.path().join("src")).expect("Rust source tree");
+        let rust = temporary.path().join("src/lib.rs");
+        fs::write(
+            &rust,
+            "pub struct Greeter;\n\nimpl Greeter {\n    pub fn greet(name: &str) -> String { format!(\"Hi {name}\") }\n}\n\npub fn render(name: &str) -> String { Greeter::greet(name) }\n",
+        )
+        .expect("Rust source");
 
         let workspace = Workspace::new(
             temporary.path(),
             temporary.path().join("scratch"),
             Duration::from_secs(15),
         );
-        for (path, expected) in [(&python, "greet"), (&typescript, "renderGreeting")] {
+        for (path, expected, qualified) in [
+            (&python, "greet", "app.greet"),
+            (&typescript, "renderGreeting", "web.renderGreeting"),
+            (&rust, "greet", "Greeter::greet"),
+        ] {
             let project = workspace
                 .project_for_path(path)
                 .expect("project for source");
@@ -1551,16 +1634,35 @@ mod tests {
                 .document_symbols(path, Some(&project))
                 .expect("cached document symbols");
             assert_eq!(cached, symbols);
-            let qualified = if expected == "greet" {
-                "app.greet"
-            } else {
-                "web.renderGreeting"
-            };
             match workspace.resolve_qualified(qualified) {
                 Resolution::Found { symbol, .. } => assert_eq!(symbol.name, expected),
                 resolution => panic!("unexpected real resolution: {resolution:?}"),
             }
         }
+        let rust_project = workspace.project_for_path(&rust).expect("Rust project");
+        let rust_symbol = match workspace.resolve_qualified("Greeter::greet") {
+            Resolution::Found { symbol, .. } => symbol,
+            resolution => panic!("unexpected Rust resolution: {resolution:?}"),
+        };
+        let rust_session = workspace.session(&rust_project).expect("Rust session");
+        assert!(
+            !rust_session
+                .references(&rust, rust_symbol.line, rust_symbol.column)
+                .expect("Rust references")
+                .is_empty(),
+            "Rust references were empty after workspace loading"
+        );
+        let hierarchy = rust_session
+            .prepare_call_hierarchy(&rust, rust_symbol.line, rust_symbol.column)
+            .expect("Rust call hierarchy root");
+        assert!(!hierarchy.is_empty(), "Rust call hierarchy root was empty");
+        assert!(
+            !rust_session
+                .incoming_calls(hierarchy[0].clone())
+                .expect("Rust incoming calls")
+                .is_empty(),
+            "Rust incoming calls were empty after workspace loading"
+        );
         workspace.close();
     }
 

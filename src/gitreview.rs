@@ -134,12 +134,16 @@ pub(crate) fn review(
         });
         let direct_tests: Vec<_> = references
             .iter()
-            .filter(|reference| is_test_path(value_path(reference)))
+            .filter(|reference| {
+                target::is_test_location(value_path(reference), integer(reference, "line"))
+            })
             .cloned()
             .collect();
         let source_references: Vec<_> = references
             .iter()
-            .filter(|reference| !is_test_path(value_path(reference)))
+            .filter(|reference| {
+                !target::is_test_location(value_path(reference), integer(reference, "line"))
+            })
             .cloned()
             .collect();
         let possible_dynamic =
@@ -148,7 +152,7 @@ pub(crate) fn review(
         for caller in &callers {
             let path = value_path(caller).to_owned();
             impacted_files.insert(path.clone());
-            if is_test_path(&path) {
+            if target::is_test_location(&path, integer(caller, "line")) {
                 tests.insert((path, integer(caller, "line")), caller.clone());
             }
         }
@@ -621,8 +625,20 @@ fn unavailable_base_analysis() -> Value {
 
 fn base_declarations(path: &Path, text: &str) -> Vec<Value> {
     let mut declarations = Vec::new();
+    let rust = path.extension().and_then(|extension| extension.to_str()) == Some("rs");
     for (index, line) in text.lines().enumerate() {
         let trimmed = line.trim_start();
+        if rust {
+            if let Some((kind, name)) = rust_base_declaration(trimmed) {
+                declarations.push(json!({
+                    "name": name,
+                    "kind": kind,
+                    "path": path,
+                    "line": index + 1,
+                }));
+            }
+            continue;
+        }
         let (kind, tail) = if let Some(tail) = trimmed.strip_prefix("def ") {
             ("Function", tail)
         } else if let Some(tail) = trimmed.strip_prefix("async def ") {
@@ -669,6 +685,60 @@ fn base_declarations(path: &Path, text: &str) -> Vec<Value> {
     declarations
 }
 
+fn rust_base_declaration(line: &str) -> Option<(&'static str, String)> {
+    let mut rest = line.trim_start();
+    if let Some(public) = rest.strip_prefix("pub")
+        && public.starts_with([' ', '('])
+    {
+        rest = public.trim_start();
+        if rest.starts_with('(') {
+            rest = rest.split_once(')')?.1.trim_start();
+        }
+    }
+    while let Some(next) = ["default ", "async ", "unsafe "]
+        .iter()
+        .find_map(|prefix| rest.strip_prefix(prefix))
+    {
+        rest = next;
+    }
+    if let Some(extern_tail) = rest.strip_prefix("extern ") {
+        rest = if extern_tail.starts_with('"') {
+            extern_tail.get(1..)?.split_once('"')?.1.trim_start()
+        } else {
+            extern_tail
+        };
+    }
+    if let Some(tail) = rest.strip_prefix("const fn ") {
+        return rust_declaration_name("Function", tail);
+    }
+    for (prefix, kind) in [
+        ("fn ", "Function"),
+        ("struct ", "Struct"),
+        ("enum ", "Enum"),
+        ("trait ", "Interface"),
+        ("union ", "Struct"),
+        ("type ", "Class"),
+        ("mod ", "Module"),
+        ("const ", "Constant"),
+        ("static ", "Constant"),
+        ("macro_rules! ", "Function"),
+    ] {
+        if let Some(tail) = rest.strip_prefix(prefix) {
+            return rust_declaration_name(kind, tail);
+        }
+    }
+    None
+}
+
+fn rust_declaration_name(kind: &'static str, tail: &str) -> Option<(&'static str, String)> {
+    let tail = tail.strip_prefix("r#").unwrap_or(tail);
+    let name: String = tail
+        .chars()
+        .take_while(|character| character.is_alphanumeric() || *character == '_')
+        .collect();
+    (!name.is_empty()).then_some((kind, name))
+}
+
 fn rename_analysis(workspace: &Workspace, path: &Path, limit: usize) -> Value {
     let Some(project) = workspace.project_for_path(path) else {
         return json!({"status": "unavailable", "evidence": "current_semantic", "reason": "file context unavailable"});
@@ -697,7 +767,7 @@ fn rename_analysis(workspace: &Workspace, path: &Path, limit: usize) -> Value {
         let references = semantic_references(workspace.root(), &session, &symbol);
         let (tests, sources): (Vec<_>, Vec<_>) = references
             .into_iter()
-            .partition(|item| is_test_path(value_path(item)));
+            .partition(|item| target::is_test_location(value_path(item), integer(item, "line")));
         summaries.push(json!({
             "symbol": symbol_summary(&symbol),
             "reference_count": tests.len() + sources.len(),
@@ -768,27 +838,6 @@ fn value_path(value: &Value) -> &Path {
 
 fn integer(value: &Value, key: &str) -> u64 {
     value.get(key).and_then(Value::as_u64).unwrap_or(0)
-}
-
-fn is_test_path(path: &Path) -> bool {
-    let value = format!(
-        "/{}",
-        path.to_string_lossy()
-            .to_ascii_lowercase()
-            .replace('\\', "/")
-    );
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    value.contains("/tests/")
-        || value.contains("/test/")
-        || value.contains("/__tests__/")
-        || name.starts_with("test_")
-        || name.ends_with("_test.py")
-        || name.contains(".test.")
-        || name.contains(".spec.")
 }
 
 fn kind_name(kind: Option<u64>) -> &'static str {

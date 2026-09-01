@@ -161,7 +161,7 @@ pub(crate) fn search(
             "column": column,
             "source": "fts5",
             "evidence": "lexical",
-            "is_test": is_test_path(path),
+            "is_test": target::is_test_path(path),
             "bm25": rank,
             "matched_terms": evidence.terms,
             "representative_lines": evidence.lines,
@@ -425,7 +425,7 @@ fn in_scope(
     globs: Option<&GlobSet>,
     exclude_tests: bool,
 ) -> bool {
-    if exclude_tests && is_test_path(path) {
+    if exclude_tests && target::is_test_path(path) {
         return false;
     }
     if !prefixes.is_empty()
@@ -443,25 +443,4 @@ fn in_scope(
     globs.is_none_or(|set| {
         set.is_match(relative) || set.is_match(path.file_name().unwrap_or_default())
     })
-}
-
-fn is_test_path(path: &Path) -> bool {
-    let value = format!(
-        "/{}",
-        path.to_string_lossy()
-            .to_ascii_lowercase()
-            .replace('\\', "/")
-    );
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    value.contains("/tests/")
-        || value.contains("/test/")
-        || value.contains("/__tests__/")
-        || name.starts_with("test_")
-        || name.ends_with("_test.py")
-        || name.contains(".test.")
-        || name.contains(".spec.")
 }

@@ -15,7 +15,7 @@ implementation.
 
 `rust-toolchain.toml` pins Rust 1.98. Cargo owns dependency resolution through
 `Cargo.toml` and `Cargo.lock`. SQLite FTS5 is bundled in the native executable.
-CodeQ continues to delegate language semantics to BasedPyright/Pyright and
+CodeQ delegates language semantics to BasedPyright/Pyright, rust-analyzer, and
 TypeScript Language Server, exact text to ripgrep, and repository/diff behavior
 to Git.
 

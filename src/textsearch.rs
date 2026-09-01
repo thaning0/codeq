@@ -8,6 +8,8 @@ use globset::{GlobBuilder, GlobMatcher};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+use crate::target;
+
 const TEXT_LINE_CHARS: usize = 500;
 
 #[derive(Clone, Serialize)]
@@ -136,7 +138,7 @@ impl Scope {
     }
 
     fn matches(&self, relative: &str) -> bool {
-        let test = is_test_path(Path::new(relative));
+        let test = target::is_test_path(Path::new(relative));
         if self.exclude_tests && test {
             return false;
         }
@@ -307,7 +309,7 @@ fn make_hit(
     let unresolved = root.join(&relative_path);
     let path = fs::canonicalize(&unresolved).unwrap_or(unresolved);
     Some(TextHit {
-        is_test: is_test_path(&path),
+        is_test: target::is_test_path(&path),
         path,
         relative_path,
         line,
@@ -372,23 +374,6 @@ fn normalize_path_prefix(root: &Path, value: &str) -> String {
         .trim_start_matches("./")
         .trim_matches('/')
         .to_owned()
-}
-
-fn is_test_path(path: &Path) -> bool {
-    let rendered = path.to_string_lossy().replace('\\', "/").to_lowercase();
-    let surrounded = format!("/{rendered}/");
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    surrounded.contains("/tests/")
-        || surrounded.contains("/test/")
-        || name.starts_with("test_")
-        || name.ends_with("_test.py")
-        || name.contains(".test.")
-        || name.contains(".spec.")
-        || rendered.contains("__tests__")
 }
 
 #[cfg(test)]

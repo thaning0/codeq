@@ -108,18 +108,56 @@ fn visit_document_symbol(item: &Value, path: &Path, container: &str, out: &mut V
         source: "lsp",
         origin: "document",
     });
+    let semantic_name = if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+        rust_impl_target(&name).unwrap_or_else(|| name.clone())
+    } else {
+        name.clone()
+    };
     let child_container = if container.is_empty() {
-        name
+        semantic_name
     } else if name.is_empty() {
         container.to_owned()
     } else {
-        format!("{container}.{name}")
+        format!("{container}.{semantic_name}")
     };
     if let Some(children) = item.get("children").and_then(Value::as_array) {
         for child in children {
             visit_document_symbol(child, path, &child_container, out);
         }
     }
+}
+
+fn rust_impl_target(name: &str) -> Option<String> {
+    let mut rest = name.strip_prefix("impl")?.trim_start();
+    if rest.starts_with('<') {
+        let mut depth = 0usize;
+        let mut end = None;
+        for (index, character) in rest.char_indices() {
+            match character {
+                '<' => depth += 1,
+                '>' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        end = Some(index + character.len_utf8());
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        rest = rest.get(end?..)?.trim_start();
+    }
+    let target = rest.rsplit_once(" for ").map_or(rest, |(_, target)| target);
+    let target = target
+        .split_once(" where ")
+        .map_or(target, |(target, _)| target)
+        .trim();
+    let leaf = target.rsplit("::").next()?.trim();
+    let identifier: String = leaf
+        .chars()
+        .take_while(|character| character.is_alphanumeric() || *character == '_')
+        .collect();
+    (!identifier.is_empty()).then_some(identifier)
 }
 
 pub(crate) fn lsp_location(raw: &Value) -> Option<(PathBuf, Range)> {
@@ -255,5 +293,24 @@ mod tests {
         assert_eq!(symbols[1].container, "Greeter");
         assert_eq!(symbols[1].line, 4);
         assert_eq!(symbols[1].column, 9);
+    }
+
+    #[test]
+    fn normalizes_rust_impl_blocks_to_type_containers() {
+        let raw = json!([{
+            "name": "impl<T> Display for crate::Greeter<T>",
+            "kind": 19,
+            "range": {"start": {"line": 2, "character": 0}, "end": {"line": 5, "character": 0}},
+            "selectionRange": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 38}},
+            "children": [{
+                "name": "fmt",
+                "kind": 6,
+                "range": {"start": {"line": 3, "character": 4}, "end": {"line": 4, "character": 20}},
+                "selectionRange": {"start": {"line": 3, "character": 7}, "end": {"line": 3, "character": 10}}
+            }]
+        }]);
+        let symbols =
+            flatten_document_symbols(raw.as_array().expect("array"), Path::new("src/lib.rs"));
+        assert_eq!(symbols[1].container, "Greeter");
     }
 }

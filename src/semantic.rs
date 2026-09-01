@@ -52,7 +52,9 @@ pub(crate) fn find(
             workspace
                 .exact_document_candidates(query, 80.max(limit.max(1) as usize * 4))
                 .into_iter()
-                .filter(|symbol| in_find_scope(workspace.root(), &symbol.path, arguments))
+                .filter(|symbol| {
+                    in_find_scope(workspace.root(), &symbol.path, symbol.line, arguments)
+                })
                 .map(|symbol| symbol_value(&symbol, true)),
         );
     }
@@ -79,7 +81,12 @@ pub(crate) fn find(
         for term in search_terms.iter().take(3) {
             for item in session.workspace_symbols(term).unwrap_or_default() {
                 if let Some(value) = workspace_symbol_value(&item)
-                    && in_find_scope(workspace.root(), value_path(&value), arguments)
+                    && in_find_scope(
+                        workspace.root(),
+                        value_path(&value),
+                        integer(&value, "line"),
+                        arguments,
+                    )
                 {
                     results.push(value);
                 }
@@ -138,7 +145,7 @@ pub(crate) fn find(
         std::collections::HashMap::new();
     for mut item in results {
         let path = value_path(&item).to_owned();
-        if !in_find_scope(workspace.root(), &path, arguments) {
+        if !in_find_scope(workspace.root(), &path, integer(&item, "line"), arguments) {
             continue;
         }
         let name = item
@@ -172,7 +179,7 @@ pub(crate) fn find(
             match requested.as_str() {
                 "function" => matches!(actual.as_str(), "function" | "method" | "constructor"),
                 "class" => matches!(actual.as_str(), "class" | "interface" | "struct" | "enum"),
-                "test" => is_test_path(value_path(item)),
+                "test" => target::is_test_location(value_path(item), integer(item, "line")),
                 _ => actual == requested,
             }
         });
@@ -471,7 +478,9 @@ pub(crate) fn context(
 
     let source_references: Vec<_> = references
         .iter()
-        .filter(|reference| !is_test_path(value_path(reference)))
+        .filter(|reference| {
+            !target::is_test_location(value_path(reference), integer(reference, "line"))
+        })
         .cloned()
         .collect();
     let mut section_metadata = Map::new();
@@ -872,10 +881,9 @@ fn dotted_module_candidates(root: &Path, target: &str) -> Vec<PathBuf> {
 fn extract_imports(path: &Path) -> Vec<Value> {
     let source = fs::read_to_string(path).unwrap_or_default();
     let mut imports = Vec::new();
-    let python = matches!(
-        path.extension().and_then(|extension| extension.to_str()),
-        Some("py" | "pyi")
-    );
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    let python = matches!(extension, Some("py" | "pyi"));
+    let rust = extension == Some("rs");
     for (index, line) in source.lines().enumerate() {
         let trimmed = line.trim_start();
         let leading = line.len() - trimmed.len();
@@ -906,6 +914,42 @@ fn extract_imports(path: &Path) -> Vec<Value> {
                     }));
                 }
             }
+        } else if rust {
+            let visible = strip_rust_visibility(trimmed);
+            if let Some(rest) = visible.strip_prefix("use ") {
+                let mut specifier = rest.trim().trim_end_matches(';').trim();
+                if let Some((prefix, _)) = specifier.split_once('{') {
+                    specifier = prefix.trim_end_matches("::").trim();
+                } else if let Some((path, _)) = specifier.rsplit_once(" as ") {
+                    specifier = path.trim();
+                }
+                specifier = specifier.trim_end_matches("::*");
+                if !specifier.is_empty() {
+                    imports.push(json!({
+                        "path": path,
+                        "line": index + 1,
+                        "column": line.find(specifier).unwrap_or(leading) + 1,
+                        "text": line,
+                        "specifier": specifier,
+                        "kind": "use",
+                    }));
+                }
+            } else if let Some(rest) = visible.strip_prefix("mod ") {
+                let specifier: String = rest
+                    .chars()
+                    .take_while(|character| character.is_alphanumeric() || *character == '_')
+                    .collect();
+                if !specifier.is_empty() && rest.trim_end().ends_with(';') {
+                    imports.push(json!({
+                        "path": path,
+                        "line": index + 1,
+                        "column": line.find(&specifier).unwrap_or(leading) + 1,
+                        "text": line,
+                        "specifier": specifier,
+                        "kind": "mod",
+                    }));
+                }
+            }
         } else if trimmed.starts_with("import ")
             && let Some((_, tail)) = trimmed.rsplit_once(" from ")
         {
@@ -922,30 +966,68 @@ fn extract_imports(path: &Path) -> Vec<Value> {
     imports
 }
 
+fn strip_rust_visibility(line: &str) -> &str {
+    let Some(rest) = line.strip_prefix("pub") else {
+        return line;
+    };
+    if let Some(rest) = rest.strip_prefix(' ') {
+        return rest.trim_start();
+    }
+    if rest.starts_with('(')
+        && let Some((_, tail)) = rest.split_once(')')
+    {
+        return tail.trim_start();
+    }
+    line
+}
+
 fn file_topology(
     workspace: &Workspace,
     path: &Path,
-    _project: &crate::workspace::Project,
+    project: &crate::workspace::Project,
     imports: Vec<Value>,
     limit: usize,
 ) -> Value {
-    let module = path
-        .strip_prefix(workspace.root())
-        .unwrap_or(path)
-        .with_extension("")
-        .to_string_lossy()
-        .replace(['/', '\\'], ".")
-        .trim_end_matches(".__init__")
-        .to_owned();
+    let rust = path.extension().and_then(|extension| extension.to_str()) == Some("rs");
+    let module = if rust {
+        rust_module_name(&project.root, path)
+    } else {
+        path.strip_prefix(workspace.root())
+            .unwrap_or(path)
+            .with_extension("")
+            .to_string_lossy()
+            .replace(['/', '\\'], ".")
+            .trim_end_matches(".__init__")
+            .to_owned()
+    };
     let mut importers = Vec::new();
     for candidate in visible_source_files(workspace.root()) {
         if candidate == path {
             continue;
         }
+        if rust
+            != (candidate
+                .extension()
+                .and_then(|extension| extension.to_str())
+                == Some("rs"))
+        {
+            continue;
+        }
         let candidate_imports = extract_imports(&candidate);
         for item in candidate_imports {
             let specifier = item.get("specifier").and_then(Value::as_str).unwrap_or("");
-            if specifier == module || module.ends_with(&format!(".{specifier}")) {
+            let matches = if rust {
+                rust_import_matches(
+                    &project.root,
+                    &candidate,
+                    item.get("kind").and_then(Value::as_str).unwrap_or("use"),
+                    specifier,
+                    &module,
+                )
+            } else {
+                specifier == module || module.ends_with(&format!(".{specifier}"))
+            };
+            if matches {
                 importers.push(item);
             }
         }
@@ -981,6 +1063,80 @@ fn file_topology(
         "importer_count": importer_count,
         "importers_truncated": importer_count > limit,
     })
+}
+
+fn rust_module_name(root: &Path, path: &Path) -> String {
+    let mut parts: Vec<_> = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .with_extension("")
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    if parts.first().is_some_and(|part| part == "src") {
+        parts.remove(0);
+    }
+    if matches!(
+        parts.last().map(String::as_str),
+        Some("lib" | "main" | "mod")
+    ) {
+        parts.pop();
+    }
+    parts.join(".")
+}
+
+fn rust_import_matches(
+    root: &Path,
+    importer: &Path,
+    kind: &str,
+    specifier: &str,
+    module: &str,
+) -> bool {
+    let mut importer_module: Vec<_> = rust_module_name(root, importer)
+        .split('.')
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if importer.file_name().and_then(|name| name.to_str()) != Some("mod.rs") {
+        importer_module.pop();
+    }
+    let mut parts: Vec<_> = specifier
+        .split("::")
+        .filter(|part| !part.is_empty())
+        .collect();
+    let resolved = if kind == "mod" {
+        importer_module
+            .iter()
+            .map(String::as_str)
+            .chain(parts)
+            .collect::<Vec<_>>()
+            .join(".")
+    } else if parts.first() == Some(&"crate") {
+        parts.remove(0);
+        parts.join(".")
+    } else if parts.first() == Some(&"self") {
+        parts.remove(0);
+        importer_module
+            .iter()
+            .map(String::as_str)
+            .chain(parts)
+            .collect::<Vec<_>>()
+            .join(".")
+    } else if parts.first() == Some(&"super") {
+        while parts.first() == Some(&"super") {
+            parts.remove(0);
+            importer_module.pop();
+        }
+        importer_module
+            .iter()
+            .map(String::as_str)
+            .chain(parts)
+            .collect::<Vec<_>>()
+            .join(".")
+    } else {
+        parts.join(".")
+    };
+    resolved == module || resolved.starts_with(&format!("{module}."))
 }
 
 fn resolve(workspace: &Workspace, target_value: &str) -> Resolution {
@@ -1022,9 +1178,11 @@ fn lexical_hits(root: &Path, query: &str, limit: usize) -> Vec<Value> {
     let mut command = Command::new("rg");
     command
         .current_dir(root)
-        .args(["--json", "-n", "--hidden", "--max-count", "20"])
-        .args(["-g", "*.py", "-g", "*.pyi", "-g", "*.ts", "-g", "*.tsx"])
-        .args(["-g", "*.js", "-g", "*.jsx", "-g", "*.mjs", "-g", "*.cjs"])
+        .args(["--json", "-n", "--hidden", "--max-count", "20"]);
+    for suffix in target::SEMANTIC_SOURCE_SUFFIXES {
+        command.args(["-g", &format!("*.{suffix}")]);
+    }
+    command
         .args([
             "-g",
             "!node_modules/**",
@@ -1218,7 +1376,7 @@ fn agent_ranking_adjustment(query: &str, kind: Option<&str>, item: &Value) -> i6
             .any(|cue| lowered.contains(cue));
     let mut adjustment = 0i64;
     let path = value_path(item).to_string_lossy().to_lowercase();
-    if is_test_path(value_path(item)) && !seeks_tests {
+    if target::is_test_location(value_path(item), integer(item, "line")) && !seeks_tests {
         adjustment -= 2_500;
     }
     if ["/generated/", "/fixtures/", "/snapshots/"]
@@ -1236,8 +1394,8 @@ fn agent_ranking_adjustment(query: &str, kind: Option<&str>, item: &Value) -> i6
     adjustment
 }
 
-fn in_find_scope(root: &Path, path: &Path, arguments: &FindArgs) -> bool {
-    if arguments.exclude_tests && is_test_path(path) {
+fn in_find_scope(root: &Path, path: &Path, line: u64, arguments: &FindArgs) -> bool {
+    if arguments.exclude_tests && target::is_test_location(path, line) {
         return false;
     }
     if !arguments.paths.is_empty()
@@ -1283,12 +1441,7 @@ fn selected_sections(arguments: &ContextArgs) -> Vec<&str> {
 }
 
 fn is_qualified(value: &str) -> bool {
-    let mut parts = value.split('.');
-    let Some(first) = parts.next() else {
-        return false;
-    };
-    let remaining: Vec<_> = parts.collect();
-    !remaining.is_empty() && identifier(first) && remaining.iter().all(|part| identifier(part))
+    target::qualified_symbol_parts(value).is_some()
 }
 
 fn identifier(value: &str) -> bool {
@@ -1675,7 +1828,7 @@ fn test_evidence(
 ) -> (Vec<Value>, Value) {
     let mut tests = Vec::new();
     for reference in references {
-        if !is_test_path(value_path(reference)) {
+        if !target::is_test_location(value_path(reference), integer(reference, "line")) {
             continue;
         }
         tests.push(json!({
@@ -1693,7 +1846,7 @@ fn test_evidence(
         }));
     }
     for caller in callers {
-        if !is_test_path(value_path(caller)) {
+        if !target::is_test_location(value_path(caller), integer(caller, "line")) {
             continue;
         }
         let mut value = caller.clone();
@@ -1714,7 +1867,9 @@ fn test_evidence(
     tests.extend(importers.into_iter().take(probe_limit));
     let direct_lines: HashSet<_> = references
         .iter()
-        .filter(|reference| is_test_path(value_path(reference)))
+        .filter(|reference| {
+            target::is_test_location(value_path(reference), integer(reference, "line"))
+        })
         .map(|reference| (value_path(reference).to_owned(), integer(reference, "line")))
         .collect();
     let mut lexical_discovery_truncated = false;
@@ -1723,7 +1878,7 @@ fn test_evidence(
     {
         let test_results: Vec<_> = results
             .iter()
-            .filter(|result| result.get("is_test").and_then(Value::as_bool) == Some(true))
+            .filter(|result| target::is_test_location(value_path(result), integer(result, "line")))
             .collect();
         lexical_discovery_truncated = test_results.len() > probe_limit;
         for result in test_results.into_iter().take(probe_limit) {
@@ -1781,7 +1936,7 @@ fn module_import_evidence(root: &Path, symbol: &Symbol) -> Vec<Value> {
         .join(".");
     let mut out = Vec::new();
     for path in visible_source_files(root) {
-        if !is_test_path(&path)
+        if !target::is_test_path(&path)
             || path.extension().and_then(|extension| extension.to_str()) != Some("py")
         {
             continue;
@@ -1941,30 +2096,9 @@ fn repository_path(root: &Path, path: &Path) -> bool {
         && !path.components().any(|component| {
             matches!(
                 component.as_os_str().to_str(),
-                Some("node_modules" | ".venv" | "venv" | ".next" | "dist" | "build")
+                Some("node_modules" | ".venv" | "venv" | ".next" | "dist" | "build" | "target")
             )
         })
-}
-
-fn is_test_path(path: &Path) -> bool {
-    let value = format!(
-        "/{}",
-        path.to_string_lossy()
-            .to_ascii_lowercase()
-            .replace('\\', "/")
-    );
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    value.contains("/tests/")
-        || value.contains("/test/")
-        || value.contains("/__tests__/")
-        || name.starts_with("test_")
-        || name.ends_with("_test.py")
-        || name.contains(".test.")
-        || name.contains(".spec.")
 }
 
 fn value_path(value: &Value) -> &Path {

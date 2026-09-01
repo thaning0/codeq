@@ -24,7 +24,7 @@ A language server can answer many of these questions, but driving it directly ta
 `codeq` takes a narrower approach:
 
 - **CLI first** — four shell commands, designed for agents and humans.
-- **Semantic when possible** — Python and TypeScript/JavaScript relationships come from mature language servers.
+- **Semantic when possible** — Python, Rust, and TypeScript/JavaScript relationships come from mature language servers.
 - **Exact text when semantics stop** — URLs, environment variables, YAML, Shell, SQL, registry keys, and other runtime contracts stay raw textual evidence.
 - **No persistent code graph** — no graph database, embedding index, or on-disk
   per-worktree rebuild state.
@@ -42,11 +42,14 @@ You need:
 - ripgrep (`rg`)
 - a language server for the languages you want to analyze semantically
 
-For Python, install `basedpyright` (preferred) or `pyright`. For TypeScript/JavaScript, install `typescript-language-server` and TypeScript.
+For Python, install `basedpyright` (preferred) or `pyright`. For Rust, install
+`rust-analyzer`. For TypeScript/JavaScript, install
+`typescript-language-server` and TypeScript.
 
 ```bash
 npm install -g typescript typescript-language-server
 npm install -g basedpyright
+rustup component add rust-analyzer rust-src
 ```
 
 ### Install codeq
@@ -156,6 +159,8 @@ Text mode searches **tracked plus non-ignored untracked files**, so newly create
 
 ```bash
 codeq context RetryPolicy.should_retry
+codeq context RetryPolicy::should_retry
+codeq context crate::retry::RetryPolicy::should_retry
 codeq context auto_research_core.domain.models.Candidate
 codeq context auto_research_core.application.research_governance
 codeq context validate_discovery_plan --path packages/research-core/src
@@ -165,7 +170,7 @@ codeq context src/api/orders.py:84 --lines 120
 codeq context src/api/orders.py:84:21
 ```
 
-Fully module-qualified Python/TypeScript-style symbol targets are resolved fail-closed:
+Fully qualified dotted targets and Rust `::` paths are resolved fail-closed:
 the semantic suffix must match an LSP-confirmed declaration, the module prefix must
 match the candidate file path, and the result must be unique. For ambiguous bare
 symbols, plain output includes exact `codeq context PATH:LINE:COLUMN` commands that
@@ -316,6 +321,7 @@ Plain text is the default. Use `--json` when the caller wants a stable machine-r
 | Source | Semantic analysis | Multi-term FTS5 discovery | Exact text search |
 | --- | --- | --- | --- |
 | Python / `.py`, `.pyi` | basedpyright or pyright | Yes | Yes |
+| Rust / `.rs` | rust-analyzer | Yes | Yes |
 | TypeScript / JavaScript | typescript-language-server | Yes | Yes |
 | YAML / Shell / SQL / docs / config | No | No | Yes |
 | Other Git-visible text | No | No | Yes |
@@ -326,7 +332,7 @@ Language servers remain the semantic authority for definitions, references, impl
 
 These behaviors are part of the 1.0 compatibility boundary:
 
-- Qualified targets such as `Class.method` are **fail-closed**.
+- Qualified targets such as `Class.method` and `Type::method` are **fail-closed**.
 - Fully module-qualified targets are accepted only when their module/file suffix
   and semantic declaration suffix match exactly.
 - Exact-symbol and multi-token `find`, plus symbolic `context`, support repeatable
@@ -354,6 +360,7 @@ Agent / shell
      ▼
  small daemon
   ├─ basedpyright / pyright
+  ├─ rust-analyzer
   ├─ typescript-language-server
   ├─ SQLite FTS5 (`:memory:`, contentless)
   ├─ rg
@@ -367,6 +374,14 @@ Workspaces without a live language server expire after five minutes; workspaces
 retaining an LSP process expire after 30 minutes. Override those limits with
 `CODEQ2_WORKSPACE_IDLE_SECONDS` and `CODEQ2_LSP_IDLE_SECONDS`. It does **not** maintain
 a persistent repository graph, source index, or embedding index.
+
+For Rust, codeq waits for `rust-analyzer` to finish loading the Cargo workspace
+before serving the first semantic query. It recognizes Cargo workspaces and nested
+packages, Rust `::` qualified targets, `use`/`mod` file topology, and inline
+`#[test]` or `#[cfg(test)]` test evidence. To preserve codeq's read-only trust
+boundary, its rust-analyzer session disables check-on-save, build-script execution,
+and procedural-macro execution; declarations that exist only after those programs
+run may therefore be absent from semantic results.
 
 Concurrent non-text `find` requests for the same worktree are queued so one cold
 request initializes the required language server or FTS index. Document-symbol and
@@ -415,8 +430,9 @@ This keeps the read-only contract focused on the analyzed repository while allow
 
 ## Performance and validation
 
-Version 2 is validated against a large Python/TypeScript monorepo, the frozen
-RC13 black-box oracle, and historical real-agent workflows.
+Version 2 is validated against Python, Rust, and TypeScript language servers, a
+large Python/TypeScript monorepo, the frozen RC13 black-box oracle, and historical
+real-agent workflows.
 
 Representative committed 2.0 results (three cold and warm runs per case):
 

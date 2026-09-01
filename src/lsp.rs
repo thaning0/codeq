@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,6 +39,13 @@ impl fmt::Display for LspError {
 impl std::error::Error for LspError {}
 
 type Pending = Arc<Mutex<HashMap<u64, SyncSender<Result<Value, LspError>>>>>;
+type ServerStatus = Arc<(Mutex<Option<Value>>, Condvar)>;
+
+#[derive(Clone)]
+struct ReaderState {
+    closed: Arc<AtomicBool>,
+    server_status: ServerStatus,
+}
 
 pub struct LspProcess {
     name: String,
@@ -57,6 +64,7 @@ pub struct LspProcess {
     reader: Mutex<Option<JoinHandle<()>>>,
     stderr_reader: Mutex<Option<JoinHandle<()>>>,
     stderr_tail: Arc<Mutex<VecDeque<String>>>,
+    server_status: ServerStatus,
     server_capabilities: Value,
 }
 
@@ -105,15 +113,20 @@ impl LspProcess {
         let pending = Arc::new(Mutex::new(HashMap::new()));
         let closed = Arc::new(AtomicBool::new(false));
         let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
+        let server_status = Arc::new((Mutex::new(None), Condvar::new()));
+        let reader_state = ReaderState {
+            closed: Arc::clone(&closed),
+            server_status: Arc::clone(&server_status),
+        };
         let settings = settings_for_server(name);
         let reader = spawn_reader(
             stdout,
             Arc::clone(&writer),
             Arc::clone(&pending),
-            Arc::clone(&closed),
             root.clone(),
             settings.clone(),
             name.to_owned(),
+            reader_state,
         );
         let stderr_reader = spawn_stderr_reader(stderr, Arc::clone(&stderr_tail));
 
@@ -134,11 +147,12 @@ impl LspProcess {
             reader: Mutex::new(Some(reader)),
             stderr_reader: Mutex::new(Some(stderr_reader)),
             stderr_tail,
+            server_status,
             server_capabilities: Value::Null,
         };
         let initialized = process.request_with_timeout(
             "initialize",
-            initialize_params(&process.root),
+            initialize_params(&process.root, &settings),
             timeout.max(Duration::from_secs(20)),
         )?;
         process.server_capabilities = initialized
@@ -152,10 +166,55 @@ impl LspProcess {
                 json!({"settings": settings}),
             )?;
         }
+        if name.to_ascii_lowercase().contains("rust-analyzer") {
+            process.wait_for_quiescence(timeout.max(Duration::from_secs(20)))?;
+        }
         Ok(process)
     }
 
+    fn wait_for_quiescence(&self, timeout: Duration) -> Result<(), LspError> {
+        let deadline = Instant::now() + timeout;
+        let (status, changed) = &*self.server_status;
+        let mut current = lock(status);
+        loop {
+            if self.closed.load(Ordering::Acquire) {
+                return Err(LspError(format!(
+                    "{} exited while loading the workspace",
+                    self.name
+                )));
+            }
+            if current
+                .as_ref()
+                .and_then(|value| value.get("quiescent"))
+                .and_then(Value::as_bool)
+                == Some(true)
+            {
+                return Ok(());
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(LspError(format!(
+                    "{} timed out waiting for workspace loading",
+                    self.name
+                )));
+            }
+            let waited = changed
+                .wait_timeout(current, remaining)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            current = waited.0;
+            if waited.1.timed_out() {
+                return Err(LspError(format!(
+                    "{} timed out waiting for workspace loading",
+                    self.name
+                )));
+            }
+        }
+    }
+
     pub fn request(&self, method: &str, params: Value) -> Result<Value, LspError> {
+        if self.name.to_ascii_lowercase().contains("rust-analyzer") && method != "shutdown" {
+            self.wait_for_quiescence(self.timeout)?;
+        }
         self.request_with_timeout(method, params, self.timeout)
     }
 
@@ -393,10 +452,10 @@ fn spawn_reader<R: Read + Send + 'static>(
     reader: R,
     writer: Arc<Mutex<ChildStdin>>,
     pending: Pending,
-    closed: Arc<AtomicBool>,
     root: PathBuf,
     settings: Value,
     name: String,
+    state: ReaderState,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut reader = BufReader::new(reader);
@@ -406,6 +465,12 @@ fn spawn_reader<R: Read + Send + 'static>(
                 Ok(None) => break,
                 Err(_) => break,
             };
+            if message.get("method").and_then(Value::as_str) == Some("experimental/serverStatus") {
+                let (status, changed) = &*state.server_status;
+                *lock(status) = message.get("params").cloned();
+                changed.notify_all();
+                continue;
+            }
             if let Some(id) = message.get("id").and_then(Value::as_u64)
                 && message.get("method").is_none()
             {
@@ -424,7 +489,8 @@ fn spawn_reader<R: Read + Send + 'static>(
                 let _ = send_message(&writer, &response);
             }
         }
-        closed.store(true, Ordering::Release);
+        state.closed.store(true, Ordering::Release);
+        state.server_status.1.notify_all();
         drain_pending(&pending, LspError(format!("{name} language server exited")));
     })
 }
@@ -535,7 +601,7 @@ fn configuration_value(settings: &Value, section: Option<&Value>) -> Value {
     value.clone()
 }
 
-fn initialize_params(root: &Path) -> Value {
+fn initialize_params(root: &Path, settings: &Value) -> Value {
     json!({
         "processId": std::process::id(),
         "clientInfo": {"name": "codeq", "version": env!("CARGO_PKG_VERSION")},
@@ -545,7 +611,9 @@ fn initialize_params(root: &Path) -> Value {
             "uri": file_uri(root),
             "name": root.file_name().and_then(OsStr::to_str).unwrap_or("workspace"),
         }],
+        "initializationOptions": settings,
         "capabilities": {
+            "experimental": {"serverStatusNotification": true},
             "workspace": {
                 "workspaceFolders": true,
                 "configuration": true,
@@ -570,6 +638,14 @@ fn settings_for_server(name: &str) -> Value {
         json!({"basedpyright": analysis})
     } else if lower.contains("pyright") {
         json!({"python": analysis})
+    } else if lower.contains("rust-analyzer") {
+        json!({
+            "rust-analyzer": {
+                "checkOnSave": false,
+                "cargo": {"buildScripts": {"enable": false}},
+                "procMacro": {"enable": false},
+            }
+        })
     } else {
         json!({})
     }
@@ -583,6 +659,7 @@ fn language_id(path: &Path) -> Option<&'static str> {
         .as_deref()
     {
         Some("py" | "pyi") => Some("python"),
+        Some("rs") => Some("rust"),
         Some("ts") => Some("typescript"),
         Some("tsx") => Some("typescriptreact"),
         Some("js" | "mjs" | "cjs") => Some("javascript"),
@@ -686,12 +763,36 @@ mod tests {
     use std::env;
     use std::ffi::OsString;
     use std::io::{BufReader, Write};
+    use std::path::Path;
     use std::time::Duration;
 
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
-    use super::{LspProcess, read_message};
+    use super::{LspProcess, initialize_params, read_message, settings_for_server};
+
+    #[test]
+    fn rust_analyzer_handshake_is_quiescent_and_read_only() {
+        let settings = settings_for_server("rust-analyzer");
+        assert_eq!(
+            settings.pointer("/rust-analyzer/checkOnSave"),
+            Some(&Value::Bool(false))
+        );
+        assert_eq!(
+            settings.pointer("/rust-analyzer/cargo/buildScripts/enable"),
+            Some(&Value::Bool(false))
+        );
+        assert_eq!(
+            settings.pointer("/rust-analyzer/procMacro/enable"),
+            Some(&Value::Bool(false))
+        );
+        let params = initialize_params(Path::new("/workspace"), &settings);
+        assert_eq!(
+            params.pointer("/capabilities/experimental/serverStatusNotification"),
+            Some(&Value::Bool(true))
+        );
+        assert_eq!(params["initializationOptions"], settings);
+    }
 
     #[test]
     fn round_trip_timeout_and_shutdown() {

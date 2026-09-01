@@ -580,6 +580,7 @@ fn is_language_server(command: &str) -> bool {
     [
         "basedpyright-langserver",
         "pyright-langserver",
+        "rust-analyzer",
         "typescript-language-server",
         "tsserver.js",
     ]
