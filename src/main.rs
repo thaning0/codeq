@@ -9,6 +9,7 @@ mod lsp;
 mod repository;
 mod runtime;
 mod service;
+mod symbol;
 mod target;
 mod textsearch;
 #[allow(dead_code)]
