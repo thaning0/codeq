@@ -1526,19 +1526,7 @@ fn render_review(data: &Value) -> String {
         String::new(),
         format!("Likely tests: {}", integer(data, "test_count")),
     ]);
-    for test in data
-        .get("tests")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let name = test.get("name").and_then(Value::as_str).unwrap_or("");
-        lines.push(format!(
-            "  {name}  {}:{}",
-            display_path(data, test.get("path").and_then(Value::as_str).unwrap_or("")),
-            integer(test, "line")
-        ));
-    }
+    render_review_tests(data, &mut lines);
     if data.get("tests_truncated").and_then(Value::as_bool) == Some(true) {
         lines.push("  ... more likely tests available; increase --limit".to_owned());
     }
@@ -1547,6 +1535,36 @@ fn render_review(data: &Value) -> String {
     }
     lines.extend([String::new(), format!("[{} ms]", duration(data))]);
     lines.join("\n")
+}
+
+fn render_review_tests(data: &Value, lines: &mut Vec<String>) {
+    let mut files: Vec<(String, Vec<String>)> = Vec::new();
+    let mut file_indexes: HashMap<String, usize> = HashMap::new();
+    for test in data
+        .get("tests")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let path = display_path(data, test.get("path").and_then(Value::as_str).unwrap_or(""));
+        let mut location = integer(test, "line").to_string();
+        if let Some(name) = test
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            location.push_str(&format!(" ({name})"));
+        }
+        if let Some(index) = file_indexes.get(&path).copied() {
+            files[index].1.push(location);
+        } else {
+            file_indexes.insert(path.clone(), files.len());
+            files.push((path, vec![location]));
+        }
+    }
+    for (path, locations) in files {
+        lines.push(format!("  {path}:{}", locations.join(", ")));
+    }
 }
 
 fn display_path(data: &Value, path: &str) -> String {
