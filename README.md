@@ -70,7 +70,7 @@ codeq --help
 Version 2 reports:
 
 ```text
-codeq 2.0.0
+codeq 2.0.1
 ```
 
 ## The workflow

@@ -464,6 +464,14 @@ fn invocation(kind: OutputKind, output: Output, repository: &Path) -> Result<Inv
 
 fn normalize_text(value: &str, repository: &str) -> String {
     let mut normalized = value.replace(repository, "<ROOT>");
+    if let Some(start) = normalized.find("Resolved base: ") {
+        let value_start = start + "Resolved base: ".len();
+        let value_end = normalized[value_start..]
+            .find('\n')
+            .map(|offset| value_start + offset)
+            .unwrap_or(normalized.len());
+        normalized.replace_range(value_start..value_end, "<git-commit>");
+    }
     let mut search_from = 0;
     while let Some(offset) = normalized[search_from..].find(" ms") {
         let end = search_from + offset;

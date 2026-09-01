@@ -309,6 +309,16 @@
         "untracked_file_count": 1
       }
     },
+    "added_modified_deleted_renamed_review_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "Base: HEAD\nBase mode: direct\nResolved base: <git-commit>\nChanged files: 4\n  M app.py\n  D dynamic.py\n    base-side impact: ok (3 symbols; lexical evidence)\n      Function dispatch_order  residual=0 tests=0\n      Function invoke  residual=2 tests=0\n      Constant CALLBACKS  residual=0 tests=0\n  R web.ts -> renamed_web.ts\n    rename impact: importers=0 symbols=2 (current semantic)\n      Function formatGreeting  references=1 tests=0\n      Function renderGreeting  references=0 tests=0\n  U added.py\n\nChanged symbols: 2\n  Function format_greeting  app.py:8\n    <- greet  app.py:14\n    <- test_format_greeting  test_app.py:4\n  Function newly_added  added.py:1\n\nAffected files: 1\n  test_app.py\n\nPossible dynamic references: 0\n\nLikely tests: 3\n    test_app.py:1\n  test_format_greeting  test_app.py:4\n    test_app.py:5\n\n[<timing> ms]\n"
+    },
+    "ambiguous_symbol_context_plain": {
+      "exit_code": 1,
+      "stderr": "Ambiguous target: invoke\n  Function invoke  try: codeq context dynamic.py:8:5\n  Function invoke  try: codeq context dynamic.ts:5:10\n",
+      "stdout": ""
+    },
     "concept_file_discovery": {
       "exit_code": 0,
       "stderr": "",
@@ -428,6 +438,11 @@
         "total_candidates": 2,
         "truncated": false
       }
+    },
+    "concept_file_discovery_files_only_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "Concept search: 'format greeting'\n\nFile         test_app.py [test]\nFile         app.py\n\n[showing 2 of 2 files; <timing> ms]\n"
     },
     "concept_file_discovery_plain": {
       "exit_code": 0,
@@ -580,6 +595,11 @@
         },
         "truncated": false
       }
+    },
+    "default_both_python_trace_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "Incoming callers\ngreet  app.py:14\n├─ run  app.py:18\n└─ test_greeter  test_app.py:8\n\n[3 nodes; depth=1; node_limit=100; truncated=false]\n\nOutgoing callees\ngreet  app.py:14\n└─ format_greeting  app.py:8\n\n[2 nodes; depth=1; node_limit=100; truncated=false]\n\nHint: Use --in for callers or --out for callees to trace one direction and reduce output.\n\n[both directions; node_limit=100 per direction; <timing> ms]\n"
     },
     "exact_text_search": {
       "exit_code": 0,
@@ -1032,6 +1052,11 @@
       "stderr": "",
       "stdout": "greet  app.py:14\n├─ run  app.py:18\n└─ test_greeter  test_app.py:8\n\n[3 nodes; depth=1; node_limit=100; truncated=false; <timing> ms]\n"
     },
+    "incoming_python_trace_truncated_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "greet  app.py:14\n\n... emitted call tree is incomplete; traversal reached node_limit=1.\nnext: codeq trace app.Greeter.greet --in --depth 1 --limit 2\n\n[1 nodes; depth=1; node_limit=1; truncated=true; <timing> ms]\n"
+    },
     "incoming_typescript_trace": {
       "exit_code": 0,
       "stderr": "",
@@ -1346,6 +1371,11 @@
         "target": "app.Greeter.greet"
       }
     },
+    "python_context_lexical_evidence_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "Method Greeter.greet\napp.py:14:9\nFocused sections: lexical-references\n\n\nLexical references (2 matches across 2 lines)  'RUST_PARITY_MARKER'\n  app.py:1:1  RUST_PARITY_MARKER = \"codeq-rust-parity\"\n  contracts.yaml:1:9  marker: RUST_PARITY_MARKER\n\n[<timing> ms]\n"
+    },
     "python_cursor_context": {
       "exit_code": 0,
       "stderr": "",
@@ -1608,6 +1638,11 @@
         ]
       }
     },
+    "python_cursor_context_with_lines_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "Function format_greeting\napp.py:8:5\nRequested at: app.py:15:16 -> cursor definition\n\nHover\n(function) def format_greeting(name: str) -> str\n\nSource window (app.py:15-18)\n   15          return format_greeting(name)\n   16  \n   17  \n   18  def run(name: str) -> str:\n\nDefinition source\n    6  \n    7  \n    8  def format_greeting(name: str) -> str:\n    9      normalized = normalize_name(name)\n   10      return f\"Hello, {normalized}!!\"\n   11  \n   12  \n   13  class Greeter:\n   14      def greet(self, name: str) -> str:\n   15          return format_greeting(name)\n   16  \n   17  \n   18  def run(name: str) -> str:\n   19      greeter = Greeter()\n   20      return greeter.greet(name)\n\nCallers (2)\n  greet  app.py:14:9\n  test_format_greeting  test_app.py:4:5\nCallees (1)\n  normalize_name  app.py:4:5\nImplementations (0)\n  -\nTests (5)\n  [direct semantic reference] test_app.py:1:26\n  [direct semantic reference] test_app.py:5:12\n  [candidate: semantic caller] test_format_greeting  test_app.py:4:5\n  [candidate: module import] test_app.py:1:6\n  [candidate: exact lexical reference] test_app.py:4:10\nReferences (1)\n  app.py:15:16\nPossible dynamic references (0)\n  -\n\n[<timing> ms]\n"
+    },
     "python_dynamic_reference_classification": {
       "exit_code": 0,
       "stderr": "",
@@ -1710,6 +1745,11 @@
         },
         "target": "dynamic.dispatch_order"
       }
+    },
+    "python_dynamic_reference_classification_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "Function dispatch_order\ndynamic.py:4:5\nFocused sections: possible-dynamic-references\n\nPossible dynamic references (3)\n  [mapping_value] dynamic.py:12:23  CALLBACKS = {\"order\": dispatch_order}\n  [assigned_callable] dynamic.py:13:9  alias = dispatch_order\n  [callback_argument] dynamic.py:14:26  callback_result = invoke(dispatch_order)\n\n[<timing> ms]\n"
     },
     "python_file_context": {
       "exit_code": 0,
@@ -2468,6 +2508,11 @@
         "truncated": false
       }
     },
+    "semantic_find_no_matches_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "Symbol search: 'DefinitelyMissingSymbol'\n\nNo matches.\nTry:\n  codeq find --mode concept DefinitelyMissingSymbol\n  codeq find --mode text DefinitelyMissingSymbol\n\n[showing 0 of 0 candidates; <timing> ms]\n"
+    },
     "semantic_python_find": {
       "exit_code": 0,
       "stderr": "",
@@ -3149,6 +3194,11 @@
         "target": "<ROOT>/web.ts",
         "topology_loaded": true
       }
+    },
+    "typescript_file_context_plain": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "File web.ts\nLanguage: typescript\n\nOutline (showing 2 of 2 matching; 2 total symbols)\n  Function     formatGreeting  line 1\n  Function     renderGreeting  line 5\n  next: use --outline-depth 2, --kind KIND, or --container NAME to disclose more\n\nSource window (web.ts:1-5)\n    1  function formatGreeting(name: string): string {\n    2    return `Hello, ${name.trim()}`;\n    3  }\n    4  \n    5  export function renderGreeting(name: string): string {\n\nImports (showing 0 of 0)\n  -\n\nImported by (showing 0)\n  -\n\n[<timing> ms]\n"
     },
     "unsupported_explicit_language_fails_closed": {
       "exit_code": 1,

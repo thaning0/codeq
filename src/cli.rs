@@ -67,15 +67,6 @@ pub enum Command {
 }
 
 impl Command {
-    pub const fn name(&self) -> &'static str {
-        match self {
-            Self::Find(_) => "find",
-            Self::Context(_) => "context",
-            Self::Trace(_) => "trace",
-            Self::Review(_) => "review",
-        }
-    }
-
     pub fn target(&self) -> Option<&str> {
         match self {
             Self::Context(arguments) => Some(&arguments.target),

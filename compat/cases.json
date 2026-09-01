@@ -110,6 +110,12 @@
       "with_root": true
     },
     {
+      "name": "ambiguous_symbol_context_plain",
+      "args": ["context", "invoke", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
       "name": "lexical_section_requires_option",
       "args": ["context", "app.Greeter.greet", "--section", "lexical-references", "--json", "--no-daemon"],
       "output": "json",
@@ -134,6 +140,12 @@
       "with_root": true
     },
     {
+      "name": "semantic_find_no_matches_plain",
+      "args": ["find", "DefinitelyMissingSymbol", "--mode", "symbol", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
       "name": "search_alias_typescript_symbol",
       "args": ["search", "renderGreeting", "--mode", "symbol", "--json", "--no-daemon"],
       "output": "json",
@@ -148,6 +160,12 @@
     {
       "name": "concept_file_discovery_plain",
       "args": ["find", "format greeting", "--mode", "concept", "--limit", "2", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "concept_file_discovery_files_only_plain",
+      "args": ["find", "format greeting", "--mode", "concept", "--limit", "2", "--files-only", "--no-daemon"],
       "output": "text",
       "with_root": true
     },
@@ -188,6 +206,12 @@
       "with_root": true
     },
     {
+      "name": "python_cursor_context_with_lines_plain",
+      "args": ["context", "app.py:15:16", "--lines", "4", "--limit", "5", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
       "name": "incoming_python_trace",
       "args": ["trace", "app.Greeter.greet", "--in", "--depth", "1", "--json", "--no-daemon"],
       "output": "json",
@@ -200,9 +224,21 @@
       "with_root": true
     },
     {
+      "name": "incoming_python_trace_truncated_plain",
+      "args": ["trace", "app.Greeter.greet", "--in", "--depth", "1", "--limit", "1", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
       "name": "default_both_python_trace",
       "args": ["trace", "app.Greeter.greet", "--depth", "1", "--json", "--no-daemon"],
       "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "default_both_python_trace_plain",
+      "args": ["trace", "app.Greeter.greet", "--depth", "1", "--no-daemon"],
+      "output": "text",
       "with_root": true
     },
     {
@@ -230,6 +266,12 @@
       "with_root": true
     },
     {
+      "name": "typescript_file_context_plain",
+      "args": ["context", "web.ts", "--topology", "--lines", "5", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
       "name": "focused_python_context",
       "args": ["context", "app.Greeter.greet", "--section", "callers", "--section", "tests", "--limit", "2", "--json", "--no-daemon"],
       "output": "json",
@@ -242,9 +284,21 @@
       "with_root": true
     },
     {
+      "name": "python_context_lexical_evidence_plain",
+      "args": ["context", "app.Greeter.greet", "--section", "lexical-references", "--lexical-references", "RUST_PARITY_MARKER", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
       "name": "python_dynamic_reference_classification",
       "args": ["context", "dynamic.dispatch_order", "--section", "possible-dynamic-references", "--json", "--no-daemon"],
       "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_dynamic_reference_classification_plain",
+      "args": ["context", "dynamic.dispatch_order", "--section", "possible-dynamic-references", "--no-daemon"],
+      "output": "text",
       "with_root": true
     },
     {
@@ -263,6 +317,13 @@
       "name": "added_modified_deleted_renamed_review",
       "args": ["review", "--base", "HEAD", "--json", "--no-daemon"],
       "output": "json",
+      "with_root": true,
+      "scenario": "review_statuses"
+    },
+    {
+      "name": "added_modified_deleted_renamed_review_plain",
+      "args": ["review", "--base", "HEAD", "--no-daemon"],
+      "output": "text",
       "with_root": true,
       "scenario": "review_statuses"
     }
