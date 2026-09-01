@@ -386,7 +386,7 @@ fn serve_stale(listener: UnixListener, socket: &Path) -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 fn exercise_abstract_daemon(executable: &Path) -> Result<(), String> {
-    let name = format!("codeq-2.0-rust-dev-test-{}", std::process::id());
+    let name = format!("codeq-2-test-{}", std::process::id());
     let address =
         SocketAddr::from_abstract_name(name.as_bytes()).map_err(|error| error.to_string())?;
     let mut daemon = Command::new(executable)

@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "name": "quant-agent-workflows",
+  "provenance": "Representative public targets distilled from the anonymized 0.5.2 historical workflow mapping and frozen RC13 Quant readiness workload.",
+  "privacy": "No prompts, private session paths, or uncommitted historical query text are stored.",
+  "cases": [
+    {
+      "id": "discover-service",
+      "category": "navigation",
+      "args": ["find", "BacktestService", "--limit", "8"],
+      "expected_status": "ok",
+      "actionable_pointer": "/result_count"
+    },
+    {
+      "id": "discover-reference-store",
+      "category": "navigation",
+      "args": ["find", "DuckDbReferenceStore", "--limit", "8"],
+      "expected_status": "ok",
+      "actionable_pointer": "/result_count"
+    },
+    {
+      "id": "discover-concept",
+      "category": "navigation",
+      "args": ["find", "SSE backtest logs", "--limit", "8"],
+      "expected_status": "ok",
+      "actionable_pointer": "/result_count"
+    },
+    {
+      "id": "discover-runtime-contract",
+      "category": "navigation",
+      "args": ["find", "stream_backtest_logs", "--text", "--limit", "12"],
+      "expected_status": "ok",
+      "actionable_pointer": "/match_count"
+    },
+    {
+      "id": "service-context",
+      "category": "navigation",
+      "args": ["context", "BacktestService.stream_backtest_logs", "--limit", "10"],
+      "expected_status": "ok",
+      "actionable_pointer": "/symbol/name"
+    },
+    {
+      "id": "store-context",
+      "category": "navigation",
+      "args": ["context", "DuckDbReferenceStore", "--limit", "12"],
+      "expected_status": "ok",
+      "actionable_pointer": "/symbol/name"
+    },
+    {
+      "id": "cursor-context",
+      "category": "navigation",
+      "args": ["context", "backend/src/app/api/backtest.py:175:17", "--limit", "10"],
+      "expected_status": "ok",
+      "actionable_pointer": "/symbol/name"
+    },
+    {
+      "id": "incoming-callers",
+      "category": "navigation",
+      "args": ["trace", "BacktestService.stream_backtest_logs", "--in", "--depth", "2", "--limit", "20"],
+      "expected_status": "ok",
+      "actionable_pointer": "/node_count"
+    },
+    {
+      "id": "outgoing-callees",
+      "category": "navigation",
+      "args": ["trace", "BacktestService.stream_backtest_logs", "--out", "--depth", "1", "--limit", "20"],
+      "expected_status": "ok",
+      "actionable_pointer": "/node_count"
+    },
+    {
+      "id": "focused-review",
+      "category": "review",
+      "args": ["review", "--base", "HEAD~1", "--limit", "10"],
+      "expected_status": "ok",
+      "actionable_pointer": "/changed_file_count"
+    },
+    {
+      "id": "broad-review",
+      "category": "review",
+      "args": ["review", "--base", "HEAD~4", "--limit", "30"],
+      "expected_status": "ok",
+      "actionable_pointer": "/changed_file_count"
+    }
+  ]
+}

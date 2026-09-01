@@ -285,13 +285,15 @@ fn build_index(files: &[SourceFile]) -> Result<(Connection, u64, u64), String> {
     transaction
         .commit()
         .map_err(|error| format!("cannot commit FTS5 index: {error}"))?;
-    let page_count: u64 = connection
+    let page_count: i64 = connection
         .query_row("PRAGMA page_count", [], |row| row.get(0))
         .map_err(|error| error.to_string())?;
-    let page_size: u64 = connection
+    let page_size: i64 = connection
         .query_row("PRAGMA page_size", [], |row| row.get(0))
         .map_err(|error| error.to_string())?;
-    Ok((connection, source_bytes, page_count * page_size))
+    let index_bytes = u64::try_from(page_count.saturating_mul(page_size))
+        .map_err(|error| format!("invalid SQLite index size: {error}"))?;
+    Ok((connection, source_bytes, index_bytes))
 }
 
 fn lexical_terms(query: &str) -> Vec<String> {

@@ -18,7 +18,7 @@ use nix::unistd::Uid;
 use serde_json::{Value, json};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
-use crate::runtime::{DAEMON_PROTOCOL_VERSION, DEVELOPMENT_NAMESPACE, DEVELOPMENT_RUNTIME_ENV};
+use crate::runtime::{DAEMON_PROTOCOL_VERSION, RUNTIME_ENV, RUNTIME_NAMESPACE};
 use crate::{cli::Cli, service};
 
 const MAX_REQUEST_BYTES: u64 = 4 * 1024 * 1024;
@@ -61,10 +61,10 @@ pub fn internal_main(arguments: &[OsString]) -> Result<(), String> {
 }
 
 pub fn default_endpoint() -> Result<Endpoint, String> {
-    if let Some(explicit) = env::var_os(DEVELOPMENT_RUNTIME_ENV).filter(|value| !value.is_empty()) {
+    if let Some(explicit) = env::var_os(RUNTIME_ENV).filter(|value| !value.is_empty()) {
         let runtime = prepare_runtime_dir(Path::new(&explicit)).map_err(|error| {
             format!(
-                "{DEVELOPMENT_RUNTIME_ENV} is not usable: {}: {error}",
+                "{RUNTIME_ENV} is not usable: {}: {error}",
                 Path::new(&explicit).display()
             )
         })?;
@@ -299,13 +299,13 @@ fn prepare_runtime_dir(path: &Path) -> io::Result<PathBuf> {
 
 fn default_runtime_dir() -> Result<PathBuf, String> {
     if let Some(xdg) = env::var_os("XDG_RUNTIME_DIR").filter(|value| !value.is_empty()) {
-        let candidate = PathBuf::from(xdg).join(DEVELOPMENT_NAMESPACE);
+        let candidate = PathBuf::from(xdg).join(RUNTIME_NAMESPACE);
         if let Ok(runtime) = prepare_runtime_dir(&candidate) {
             return Ok(runtime);
         }
     }
     let fallback = PathBuf::from(format!(
-        "/tmp/{DEVELOPMENT_NAMESPACE}-{}",
+        "/tmp/{RUNTIME_NAMESPACE}-{}",
         Uid::current().as_raw()
     ));
     prepare_runtime_dir(&fallback)
@@ -329,7 +329,7 @@ fn cleanup(endpoint: &Endpoint) {
 }
 
 fn abstract_name(uid: u32) -> String {
-    format!("{DEVELOPMENT_NAMESPACE}-{uid}-p{DAEMON_PROTOCOL_VERSION}")
+    format!("{RUNTIME_NAMESPACE}-{uid}-p{DAEMON_PROTOCOL_VERSION}")
 }
 
 fn daemon_idle_timeout() -> Duration {
@@ -358,10 +358,10 @@ mod tests {
     use super::abstract_name;
 
     #[test]
-    fn development_abstract_namespace_cannot_collide_with_rc13() {
-        let development = abstract_name(1000);
-        assert!(development.starts_with("codeq-2.0-rust-dev-"));
-        assert_ne!(development, "codeq-1000-p1");
-        assert!(development.len() < 108);
+    fn versioned_abstract_namespace_cannot_collide_with_rc13() {
+        let versioned = abstract_name(1000);
+        assert!(versioned.starts_with("codeq-2-"));
+        assert_ne!(versioned, "codeq-1000-p1");
+        assert!(versioned.len() < 108);
     }
 }

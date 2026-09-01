@@ -256,8 +256,7 @@ pub fn execute(cli: &Cli, root: &Path, transport: &'static str) -> QueryResult {
     {
         return execute_text_search(cli, arguments, root, transport, started);
     }
-    let scratch =
-        std::env::temp_dir().join(format!("codeq-2.0-rust-dev-oneshot-{}", std::process::id()));
+    let scratch = std::env::temp_dir().join(format!("codeq-2-oneshot-{}", std::process::id()));
     let workspace = Workspace::new(root, scratch.clone(), query_timeout(cli.timeout));
     let result = execute_with_workspace(cli, root, transport, &workspace);
     workspace.close();
