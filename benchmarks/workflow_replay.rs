@@ -34,6 +34,9 @@ struct Options {
 
     #[arg(long, value_name = "SEC", default_value_t = 15)]
     case_timeout: u64,
+
+    #[arg(long, value_name = "SEC", default_value_t = 3)]
+    cleanup_wait: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,6 +140,7 @@ fn run(options: Options) -> Result<bool> {
             options.case_timeout,
         )?);
     }
+    thread::sleep(Duration::from_secs(options.cleanup_wait));
     let summary = summarize(&results);
     let passed = summary.passed == summary.queries && summary.actionable == summary.queries;
     let running_version = version(&executable)?;
@@ -180,8 +184,12 @@ fn run_case(
         .arg(root)
         .args(&case.args)
         .arg("--json")
+        .env("CODEQ_RUNTIME_DIR", runtime)
         .env("CODEQ2_RUNTIME_DIR", runtime)
-        .env("CODEQ2_DAEMON_IDLE_SECONDS", "2")
+        .env("CODEQ_DAEMON_IDLE_SECONDS", "1")
+        .env("CODEQ_WORKSPACE_IDLE_SECONDS", "1")
+        .env("CODEQ_LSP_IDLE_SECONDS", "1")
+        .env("CODEQ2_DAEMON_IDLE_SECONDS", "1")
         .env("CODEQ2_MAINTENANCE_INTERVAL_SECONDS", "1")
         .env("CODEQ2_WORKSPACE_IDLE_SECONDS", "1")
         .stdout(Stdio::piped())
