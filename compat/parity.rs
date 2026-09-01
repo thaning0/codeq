@@ -166,6 +166,7 @@ fn run(options: Options) -> Result<bool> {
             "diagnostic fields whose key ends in _ms",
             "process identifiers stored under a pid key",
             "CRLF line endings in text output",
+            "plain-output millisecond timings",
         ],
         summary: Summary {
             total: case_reports.len(),
@@ -317,13 +318,39 @@ fn invocation(kind: OutputKind, output: Output) -> Result<Invocation> {
             normalize_json(&mut value);
             value
         }
-        OutputKind::Text => Value::String(stdout.clone()),
+        OutputKind::Text => Value::String(normalize_text(&stdout)),
     };
     Ok(Invocation {
         exit_code,
         stderr,
         normalized,
     })
+}
+
+fn normalize_text(value: &str) -> String {
+    let mut normalized = value.to_owned();
+    let mut search_from = 0;
+    while let Some(offset) = normalized[search_from..].find(" ms") {
+        let end = search_from + offset;
+        let mut start = end;
+        while start > 0
+            && (normalized.as_bytes()[start - 1].is_ascii_digit()
+                || normalized.as_bytes()[start - 1] == b'.')
+        {
+            start -= 1;
+        }
+        if start < end
+            && normalized[start..end]
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        {
+            normalized.replace_range(start..end, "<timing>");
+            search_from = start + "<timing> ms".len();
+        } else {
+            search_from = end + 3;
+        }
+    }
+    normalized
 }
 
 fn normalize_json(value: &mut Value) {

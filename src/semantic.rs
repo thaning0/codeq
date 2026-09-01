@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Instant;
 
+use globset::Glob;
 use serde_json::{Map, Value, json};
 
-use crate::cli::{ContextArgs, TraceArgs};
+use crate::cli::{ContextArgs, FindArgs, TraceArgs};
 use crate::lsp::LspProcess;
 use crate::symbol::{Location, Resolution, Symbol, lsp_location};
 use crate::target;
@@ -23,12 +25,231 @@ const DEFAULT_SECTIONS: &[&str] = &[
     "possible-dynamic-references",
 ];
 
+pub(crate) fn find(
+    workspace: &Workspace,
+    arguments: &FindArgs,
+    limit: i64,
+) -> Result<Value, String> {
+    let query = arguments.query.trim();
+    let hits = lexical_hits(workspace.root(), query, 80.max(limit.max(1) as usize * 8));
+    let mut projects = Vec::new();
+    for hit in &hits {
+        if let Some(project) = workspace.project_for_path(value_path(hit))
+            && !projects.contains(&project)
+        {
+            projects.push(project);
+        }
+    }
+    if projects.is_empty() {
+        projects.extend_from_slice(workspace.projects());
+    }
+    projects.sort();
+
+    let mut results = Vec::new();
+    if identifier(query) {
+        results.extend(
+            workspace
+                .exact_document_candidates(query, 80.max(limit.max(1) as usize * 4))
+                .into_iter()
+                .filter(|symbol| in_find_scope(workspace.root(), &symbol.path, arguments))
+                .map(|symbol| symbol_value(&symbol, true)),
+        );
+    }
+    let search_terms = identifier_tokens(query);
+    for project in &projects {
+        let Ok(session) = workspace.session(project) else {
+            continue;
+        };
+        if project.family.as_str() == "typescript" {
+            let mut primed = 0;
+            for hit in &hits {
+                let path = value_path(hit);
+                if workspace.project_for_path(path).as_ref() != Some(project) {
+                    continue;
+                }
+                if workspace.document_symbols(path, Some(project)).is_ok() {
+                    primed += 1;
+                }
+                if primed >= 4 {
+                    break;
+                }
+            }
+        }
+        for term in search_terms.iter().take(3) {
+            for item in session.workspace_symbols(term).unwrap_or_default() {
+                if let Some(value) = workspace_symbol_value(&item)
+                    && in_find_scope(workspace.root(), value_path(&value), arguments)
+                {
+                    results.push(value);
+                }
+            }
+        }
+    }
+    for hit in hits.iter().take(16) {
+        let path = value_path(hit);
+        let Some(project) = workspace.project_for_path(path) else {
+            continue;
+        };
+        let Ok(symbols) = workspace.document_symbols(path, Some(&project)) else {
+            continue;
+        };
+        let hit_line = integer(hit, "line");
+        let mut mapped = false;
+        for symbol in &symbols {
+            let start = symbol.range.start.line + 1;
+            let end = symbol.range.end.line + 1;
+            let score = fuzzy_score(query, &symbol.name, &symbol.container, &symbol.path);
+            if start <= hit_line && hit_line <= end {
+                mapped = true;
+                let mut value = symbol_value(symbol, false);
+                value["lexical_match_score"] = Value::from(integer(hit, "match_score"));
+                value["match_text"] = hit.get("text").cloned().unwrap_or(Value::Null);
+                results.push(value);
+            } else if score > 0 {
+                results.push(symbol_value(symbol, false));
+            }
+        }
+        if !mapped && !symbols.is_empty() {
+            let following = symbols
+                .iter()
+                .filter(|symbol| symbol.line >= hit_line && symbol.line - hit_line <= 12)
+                .min_by_key(|symbol| (symbol.line - hit_line, std::cmp::Reverse(priority(symbol))));
+            let nearest = following.or_else(|| {
+                symbols.iter().min_by_key(|symbol| {
+                    (
+                        symbol.line.abs_diff(hit_line),
+                        std::cmp::Reverse(priority(symbol)),
+                    )
+                })
+            });
+            if let Some(symbol) = nearest
+                && symbol.line.abs_diff(hit_line) <= if following.is_some() { 12 } else { 8 }
+            {
+                let mut value = symbol_value(symbol, false);
+                value["lexical_match_score"] = Value::from(integer(hit, "match_score"));
+                value["match_text"] = hit.get("text").cloned().unwrap_or(Value::Null);
+                results.push(value);
+            }
+        }
+    }
+
+    let mut deduplicated: std::collections::HashMap<(PathBuf, u64, String), Value> =
+        std::collections::HashMap::new();
+    for mut item in results {
+        let path = value_path(&item).to_owned();
+        if !in_find_scope(workspace.root(), &path, arguments) {
+            continue;
+        }
+        let name = item
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        let container = item.get("container").and_then(Value::as_str).unwrap_or("");
+        let score = (fuzzy_score(query, &name, container, &path) as i64
+            + (integer(&item, "lexical_match_score").min(5) * 700) as i64
+            + agent_ranking_adjustment(query, arguments.kind.as_deref(), &item))
+        .max(0) as u64;
+        item["score"] = Value::from(score);
+        let key = (path, integer(&item, "line"), name);
+        let replace = deduplicated
+            .get(&key)
+            .is_none_or(|current| integer(current, "score") < score);
+        if replace {
+            deduplicated.insert(key, item);
+        }
+    }
+    let mut ordered: Vec<_> = deduplicated.into_values().collect();
+    if let Some(kind) = arguments.kind.as_deref() {
+        let requested = kind.trim().to_ascii_lowercase();
+        ordered.retain(|item| {
+            let actual = item
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            match requested.as_str() {
+                "function" => matches!(actual.as_str(), "function" | "method" | "constructor"),
+                "class" => matches!(actual.as_str(), "class" | "interface" | "struct" | "enum"),
+                "test" => is_test_path(value_path(item)),
+                _ => actual == requested,
+            }
+        });
+    }
+    ordered.sort_by(|left, right| {
+        (
+            std::cmp::Reverse(integer(left, "score")),
+            std::cmp::Reverse(value_priority(left)),
+            value_path(left),
+            integer(left, "line"),
+        )
+            .cmp(&(
+                std::cmp::Reverse(integer(right, "score")),
+                std::cmp::Reverse(value_priority(right)),
+                value_path(right),
+                integer(right, "line"),
+            ))
+    });
+    for item in &mut ordered {
+        let path = value_path(item);
+        let relative = path.strip_prefix(workspace.root()).unwrap_or(path);
+        item["selection_command"] = Value::String(format!(
+            "codeq context {}:{}:{}",
+            relative.display(),
+            integer(item, "line"),
+            integer(item, "column")
+        ));
+    }
+    let total = ordered.len();
+    let public_limit = limit.max(1) as usize;
+    ordered.truncate(public_limit);
+    Ok(json!({
+        "status": "ok",
+        "mode": "symbol",
+        "search_mode": "symbol",
+        "query": arguments.query,
+        "kind": arguments.kind,
+        "paths": arguments.paths,
+        "filters": {
+            "paths": arguments.paths,
+            "globs": arguments.globs,
+            "exclude_tests": arguments.exclude_tests,
+        },
+        "results": ordered,
+        "result_count": total.min(public_limit),
+        "total_candidates": total,
+        "truncated": total > public_limit,
+        "errors": [],
+    }))
+}
+
 pub(crate) fn context(
     workspace: &Workspace,
     arguments: &ContextArgs,
     limit: i64,
 ) -> Result<Value, String> {
     let started = Instant::now();
+    if let Some(explicit) = target::explicit_path(&arguments.target, workspace.root())
+        && !explicit.has_position()
+    {
+        return file_context(workspace, arguments, &explicit.path, limit, started);
+    }
+    let module_candidates = dotted_module_candidates(workspace.root(), &arguments.target);
+    if module_candidates.len() == 1 {
+        return file_context(workspace, arguments, &module_candidates[0], limit, started);
+    }
+    if module_candidates.len() > 1 {
+        return Ok(json!({
+            "status": "ambiguous",
+            "target": arguments.target,
+            "reason": "multiple source files match the requested module",
+            "candidates": module_candidates.iter().map(|path| json!({
+                "path": path,
+                "selection_command": format!("codeq context {}", path.strip_prefix(workspace.root()).unwrap_or(path).display()),
+            })).collect::<Vec<_>>(),
+            "_phase_ms": {"resolution": started.elapsed().as_secs_f64() * 1000.0, "prewarm": 0.0, "semantic_neighborhood": 0.0},
+        }));
+    }
     let resolution = resolve(workspace, &arguments.target);
     let resolution_ms = started.elapsed().as_secs_f64() * 1000.0;
     let (symbol, requested_location, cursor_definition) = match resolution {
@@ -374,8 +595,305 @@ pub(crate) fn trace(
         "truncated": boolean(&incoming, "truncated") || boolean(&outgoing, "truncated"),
         "root": incoming.get("root").cloned().unwrap_or_else(|| symbol_summary(&symbol)),
         "traces": {"in": incoming, "out": outgoing},
-        "hint": "trace defaults to both directions; use --in or --out to narrow future queries",
+        "hint": "Use --in for callers or --out for callees to trace one direction and reduce output.",
     }))
+}
+
+fn file_context(
+    workspace: &Workspace,
+    arguments: &ContextArgs,
+    path: &Path,
+    limit: i64,
+    started: Instant,
+) -> Result<Value, String> {
+    if !arguments.sections.is_empty() {
+        let relative = path.strip_prefix(workspace.root()).unwrap_or(path);
+        return Ok(json!({
+            "status": "invalid_query",
+            "target": arguments.target,
+            "reason": "--section applies only to symbol context; the target resolved to a file",
+            "recovery_command": format!("codeq context {}", relative.display()),
+            "_phase_ms": {"resolution": started.elapsed().as_secs_f64() * 1000.0, "prewarm": 0.0, "semantic_neighborhood": 0.0},
+        }));
+    }
+    let path = fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    let project = workspace
+        .project_for_path(&path)
+        .ok_or_else(|| format!("no language project found for {}", path.display()))?;
+    let symbols = workspace
+        .document_symbols(&path, Some(&project))
+        .map_err(|error| error.to_string())?;
+    let budget = limit.max(1) as usize;
+    let normalized_container = arguments.container.as_deref().unwrap_or("").trim();
+    let requested_kind = arguments
+        .kind
+        .as_deref()
+        .map(str::trim)
+        .filter(|kind| !kind.is_empty());
+    let mut selected = Vec::new();
+    for symbol in &symbols {
+        if !normalized_container.is_empty() {
+            let in_container = symbol.name == normalized_container
+                || symbol.container == normalized_container
+                || symbol
+                    .container
+                    .strip_prefix(normalized_container)
+                    .is_some_and(|suffix| suffix.starts_with('.'));
+            if !in_container {
+                continue;
+            }
+            let relative_depth =
+                if symbol.name == normalized_container && symbol.container.is_empty() {
+                    0
+                } else if symbol.container == normalized_container {
+                    1
+                } else {
+                    symbol
+                        .container
+                        .strip_prefix(normalized_container)
+                        .unwrap_or("")
+                        .trim_start_matches('.')
+                        .split('.')
+                        .filter(|part| !part.is_empty())
+                        .count()
+                        + 1
+                };
+            if relative_depth > arguments.outline_depth.max(0) as usize {
+                continue;
+            }
+        } else if requested_kind.is_none()
+            && symbol
+                .container
+                .split('.')
+                .filter(|part| !part.is_empty())
+                .count()
+                + 1
+                > arguments.outline_depth.max(1) as usize
+        {
+            continue;
+        }
+        if let Some(kind) = requested_kind
+            && !kind_matches(&symbol.kind, kind)
+        {
+            continue;
+        }
+        selected.push(json!({
+            "name": symbol.name,
+            "kind": symbol.kind,
+            "container": symbol.container,
+            "path": symbol.path,
+            "line": symbol.line,
+            "column": symbol.column,
+        }));
+    }
+    let matching_count = selected.len();
+    selected.truncate(budget);
+    let imports = extract_imports(&path);
+    let topology = if arguments.topology {
+        file_topology(workspace, &path, &project, imports, budget)
+    } else {
+        json!({
+            "imports": [],
+            "import_count": imports.len(),
+            "imports_truncated": false,
+            "importers": [],
+            "importer_count": 0,
+            "importers_truncated": false,
+        })
+    };
+    let mut data = json!({
+        "status": "ok",
+        "target": path,
+        "kind": "file",
+        "file": {
+            "path": path,
+            "language": project.family.as_str(),
+            "project_root": project.root,
+        },
+        "outline": selected,
+        "symbol_count": symbols.len(),
+        "outline_count": matching_count.min(budget),
+        "outline_matching_count": matching_count,
+        "outline_truncated": matching_count > budget,
+        "outline_depth": arguments.outline_depth,
+        "outline_kind": arguments.kind,
+        "container": arguments.container,
+        "topology_loaded": arguments.topology,
+        "imports": topology["imports"],
+        "import_count": topology["import_count"],
+        "imports_truncated": topology["imports_truncated"],
+        "importers": topology["importers"],
+        "importer_count": topology["importer_count"],
+        "importers_truncated": topology["importers_truncated"],
+    });
+    if let Some(lines) = arguments.lines {
+        data["line_window"] = source_window(workspace.root(), &path, 1, u64::from(lines));
+    }
+    if let Some(query) = &arguments.lexical_references {
+        data["lexical_references"] = textsearch::search(
+            workspace.root(),
+            if query.is_empty() {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("")
+            } else {
+                query
+            },
+            limit,
+            &arguments.paths,
+            &arguments.globs,
+            arguments.exclude_tests,
+        )?;
+    }
+    data["_phase_ms"] = json!({
+        "resolution": started.elapsed().as_secs_f64() * 1000.0,
+        "prewarm": 0.0,
+        "semantic_neighborhood": 0.0,
+    });
+    Ok(data)
+}
+
+fn kind_matches(actual: &str, requested: &str) -> bool {
+    let actual = actual.to_ascii_lowercase();
+    match requested.to_ascii_lowercase().as_str() {
+        "function" => matches!(actual.as_str(), "function" | "method" | "constructor"),
+        "class" => matches!(actual.as_str(), "class" | "interface" | "struct" | "enum"),
+        requested => actual == requested,
+    }
+}
+
+fn dotted_module_candidates(root: &Path, target: &str) -> Vec<PathBuf> {
+    if target.contains('/') || target.contains('\\') || !target.split('.').all(identifier) {
+        return Vec::new();
+    }
+    let module_path = target.replace('.', "/");
+    let mut candidates: Vec<_> = visible_source_files(root)
+        .into_iter()
+        .filter(|path| {
+            let relative = path.strip_prefix(root).unwrap_or(path).with_extension("");
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            relative == module_path
+                || relative.ends_with(&format!("/{module_path}"))
+                || relative.strip_suffix("/__init__") == Some(module_path.as_str())
+        })
+        .collect();
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn extract_imports(path: &Path) -> Vec<Value> {
+    let source = fs::read_to_string(path).unwrap_or_default();
+    let mut imports = Vec::new();
+    let python = matches!(
+        path.extension().and_then(|extension| extension.to_str()),
+        Some("py" | "pyi")
+    );
+    for (index, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let leading = line.len() - trimmed.len();
+        if python {
+            if let Some(rest) = trimmed.strip_prefix("from ")
+                && let Some((specifier, _)) = rest.split_once(" import ")
+            {
+                imports.push(json!({
+                    "path": path,
+                    "line": index + 1,
+                    "column": leading + 6,
+                    "text": line,
+                    "specifier": specifier,
+                }));
+            } else if let Some(rest) = trimmed.strip_prefix("import ") {
+                for specifier in rest
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    let specifier = specifier.split_whitespace().next().unwrap_or(specifier);
+                    imports.push(json!({
+                        "path": path,
+                        "line": index + 1,
+                        "column": leading + 8,
+                        "text": line,
+                        "specifier": specifier,
+                    }));
+                }
+            }
+        } else if trimmed.starts_with("import ")
+            && let Some((_, tail)) = trimmed.rsplit_once(" from ")
+        {
+            let specifier = tail.trim().trim_matches(';').trim_matches(['\'', '"']);
+            imports.push(json!({
+                "path": path,
+                "line": index + 1,
+                "column": line.find(specifier).unwrap_or(0) + 1,
+                "text": line,
+                "specifier": specifier,
+            }));
+        }
+    }
+    imports
+}
+
+fn file_topology(
+    workspace: &Workspace,
+    path: &Path,
+    _project: &crate::workspace::Project,
+    imports: Vec<Value>,
+    limit: usize,
+) -> Value {
+    let module = path
+        .strip_prefix(workspace.root())
+        .unwrap_or(path)
+        .with_extension("")
+        .to_string_lossy()
+        .replace(['/', '\\'], ".")
+        .trim_end_matches(".__init__")
+        .to_owned();
+    let mut importers = Vec::new();
+    for candidate in visible_source_files(workspace.root()) {
+        if candidate == path {
+            continue;
+        }
+        let candidate_imports = extract_imports(&candidate);
+        for item in candidate_imports {
+            let specifier = item.get("specifier").and_then(Value::as_str).unwrap_or("");
+            if specifier == module || module.ends_with(&format!(".{specifier}")) {
+                importers.push(item);
+            }
+        }
+    }
+    importers.sort_by(|left, right| {
+        (
+            value_path(left),
+            integer(left, "line"),
+            integer(left, "column"),
+        )
+            .cmp(&(
+                value_path(right),
+                integer(right, "line"),
+                integer(right, "column"),
+            ))
+    });
+    importers.dedup_by(|left, right| {
+        value_path(left) == value_path(right)
+            && integer(left, "line") == integer(right, "line")
+            && integer(left, "column") == integer(right, "column")
+    });
+    let importer_count = importers.len();
+    importers.truncate(limit);
+    let import_count = imports.len();
+    let mut returned_imports = imports;
+    returned_imports.truncate(limit);
+
+    json!({
+        "imports": returned_imports,
+        "import_count": import_count,
+        "imports_truncated": import_count > limit,
+        "importers": importers,
+        "importer_count": importer_count,
+        "importers_truncated": importer_count > limit,
+    })
 }
 
 fn resolve(workspace: &Workspace, target_value: &str) -> Resolution {
@@ -406,6 +924,256 @@ fn resolution_response(target: &str, resolution: Resolution, resolution_ms: f64)
         "reason": reason,
         "candidates": candidates.into_iter().map(|symbol| symbol_value(&symbol, false)).collect::<Vec<_>>(),
         "_phase_ms": {"resolution": resolution_ms, "prewarm": 0.0, "semantic_neighborhood": 0.0},
+    })
+}
+
+fn lexical_hits(root: &Path, query: &str, limit: usize) -> Vec<Value> {
+    let tokens = identifier_tokens(query);
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+    let mut command = Command::new("rg");
+    command
+        .current_dir(root)
+        .args(["--json", "-n", "--hidden", "--max-count", "20"])
+        .args(["-g", "*.py", "-g", "*.pyi", "-g", "*.ts", "-g", "*.tsx"])
+        .args(["-g", "*.js", "-g", "*.jsx", "-g", "*.mjs", "-g", "*.cjs"])
+        .args([
+            "-g",
+            "!node_modules/**",
+            "-g",
+            "!.git/**",
+            "-g",
+            "!.next/**",
+        ])
+        .args(["-g", "!dist/**", "-g", "!build/**"]);
+    for token in tokens.iter().take(3) {
+        command.arg("-e").arg(regex_escape(token));
+    }
+    command.arg(".");
+    let Ok(output) = command.output() else {
+        return Vec::new();
+    };
+    let lowered_query = query.to_lowercase();
+    let lowered_tokens: Vec<_> = tokens.iter().map(|token| token.to_lowercase()).collect();
+    let mut hits = Vec::new();
+    for line in output.stdout.split(|byte| *byte == b'\n') {
+        let Ok(event) = serde_json::from_slice::<Value>(line) else {
+            continue;
+        };
+        if event.get("type").and_then(Value::as_str) != Some("match") {
+            continue;
+        }
+        let Some(relative) = event.pointer("/data/path/text").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(line_number) = event.pointer("/data/line_number").and_then(Value::as_u64) else {
+            continue;
+        };
+        let text = event
+            .pointer("/data/lines/text")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim_end()
+            .to_owned();
+        let lowered = text.to_lowercase();
+        let coverage = lowered_tokens
+            .iter()
+            .filter(|token| lowered.contains(token.as_str()))
+            .count() as u64;
+        let phrase_bonus =
+            u64::from(!lowered_query.is_empty() && lowered.contains(&lowered_query)) * 3;
+        let path = fs::canonicalize(root.join(relative)).unwrap_or_else(|_| root.join(relative));
+        hits.push(json!({
+            "path": path,
+            "line": line_number,
+            "column": 1,
+            "source": "rg",
+            "text": text,
+            "match_score": coverage + phrase_bonus,
+        }));
+    }
+    hits.sort_by(|left, right| {
+        (
+            std::cmp::Reverse(integer(left, "match_score")),
+            value_path(left),
+            integer(left, "line"),
+        )
+            .cmp(&(
+                std::cmp::Reverse(integer(right, "match_score")),
+                value_path(right),
+                integer(right, "line"),
+            ))
+    });
+    hits.truncate(limit);
+    hits
+}
+
+fn identifier_tokens(query: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    for character in query.chars().chain(std::iter::once(' ')) {
+        let accepted = if current.is_empty() {
+            character.is_alphabetic() || character == '_'
+        } else {
+            character.is_alphanumeric() || character == '_'
+        };
+        if accepted {
+            current.push(character);
+            continue;
+        }
+        if current.chars().count() >= 2 {
+            tokens.push(std::mem::take(&mut current));
+        } else {
+            current.clear();
+        }
+    }
+    tokens.sort_by_key(|token| std::cmp::Reverse(token.chars().count()));
+    tokens.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    tokens
+}
+
+fn regex_escape(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|character| {
+            if matches!(
+                character,
+                '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$' | '\\'
+            ) {
+                vec!['\\', character]
+            } else {
+                vec![character]
+            }
+        })
+        .collect()
+}
+
+fn workspace_symbol_value(item: &Value) -> Option<Value> {
+    let location = item.get("location")?;
+    let (path, range) = lsp_location(location)?;
+    Some(json!({
+        "name": item.get("name").and_then(Value::as_str).unwrap_or(""),
+        "kind": kind_name(item.get("kind").and_then(Value::as_u64)),
+        "container": item.get("containerName").and_then(Value::as_str).unwrap_or(""),
+        "path": path,
+        "line": range.start.line + 1,
+        "column": range.start.character + 1,
+        "source": "lsp",
+        "origin": "workspace",
+    }))
+}
+
+fn fuzzy_score(query: &str, name: &str, container: &str, path: &Path) -> u64 {
+    let query = query.trim().to_lowercase();
+    let name = name.to_lowercase();
+    let combined = format!("{container}.{name}")
+        .trim_matches('.')
+        .to_lowercase();
+    if query.is_empty() {
+        return 0;
+    }
+    if query == combined || query == name {
+        return 10_000;
+    }
+    if combined.ends_with(&query) {
+        return 9_000;
+    }
+    if name.starts_with(&query) {
+        return 8_000;
+    }
+    if name.contains(&query) {
+        return 7_000;
+    }
+    let tokens = identifier_tokens(&query);
+    if tokens.is_empty() {
+        return 0;
+    }
+    let haystack = format!("{combined} {}", path.display()).to_lowercase();
+    let coverage = tokens
+        .iter()
+        .filter(|token| haystack.contains(&token.to_lowercase()))
+        .count() as u64;
+    if coverage == 0 {
+        0
+    } else {
+        coverage * 1_000 + name.chars().count().min(200) as u64
+    }
+}
+
+fn priority(symbol: &Symbol) -> u64 {
+    let base = match symbol.kind.as_str() {
+        "Function" | "Method" | "Class" | "Interface" | "Enum" | "Constructor" | "Struct"
+        | "TypeParameter" => 30,
+        "Constant" | "Property" | "Field" => 20,
+        "Variable" => 10,
+        _ => 0,
+    };
+    base + u64::from(symbol.origin == "document") * 2
+}
+
+fn value_priority(item: &Value) -> u64 {
+    let base = match item.get("kind").and_then(Value::as_str).unwrap_or("") {
+        "Function" | "Method" | "Class" | "Interface" | "Enum" | "Constructor" | "Struct"
+        | "TypeParameter" => 30,
+        "Constant" | "Property" | "Field" => 20,
+        "Variable" => 10,
+        _ => 0,
+    };
+    base + u64::from(item.get("origin").and_then(Value::as_str) == Some("document")) * 2
+}
+
+fn agent_ranking_adjustment(query: &str, kind: Option<&str>, item: &Value) -> i64 {
+    let lowered = query.to_lowercase();
+    let seeks_tests = kind.is_some_and(|value| value.eq_ignore_ascii_case("test"))
+        || ["test", "tests", "pytest", "fixture", "mock", "spec", "测试"]
+            .iter()
+            .any(|cue| lowered.contains(cue));
+    let mut adjustment = 0i64;
+    let path = value_path(item).to_string_lossy().to_lowercase();
+    if is_test_path(value_path(item)) && !seeks_tests {
+        adjustment -= 2_500;
+    }
+    if ["/generated/", "/fixtures/", "/snapshots/"]
+        .iter()
+        .any(|segment| path.contains(segment))
+    {
+        adjustment -= 700;
+    }
+    if path.contains("/examples/") {
+        adjustment -= 500;
+    }
+    if item.get("origin").and_then(Value::as_str) == Some("document") {
+        adjustment += 150;
+    }
+    adjustment
+}
+
+fn in_find_scope(root: &Path, path: &Path, arguments: &FindArgs) -> bool {
+    if arguments.exclude_tests && is_test_path(path) {
+        return false;
+    }
+    if !arguments.paths.is_empty()
+        && !arguments.paths.iter().any(|prefix| {
+            let prefix = if Path::new(prefix).is_absolute() {
+                PathBuf::from(prefix)
+            } else {
+                root.join(prefix)
+            };
+            path == prefix || path.starts_with(prefix)
+        })
+    {
+        return false;
+    }
+    if arguments.globs.is_empty() {
+        return true;
+    }
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    arguments.globs.iter().any(|pattern| {
+        Glob::new(pattern).is_ok_and(|glob| {
+            let matcher = glob.compile_matcher();
+            matcher.is_match(relative) || matcher.is_match(path.file_name().unwrap_or_default())
+        })
     })
 }
 

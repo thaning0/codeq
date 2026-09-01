@@ -299,11 +299,8 @@ fn execute_with_workspace(
         {
             concept::search(root, arguments, cli.limit)
         }
+        Command::Find(arguments) => semantic::find(workspace, arguments, cli.limit),
         Command::Review(arguments) => gitreview::review(workspace, arguments, cli.limit),
-        Command::Find(_) => Err(format!(
-            "the Rust {} workflow is not implemented yet on the 2.0 development branch",
-            cli.command.name()
-        )),
     };
     let mut data = produced.unwrap_or_else(|error| {
         serde_json::json!({
@@ -366,30 +363,389 @@ fn render_semantic(data: &Value, command: &str) -> String {
             .to_owned();
     }
     match command {
-        "context" => {
-            let symbol = data.get("symbol").unwrap_or(&Value::Null);
-            format!(
-                "{} {}\n{}:{}:{}",
-                symbol
-                    .get("kind")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Symbol"),
-                symbol.get("name").and_then(Value::as_str).unwrap_or(""),
-                symbol.get("path").and_then(Value::as_str).unwrap_or(""),
-                symbol.get("line").and_then(Value::as_u64).unwrap_or(1),
-                symbol.get("column").and_then(Value::as_u64).unwrap_or(1),
-            )
+        "find" => render_find(data),
+        "context" if data.get("kind").and_then(Value::as_str) == Some("file") => {
+            render_file_context(data)
         }
-        "trace" => format!(
-            "Trace {} ({}, {} nodes)",
-            data.get("target").and_then(Value::as_str).unwrap_or(""),
-            data.get("direction")
-                .and_then(Value::as_str)
-                .unwrap_or("both"),
-            data.get("node_count").and_then(Value::as_u64).unwrap_or(0),
-        ),
+        "context" => render_symbol_context(data),
+        "trace" => render_trace(data),
+        "review" => render_review(data),
         _ => "ok".to_owned(),
     }
+}
+
+fn render_find(data: &Value) -> String {
+    let query = data.get("query").and_then(Value::as_str).unwrap_or("");
+    let duration = duration(data);
+    let results = data
+        .get("results")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    if data.get("search_mode").and_then(Value::as_str) == Some("concept") {
+        let mut lines = vec![
+            format!("Concept search: {}", python_repr(query)),
+            String::new(),
+        ];
+        for (index, result) in results.iter().enumerate() {
+            let path = display_path(
+                data,
+                result.get("path").and_then(Value::as_str).unwrap_or(""),
+            );
+            let line = integer(result, "line");
+            let column = integer(result, "column");
+            let marker = if result.get("is_test").and_then(Value::as_bool) == Some(true) {
+                " [test]"
+            } else {
+                ""
+            };
+            lines.push(format!("{}. {path}:{line}:{column}{marker}", index + 1));
+            if let Some(evidence) = result.get("representative_lines").and_then(Value::as_array) {
+                for item in evidence {
+                    lines.push(format!(
+                        "   {:>5} | {}",
+                        integer(item, "line"),
+                        item.get("text").and_then(Value::as_str).unwrap_or("")
+                    ));
+                }
+            }
+            let terms = result
+                .get("matched_terms")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ");
+            lines.push(format!("   Matched terms: {terms}"));
+            lines.push(format!(
+                "   → {}",
+                result
+                    .get("selection_command")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+            ));
+            lines.push(String::new());
+        }
+        lines.push(format!(
+            "[showing {} of {} files; {duration} ms]",
+            integer(data, "result_count"),
+            integer(data, "total_candidates")
+        ));
+        return lines.join("\n");
+    }
+
+    let mut lines = vec![
+        format!("Symbol search: {}", python_repr(query)),
+        String::new(),
+    ];
+    for result in results {
+        let container = result
+            .get("container")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let name = result.get("name").and_then(Value::as_str).unwrap_or("");
+        let qualified = if container.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{container}.{name}")
+        };
+        lines.push(format!(
+            "{:<12} {}  {}:{}:{}",
+            result
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("Unknown"),
+            qualified,
+            display_path(
+                data,
+                result.get("path").and_then(Value::as_str).unwrap_or("")
+            ),
+            integer(result, "line"),
+            integer(result, "column")
+        ));
+    }
+    if data.get("truncated").and_then(Value::as_bool) == Some(true) {
+        lines.push("... more semantic candidates available; increase --limit".to_owned());
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "[showing {} of {} candidates; {duration} ms]",
+        integer(data, "result_count"),
+        integer(data, "total_candidates")
+    ));
+    lines.join("\n")
+}
+
+fn render_symbol_context(data: &Value) -> String {
+    let symbol = data.get("symbol").unwrap_or(&Value::Null);
+    let container = symbol
+        .get("container")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let name = symbol.get("name").and_then(Value::as_str).unwrap_or("");
+    let qualified = if container.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{container}.{name}")
+    };
+    let mut lines = vec![
+        format!(
+            "{} {qualified}",
+            symbol
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("Symbol")
+        ),
+        format!(
+            "{}:{}:{}",
+            display_path(
+                data,
+                symbol.get("path").and_then(Value::as_str).unwrap_or("")
+            ),
+            integer(symbol, "line"),
+            integer(symbol, "column")
+        ),
+    ];
+    if let Some(hover) = data
+        .get("hover")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        lines.extend([String::new(), "Hover".to_owned(), hover.to_owned()]);
+    }
+    if let Some(source) = data.pointer("/source/text").and_then(Value::as_str) {
+        lines.extend([
+            String::new(),
+            "Source".to_owned(),
+            source.to_owned(),
+            String::new(),
+        ]);
+    }
+    for (key, title) in [
+        ("callers", "Callers"),
+        ("callees", "Callees"),
+        ("implementations", "Implementations"),
+    ] {
+        if let Some(items) = data.get(key).and_then(Value::as_array) {
+            lines.push(format!("{title} ({})", items.len()));
+            if items.is_empty() {
+                lines.push("  -".to_owned());
+            } else {
+                for item in items {
+                    lines.push(format!(
+                        "  {}  {}:{}:{}",
+                        item.get("name").and_then(Value::as_str).unwrap_or(""),
+                        display_path(data, item.get("path").and_then(Value::as_str).unwrap_or("")),
+                        integer(item, "line"),
+                        integer(item, "column")
+                    ));
+                }
+            }
+        }
+    }
+    if let Some(tests) = data.get("tests").and_then(Value::as_array) {
+        let meta = data
+            .pointer("/section_metadata/tests")
+            .unwrap_or(&Value::Null);
+        lines.push(format!(
+            "Tests (showing {} of {})",
+            tests.len(),
+            integer(meta, "total_count")
+        ));
+        for item in tests {
+            let evidence = item
+                .get("evidence_type")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .replace('_', " ");
+            let confidence = item.get("confidence").and_then(Value::as_str).unwrap_or("");
+            let prefix = if confidence == "direct" {
+                format!("[{evidence}]")
+            } else {
+                format!("[{confidence}: {evidence}]")
+            };
+            let item_name = item
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(|value| format!("{value}  "))
+                .unwrap_or_default();
+            lines.push(format!(
+                "  {prefix} {item_name}{}:{}:{}",
+                display_path(data, item.get("path").and_then(Value::as_str).unwrap_or("")),
+                integer(item, "line"),
+                integer(item, "column")
+            ));
+        }
+        if meta.get("truncated").and_then(Value::as_bool) == Some(true) {
+            lines.push("  ... more test evidence available; increase --limit".to_owned());
+        }
+    }
+    for (key, title) in [
+        ("references", "References"),
+        ("possible_dynamic_references", "Possible dynamic references"),
+    ] {
+        if let Some(items) = data.get(key).and_then(Value::as_array) {
+            lines.push(format!("{title} ({})", items.len()));
+            if items.is_empty() {
+                lines.push("  -".to_owned());
+            } else {
+                for item in items {
+                    lines.push(format!(
+                        "  {}:{}:{}",
+                        display_path(data, item.get("path").and_then(Value::as_str).unwrap_or("")),
+                        integer(item, "line"),
+                        integer(item, "column")
+                    ));
+                }
+            }
+        }
+    }
+    lines.extend([String::new(), format!("[{} ms]", duration(data))]);
+    lines.join("\n")
+}
+
+fn render_file_context(data: &Value) -> String {
+    let file = data.get("file").unwrap_or(&Value::Null);
+    let mut lines = vec![
+        format!(
+            "File {}",
+            display_path(data, file.get("path").and_then(Value::as_str).unwrap_or(""))
+        ),
+        format!(
+            "Language: {}",
+            file.get("language").and_then(Value::as_str).unwrap_or("")
+        ),
+        String::new(),
+        format!(
+            "Outline (showing {} of {} matching; {} total symbols)",
+            integer(data, "outline_count"),
+            integer(data, "outline_matching_count"),
+            integer(data, "symbol_count")
+        ),
+    ];
+    if let Some(outline) = data.get("outline").and_then(Value::as_array) {
+        for item in outline {
+            lines.push(format!(
+                "  {:<12} {}  line {}",
+                item.get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Unknown"),
+                item.get("name").and_then(Value::as_str).unwrap_or(""),
+                integer(item, "line")
+            ));
+        }
+    }
+    lines.push(
+        "  next: use --outline-depth 2, --kind KIND, or --container NAME to disclose more"
+            .to_owned(),
+    );
+    lines.push(String::new());
+    if data.get("topology_loaded").and_then(Value::as_bool) == Some(true) {
+        lines.push(format!(
+            "Topology: {} imports, {} importers",
+            integer(data, "import_count"),
+            integer(data, "importer_count")
+        ));
+    } else {
+        lines.push(format!(
+            "Topology: hidden ({} direct imports; use --topology to disclose imports/importers)",
+            integer(data, "import_count")
+        ));
+    }
+    lines.extend([String::new(), format!("[{} ms]", duration(data))]);
+    lines.join("\n")
+}
+
+fn render_trace(data: &Value) -> String {
+    let tree = data.get("tree").unwrap_or(&Value::Null);
+    let mut lines = Vec::new();
+    render_trace_node(data, tree, "", true, true, &mut lines);
+    lines.push(String::new());
+    lines.push(format!(
+        "[{} nodes; depth={}; node_limit={}; truncated={}; {} ms]",
+        integer(data, "node_count"),
+        integer(data, "depth"),
+        integer(data, "node_limit"),
+        data.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        duration(data)
+    ));
+    lines.join("\n")
+}
+
+fn render_trace_node(
+    data: &Value,
+    tree: &Value,
+    prefix: &str,
+    last: bool,
+    root: bool,
+    lines: &mut Vec<String>,
+) {
+    let node = tree.get("node").unwrap_or(&Value::Null);
+    let branch = if root {
+        ""
+    } else if last {
+        "└─ "
+    } else {
+        "├─ "
+    };
+    lines.push(format!(
+        "{prefix}{branch}{}  {}:{}",
+        node.get("name").and_then(Value::as_str).unwrap_or(""),
+        display_path(data, node.get("path").and_then(Value::as_str).unwrap_or("")),
+        integer(node, "line")
+    ));
+    if let Some(children) = tree.get("children").and_then(Value::as_array) {
+        for (index, child) in children.iter().enumerate() {
+            let child_prefix = if root {
+                String::new()
+            } else if last {
+                format!("{prefix}   ")
+            } else {
+                format!("{prefix}│  ")
+            };
+            render_trace_node(
+                data,
+                child,
+                &child_prefix,
+                index + 1 == children.len(),
+                false,
+                lines,
+            );
+        }
+    }
+}
+
+fn render_review(data: &Value) -> String {
+    format!(
+        "Review against {}\n\n{} changed files; {} changed symbols; {} impacted files; {} tests\n\n[{} ms]",
+        data.get("base").and_then(Value::as_str).unwrap_or(""),
+        integer(data, "changed_file_count"),
+        integer(data, "changed_symbol_count"),
+        integer(data, "impacted_file_count"),
+        integer(data, "test_count"),
+        duration(data)
+    )
+}
+
+fn display_path(data: &Value, path: &str) -> String {
+    let Some(root) = data.pointer("/_meta/root").and_then(Value::as_str) else {
+        return path.to_owned();
+    };
+    path.strip_prefix(root)
+        .and_then(|value| value.strip_prefix(std::path::MAIN_SEPARATOR))
+        .unwrap_or(path)
+        .to_owned()
+}
+
+fn duration(data: &Value) -> String {
+    data.pointer("/_meta/duration_ms")
+        .and_then(Value::as_f64)
+        .map(|value| format!("{value:.1}"))
+        .unwrap_or_else(|| "?".to_owned())
 }
 
 fn execute_text_search(

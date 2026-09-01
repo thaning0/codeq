@@ -197,6 +197,10 @@ impl Workspace {
         &self.root
     }
 
+    pub(crate) fn projects(&self) -> &[Project] {
+        &self.projects
+    }
+
     pub(crate) fn session_stats(&self) -> Vec<serde_json::Value> {
         let registry = self.lock_sessions();
         let mut stats: Vec<_> = registry

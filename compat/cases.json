@@ -122,14 +122,62 @@
       "with_root": true
     },
     {
+      "name": "semantic_python_find",
+      "args": ["find", "Greeter", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "semantic_python_find_plain",
+      "args": ["find", "Greeter", "--limit", "3", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "search_alias_typescript_symbol",
+      "args": ["search", "renderGreeting", "--mode", "symbol", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
       "name": "concept_file_discovery",
       "args": ["find", "format greeting", "--mode", "concept", "--json", "--no-daemon"],
       "output": "json",
       "with_root": true
     },
     {
+      "name": "concept_file_discovery_plain",
+      "args": ["find", "format greeting", "--mode", "concept", "--limit", "2", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
       "name": "qualified_python_context",
       "args": ["context", "app.Greeter.greet", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "qualified_python_context_plain",
+      "args": ["context", "app.Greeter.greet", "--limit", "5", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "python_file_context",
+      "args": ["context", "app.py", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "python_file_context_plain",
+      "args": ["context", "app.py", "--limit", "5", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "python_file_topology_and_window",
+      "args": ["context", "app.py", "--topology", "--lines", "5", "--json", "--no-daemon"],
       "output": "json",
       "with_root": true
     },
@@ -142,6 +190,18 @@
     {
       "name": "incoming_python_trace",
       "args": ["trace", "app.Greeter.greet", "--in", "--depth", "1", "--json", "--no-daemon"],
+      "output": "json",
+      "with_root": true
+    },
+    {
+      "name": "incoming_python_trace_plain",
+      "args": ["trace", "app.Greeter.greet", "--in", "--depth", "1", "--no-daemon"],
+      "output": "text",
+      "with_root": true
+    },
+    {
+      "name": "default_both_python_trace",
+      "args": ["trace", "app.Greeter.greet", "--depth", "1", "--json", "--no-daemon"],
       "output": "json",
       "with_root": true
     },
