@@ -37,8 +37,8 @@ cargo test --test parity -- --oracle /path/to/frozen/codeq
 ```
 
 Both `--oracle` and `--candidate` accept arbitrary executable paths. Add
-`--report PATH` to retain the JSON difference report. Executable paths are
-runtime inputs and must not be committed.
+`--report PATH` to retain the JSON difference report, or `--verbose` to print
+it directly. Executable paths are runtime inputs and must not be committed.
 
 The end-to-end readiness workload is also executable-agnostic:
 

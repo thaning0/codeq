@@ -32,6 +32,9 @@ struct Options {
 
     #[arg(long, value_name = "PATH")]
     report: Option<PathBuf>,
+
+    #[arg(long)]
+    verbose: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,6 +177,7 @@ fn run(options: Options) -> Result<bool> {
     let rendered = serde_json::to_string_pretty(&report)
         .map_err(|error| format!("cannot serialize parity report: {error}"))?
         + "\n";
+    let report_written = options.report.is_some();
     if let Some(path) = options.report {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -182,7 +186,14 @@ fn run(options: Options) -> Result<bool> {
         fs::write(&path, &rendered)
             .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
     }
-    print!("{rendered}");
+    if options.verbose || (different != 0 && !report_written) {
+        print!("{rendered}");
+    } else {
+        println!(
+            "codeq parity: {matched}/{} cases matched; {} differed",
+            report.summary.total, different
+        );
+    }
     Ok(different == 0)
 }
 

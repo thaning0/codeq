@@ -1,0 +1,106 @@
+usage: codeq context [-h] [--lines N] [--outline-depth N] [--kind KIND]
+                     [--container NAME] [--topology] [--section SECTION]
+                     [--lexical-references [TEXT]] [--path PREFIX]
+                     [--symbol-path PREFIX] [--glob PATTERN] [--exclude-tests]
+                     TARGET
+
+Return the local semantic neighborhood of one target in a single query.
+
+For a symbol or source-position target, context returns:
+  Definition/location and signature/hover
+  Bounded definition source snippet
+  Callers and callees
+  Implementations and references
+  Direct tests plus provenance-labelled test candidates
+  Possible dynamic callback/registry references when detected
+
+Use --lines N when you also need a raw source window. It begins at the requested
+PATH:LINE, at line 1 for a file target, or at the definition for a symbol target.
+This is explicit opt-in disclosure and remains subject to a hard character cap.
+
+Each bounded evidence section reports whether it is complete, shows exact totals
+when already known, and uses a lower bound when upstream classification is bounded.
+Truncated sections include an exact `increase --limit` recovery hint.
+
+For a symbol target, repeat `--section SECTION` to request only the evidence you
+need. Focused context keeps symbol identity and provenance while omitting unselected
+sections; prefer it to increasing the global limit when one evidence family matters.
+
+For a source-file target, context uses progressive disclosure: top-level outline by
+default. Expand only what you need with --outline-depth, --kind, or --container;
+add --topology only when you need imports/importers.
+
+For a symbol or source-position target, --topology preserves the symbol neighborhood
+and additionally discloses imports/importers for its containing file. Direct symbol
+callers/callees remain part of context; use trace for multi-hop call relationships.
+
+PATH:LINE keeps the enclosing function/method/type. PATH:LINE:COLUMN first follows
+the exact repository definition under the cursor when available and also returns a
+small request-site snippet; it falls back to enclosing context when no definition is
+available. Paths containing a separator are exact: missing files return not_found,
+and unsupported languages return unsupported_language rather than falling back to
+symbol search. A bare source basename or dotted Python module resolves as a file
+only when its Git-visible match is unique; ambiguous matches return exact commands.
+
+For a symbolic target, `--path` restricts semantic resolution to repository-relative
+path prefixes. With `--lexical-references`, `--path` keeps its existing meaning and
+scopes the attached exact-text search; use `--symbol-path` to scope the symbol too.
+
+positional arguments:
+  TARGET                Qualified/bare symbol, source file, or location as
+                        PATH:LINE[:COLUMN].
+
+options:
+  -h, --help            show this help message and exit
+  --lines N             Also return up to N raw source lines beginning at the
+                        target position (1-1000; explicit opt-in; hard
+                        character cap applies).
+  --outline-depth N     File targets only: outline nesting depth; 1=top-level
+                        (default: 1).
+  --kind KIND           File targets only: show matching symbols of one kind
+                        across the file.
+  --container NAME      File targets only: show a class/container and its
+                        children.
+  --topology            Additionally disclose bounded imports/importers for a
+                        file target or a symbol/location target's containing
+                        file.
+  --section SECTION     Symbol targets only: disclose one evidence section;
+                        repeat to combine. Allowed: source, callers, callees,
+                        implementations, tests, references, possible-dynamic-
+                        references, lexical-references.
+  --lexical-references [TEXT]
+                        Also run exact tracked + non-ignored untracked text
+                        search. Without TEXT, search the resolved symbol/file
+                        name; with TEXT, search that exact contract string.
+  --path PREFIX         Symbol path prefix, or lexical path prefix with
+                        --lexical-references; repeat for OR matching.
+  --symbol-path PREFIX  Always restrict symbolic target resolution; useful
+                        together with --lexical-references.
+  --glob PATTERN        Lexical-reference mode only: shell-style path glob;
+                        repeat for OR matching.
+  --exclude-tests       Lexical-reference mode only: exclude test paths from
+                        results and counts.
+
+Examples:
+  codeq context BacktestService.stream_backtest_logs
+  codeq context validate_discovery_plan --path packages/research-core/src
+  codeq context auto_research_core.domain.models.Candidate
+  codeq context auto_research_core.application.research_governance
+  codeq context research_projection.py
+  codeq context backend/src/app/services/backtest_service.py:684
+  codeq context backend/src/app/services/backtest_service.py:684 --lines 120
+  codeq context backend/src/app/services/backtest_service.py
+  codeq context backend/src/app/services/backtest_service.py --container BacktestService
+  codeq context backend/src/app/services/backtest_service.py --kind method --limit 20
+  codeq context frontend/src/features/market/api.ts --topology --limit 20
+  codeq context BacktestService.stream_backtest_logs --topology
+  codeq context BacktestService.stream_backtest_logs --section callers
+  codeq context BacktestService.stream_backtest_logs --section tests --section references
+  codeq context BacktestService.stream_backtest_logs --lexical-references
+  codeq context BacktestService.stream_backtest_logs --section lexical-references --lexical-references '/logs/stream'
+  codeq context BacktestService.stream_backtest_logs --lexical-references '/logs/stream'
+  codeq context BacktestService.stream_backtest_logs --lexical-references '/logs/stream' --path frontend --exclude-tests
+  codeq context fetchBars --json
+
+Use `context` instead of several separate grep/read/caller/test lookups. If you need
+more than the direct callers/callees, continue with `codeq trace`.

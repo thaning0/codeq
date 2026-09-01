@@ -1,0 +1,29 @@
+usage: codeq review [-h] [--base REF] [--merge-base]
+
+Turn `git diff BASE --` into compact review context for an agent.
+
+codeq reports Git-added, modified, deleted, and renamed files, then maps current
+changed lines to enclosing semantic symbols and reports callers, references,
+possible dynamic callback/registry references, affected source files, and likely
+tests. Deleted files get conservative base-side declaration + exact-text residual
+reference analysis; pure renames get current-path importer/reference analysis.
+
+Untracked files are included from Git's working-tree view and marked `U`; ignored
+files remain excluded according to Git ignore rules.
+
+options:
+  -h, --help    show this help message and exit
+  --base REF    Requested Git base ref (default: HEAD~1).
+  --merge-base  Resolve merge-base(BASE, HEAD) before diffing; use for
+                PR/feature-branch review.
+
+Examples:
+  codeq review --base HEAD~1
+  codeq review --base origin/HEAD --merge-base
+  codeq review --base master --merge-base --limit 15 --json
+
+Use --merge-base for PR/feature-branch review: codeq resolves `git merge-base BASE
+HEAD` and diffs that commit against the current worktree, preserving staged,
+unstaged, and untracked worktree changes. Without --merge-base, BASE is compared
+directly. `--limit` bounds detailed changed symbols, affected files, and likely
+tests while file status/counts remain complete.

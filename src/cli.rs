@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -9,7 +10,9 @@ use serde::Serialize;
     version,
     about = "Small, read-only code-intelligence CLI for coding agents.",
     subcommand_required = true,
-    arg_required_else_help = true
+    arg_required_else_help = true,
+    disable_help_subcommand = true,
+    disable_version_flag = true
 )]
 pub struct Cli {
     #[arg(long, global = true, value_name = "PATH", default_value = ".")]
@@ -18,10 +21,22 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
-    #[arg(long, global = true, value_name = "N", default_value_t = 20)]
-    pub limit: usize,
+    #[arg(
+        long,
+        global = true,
+        value_name = "N",
+        default_value_t = 20,
+        allow_hyphen_values = true
+    )]
+    pub limit: i64,
 
-    #[arg(long, global = true, value_name = "SEC", default_value_t = 20.0)]
+    #[arg(
+        long,
+        global = true,
+        value_name = "SEC",
+        default_value_t = 20.0,
+        allow_hyphen_values = true
+    )]
     pub timeout: f64,
 
     #[arg(long, global = true)]
@@ -61,7 +76,51 @@ impl Command {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, ValueEnum)]
+impl Cli {
+    pub fn validate(&self, arguments: &[OsString]) -> Result<(), &'static str> {
+        match &self.command {
+            Command::Find(find) => {
+                if find.text && !matches!(find.mode, FindMode::Auto | FindMode::Text) {
+                    return Err("--text cannot be combined with --mode symbol or --mode concept");
+                }
+                let effective_mode = if find.text { FindMode::Text } else { find.mode };
+                if find.kind.is_some()
+                    && matches!(effective_mode, FindMode::Concept | FindMode::Text)
+                {
+                    return Err("--kind requires auto or symbol mode");
+                }
+                if find.files_only && self.json {
+                    return Err(
+                        "--files-only controls plain output and cannot be combined with --json",
+                    );
+                }
+            }
+            Command::Context(context) => {
+                if (!context.globs.is_empty() || context.exclude_tests)
+                    && context.lexical_references.is_none()
+                {
+                    return Err(
+                        "--glob/--exclude-tests require --lexical-references; --path also scopes symbol resolution",
+                    );
+                }
+            }
+            Command::Trace(trace) => {
+                if argument_was_supplied(arguments, "--limit")
+                    && argument_was_supplied(arguments, "--node-limit")
+                    && self.limit != trace.node_limit
+                {
+                    return Err(
+                        "conflicting trace limits: --limit and --node-limit must have the same value when both are supplied",
+                    );
+                }
+            }
+            Command::Review(_) => {}
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum FindMode {
     #[default]
@@ -98,29 +157,26 @@ pub struct FindArgs {
     pub exclude_tests: bool,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, ValueEnum)]
-#[serde(rename_all = "kebab-case")]
-pub enum ContextSection {
-    Source,
-    Callers,
-    Callees,
-    Implementations,
-    Tests,
-    References,
-    PossibleDynamicReferences,
-    LexicalReferences,
-}
-
 #[derive(Debug, Serialize, Args)]
 pub struct ContextArgs {
     #[arg(value_name = "TARGET")]
     pub target: String,
 
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u16).range(1..=1000))]
+    #[arg(
+        long,
+        value_name = "N",
+        value_parser = clap::value_parser!(u16).range(1..=1000),
+        allow_hyphen_values = true
+    )]
     pub lines: Option<u16>,
 
-    #[arg(long, value_name = "N", default_value_t = 1)]
-    pub outline_depth: usize,
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 1,
+        allow_hyphen_values = true
+    )]
+    pub outline_depth: i64,
 
     #[arg(long, value_name = "KIND")]
     pub kind: Option<String>,
@@ -131,8 +187,8 @@ pub struct ContextArgs {
     #[arg(long)]
     pub topology: bool,
 
-    #[arg(long = "section", value_enum, value_name = "SECTION")]
-    pub sections: Vec<ContextSection>,
+    #[arg(long = "section", value_name = "SECTION")]
+    pub sections: Vec<String>,
 
     #[arg(long, num_args = 0..=1, value_name = "TEXT", default_missing_value = "")]
     pub lexical_references: Option<String>,
@@ -161,11 +217,21 @@ pub struct TraceArgs {
     #[arg(long = "out", conflicts_with = "incoming")]
     pub outgoing: bool,
 
-    #[arg(long, value_name = "N", default_value_t = 1)]
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 1,
+        allow_hyphen_values = true
+    )]
     pub depth: usize,
 
-    #[arg(long, value_name = "N", default_value_t = 100)]
-    pub node_limit: usize,
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 100,
+        allow_hyphen_values = true
+    )]
+    pub node_limit: i64,
 }
 
 #[derive(Debug, Serialize, Args)]
@@ -175,4 +241,55 @@ pub struct ReviewArgs {
 
     #[arg(long)]
     pub merge_base: bool,
+}
+
+pub enum EarlyOutput {
+    Help(&'static str),
+    Version,
+}
+
+pub fn early_output(arguments: &[OsString]) -> Option<EarlyOutput> {
+    let mut command = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = arguments[index].to_str()?;
+        if argument == "--" {
+            return None;
+        }
+        if argument == "-h" || argument == "--help" {
+            let help = match command {
+                Some("find" | "search") => include_str!("help/find.txt"),
+                Some("context") => include_str!("help/context.txt"),
+                Some("trace") => include_str!("help/trace.txt"),
+                Some("review") => include_str!("help/review.txt"),
+                _ => include_str!("help/top.txt"),
+            };
+            return Some(EarlyOutput::Help(help));
+        }
+        if argument == "--version" {
+            return Some(EarlyOutput::Version);
+        }
+        if command.is_none() {
+            match argument {
+                "find" | "search" | "context" | "trace" | "review" => {
+                    command = Some(argument);
+                }
+                "--root" | "--limit" | "--timeout" => {
+                    index += 1;
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn argument_was_supplied(arguments: &[OsString], option: &str) -> bool {
+    arguments.iter().any(|argument| {
+        argument == option
+            || argument
+                .to_string_lossy()
+                .starts_with(&format!("{option}="))
+    })
 }
