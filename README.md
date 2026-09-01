@@ -417,14 +417,15 @@ This keeps the read-only contract focused on the analyzed repository while allow
 Version 2 is validated against a large Python/TypeScript monorepo, the frozen
 RC13 black-box oracle, and historical real-agent workflows.
 
-Representative committed results (semantic/context workloads from RC11; FTS5
-discovery refreshed for RC12):
+Representative committed 2.0 results (three cold and warm runs per case):
 
-- warm semantic `context` P95 with expanded test discovery: **1.12 s**
-- warm incoming `trace` P95: **448.4 ms**
-- cold semantic context/trace P95: **< 4.51 s**
-- live-workload-shaped broad review cold P95: **2.10 s**
-- maximum representative semantic/review sample: **4.50 s**
+- warm semantic `context` / incoming `trace` P95: **397.0 / 417.4 ms**
+- cold semantic `context` / incoming `trace` P95: **3.92 / 4.41 s**
+- broad review cold/warm P95: **8.76 / 1.02 s**
+- maximum representative semantic/review sample: **8.76 s**
+- Rust query process / daemon peak RSS: **17.2 / 27.8 MiB**, measured
+  separately from external language-server process trees
+- representative four-command workflow replay: **11 / 11 successful and actionable**
 - historical actionable CRG-call mapping: **93.3%**
 - sampled navigation workflows with unsupported fallback: **0 / 50**
 - anonymized historical concrete query validation: **30 / 30 `ok`**
@@ -433,6 +434,8 @@ These are project-specific benchmark results, not universal latency guarantees.
 
 Details:
 
+- [2.0.0 Quant, workflow, RSS, and readiness acceptance](benchmarks/2.0.0-quant.md)
+- [2.0.0 readiness gate](benchmarks/2.0.0-readiness.md)
 - [RC12 Quant cold/warm and FTS5 benchmark](benchmarks/1.0.0rc12-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
 - [RC11 downstream agent-utility replay and test-evidence baseline](benchmarks/1.0.0rc11-agent-utility.md)
