@@ -9,11 +9,6 @@ enter a worktree and query immediately. Semantic relationships come from mature
 language servers; exact runtime/configuration contracts fall back to textual
 evidence.
 
-Version 2.0 is a native Rust implementation of the frozen 1.x product contract.
-Its behavioral oracle is `v1.0.0-rc13` at commit
-`56fadc0a3485531da83851fbde69f2dc1126463b`; see the
-[cutover notes](docs/codeq-2.0-rust.md) for compatibility and validation evidence.
-
 ## Why codeq
 
 Coding agents repeatedly ask the same questions:
@@ -26,7 +21,22 @@ Coding agents repeatedly ask the same questions:
 
 A language server can answer many of these questions, but driving it directly takes multiple low-level requests and process-management work. Repository graph systems can answer more, but introduce another index, database, rebuild lifecycle, and worktree state.
 
-`codeq` takes a narrower approach:
+These approaches optimize for different workloads:
+
+| Approach | Best for | Per-worktree setup | Semantic precision | Persistent state |
+| --- | --- | ---: | ---: | ---: |
+| `rg` / `grep` / `find` | Exact text and ad-hoc exploration | None | Low | None |
+| **CodeQ** | Routine agent code navigation | None | High where LSP-supported | None |
+| Editor/LSP integration | Interactive human development | LSP startup | High | Usually session-local |
+| Persistent code index / graph | Large-scale, cross-repo analysis | Index build | High | Yes |
+| Embedding / semantic search | Natural-language relevance search | Index build | Approximate | Usually yes |
+
+Use `rg` directly for known URLs, environment variables, or SQL names. Use
+`codeq` for symbols, callers, and references. Cross-repository architecture
+analysis and fuzzy natural-language relevance search remain outside codeq's
+scope.
+
+Within that design space, `codeq` takes a narrower approach:
 
 - **CLI first** — four shell commands, designed for agents and humans.
 - **Semantic when possible** — Python, Rust, and TypeScript/JavaScript relationships come from mature language servers.
@@ -71,8 +81,7 @@ cargo install --locked --path .
 
 Tagged 2.x releases also publish a native `x86_64-unknown-linux-gnu` archive on
 the [GitHub Releases page](https://github.com/thaning0/codeq/releases). Confirm
-that the archive's tag matches the version you want before using it; the older
-1.x release archives do not contain the Rust 2.x CLI.
+that the archive's tag matches the version you want before using it.
 
 Verify the installation:
 
@@ -341,7 +350,7 @@ Language servers remain the semantic authority for definitions, references, impl
 
 ## Safety and correctness contracts
 
-These behaviors are part of the 1.0 compatibility boundary:
+These behaviors are public safety and correctness contracts:
 
 - Qualified targets such as `Class.method` and `Type::method` are **fail-closed**.
 - Fully module-qualified targets are accepted only when their module/file suffix
@@ -356,9 +365,6 @@ These behaviors are part of the 1.0 compatibility boundary:
 - Worktrees are independent language-server workspaces; no repository-local graph state is created.
 
 JSON responses use `schema_version: 1`. Query outcomes use exit code `0` for success, `1` for query outcomes such as `not_found`/`ambiguous`, and `2` for CLI/runtime failures.
-
-See the [2.0 cutover notes](docs/codeq-2.0-rust.md) for the frozen contract and
-acceptance evidence.
 
 ## How it works
 
@@ -429,7 +435,7 @@ That directory is private (`0700`). Language-server children always receive `TMP
 Set `CODEQ2_RUNTIME_DIR=/some/shared/path` only as an explicit compatibility
 override. It forces a private 2.x filesystem socket under that directory and is
 intended for platforms or sandboxes where the network namespace itself is
-isolated. The 2.x namespace is disjoint from 1.x during upgrades and downgrades.
+isolated.
 
 Persistent daemon logging is **off by default**. Daemon stdout/stderr go to `/dev/null`; opt in only when debugging:
 
@@ -441,9 +447,8 @@ This keeps the read-only contract focused on the analyzed repository while allow
 
 ## Performance and validation
 
-Version 2 is validated against Python, Rust, and TypeScript language servers, a
-large Python/TypeScript monorepo, the frozen RC13 black-box oracle, and historical
-real-agent workflows.
+`codeq` is validated against Python, Rust, and TypeScript language servers, a
+large Python/TypeScript monorepo, and real-agent workflows.
 
 Representative committed 2.0 results (three cold and warm runs per case):
 
@@ -451,7 +456,7 @@ Representative committed 2.0 results (three cold and warm runs per case):
 - cold semantic `context` / incoming `trace` P95: **3.68 / 3.98 s**
 - broad review cold/warm P95: **9.52 / 1.20 s**
 - maximum representative semantic/review sample: **9.52 s**
-- Rust query process / daemon peak RSS: **17.4 / 29.0 MiB**, measured
+- `codeq` query process / daemon peak RSS: **17.4 / 29.0 MiB**, measured
   separately from external language-server process trees
 - representative four-command workflow replay: **11 / 11 successful and actionable**
 - historical actionable CRG-call mapping: **93.3%**
@@ -464,11 +469,7 @@ Details:
 
 - [2.0.0 Quant, workflow, RSS, and readiness acceptance](benchmarks/2.0.0-quant.md)
 - [2.0.0 readiness gate](benchmarks/2.0.0-readiness.md)
-- [RC12 Quant cold/warm and FTS5 benchmark](benchmarks/1.0.0rc12-quant.md)
 - [Historical workflow replay](benchmarks/0.5.2-workflows.md)
-- [RC11 downstream agent-utility replay and test-evidence baseline](benchmarks/1.0.0rc11-agent-utility.md)
-- [RC12 readiness gate](benchmarks/1.0.0rc12-readiness.md)
-- [2.0 migration test ledger](docs/test-migration-ledger.md)
 
 ## Boundaries
 
@@ -497,9 +498,6 @@ cargo test --locked --all-targets --all-features
 cargo build --locked --release
 ```
 
-Run the executable-level readiness and historical workflow gates as described
-in [the 2.0 cutover notes](docs/codeq-2.0-rust.md).
-
 ## License
 
 Licensed under either of the [Apache License, Version 2.0](LICENSE-APACHE) or
@@ -511,8 +509,6 @@ additional conditions.
 
 ## Documentation
 
-- [2.0 cutover and daemon compatibility](docs/codeq-2.0-rust.md)
-- [Test migration ledger](docs/test-migration-ledger.md)
 - [Dependency audit](docs/dependency-audit.md)
 - [Benchmarks](benchmarks/)
 
