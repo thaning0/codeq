@@ -1,8 +1,13 @@
 # codeq
 
-A small, CLI-first code-intelligence tool for coding agents.
+**A lightweight, CLI-first semantic navigation tool for coding agents.**
+Replace routine grep/read exploration with bounded semantic queries, without
+building or maintaining a persistent repository index.
 
-`codeq` gives an agent a fast semantic first hop for unfamiliar code: locate an implementation, inspect its neighborhood, trace multi-hop calls, review a branch, or search exact runtime/configuration contracts — without building or maintaining a repository graph.
+CodeQ is designed for repositories with parallel, short-lived Git worktrees:
+enter a worktree and query immediately. Semantic relationships come from mature
+language servers; exact runtime/configuration contracts fall back to textual
+evidence.
 
 Version 2.0 is a native Rust implementation of the frozen 1.x product contract.
 Its behavioral oracle is `v1.0.0-rc13` at commit
