@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.98"
 description = "Small CLI-first code intelligence for coding agents"
 repository = "https://github.com/thaning0/codeq"
+license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]

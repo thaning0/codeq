@@ -42,6 +42,8 @@ You need:
 - ripgrep (`rg`)
 - a language server for the languages you want to analyze semantically
 
+Building from source also requires `rustup`; this repository pins Rust 1.98.0.
+
 For Python, install `basedpyright` (preferred) or `pyright`. For Rust, install
 `rust-analyzer`. For TypeScript/JavaScript, install
 `typescript-language-server` and TypeScript.
@@ -54,14 +56,18 @@ rustup component add rust-analyzer rust-src
 
 ### Install codeq
 
-Download the native `x86_64-unknown-linux-gnu` archive from the GitHub release,
-or build from source with the pinned Rust toolchain:
+Install the current 2.x version from source with the pinned Rust toolchain:
 
 ```bash
 git clone https://github.com/thaning0/codeq.git
 cd codeq
 cargo install --locked --path .
 ```
+
+Tagged 2.x releases also publish a native `x86_64-unknown-linux-gnu` archive on
+the [GitHub Releases page](https://github.com/thaning0/codeq/releases). Confirm
+that the archive's tag matches the version you want before using it; the older
+1.x release archives do not contain the Rust 2.x CLI.
 
 Verify the installation:
 
@@ -73,7 +79,7 @@ codeq --help
 Version 2 reports:
 
 ```text
-codeq 2.0.1
+codeq 2.0.2
 ```
 
 ## The workflow
@@ -488,6 +494,15 @@ cargo build --locked --release
 
 Run the executable-level readiness and historical workflow gates as described
 in [the 2.0 cutover notes](docs/codeq-2.0-rust.md).
+
+## License
+
+Licensed under either of the [Apache License, Version 2.0](LICENSE-APACHE) or
+the [MIT license](LICENSE-MIT), at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this project by you is licensed under the same terms, without
+additional conditions.
 
 ## Documentation
 
