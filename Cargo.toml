@@ -1,6 +1,6 @@
 [package]
 name = "codeq"
-version = "2.0.2"
+version = "2.0.3"
 edition = "2024"
 rust-version = "1.98"
 description = "Small CLI-first code intelligence for coding agents"
@@ -21,18 +21,13 @@ signal-hook = "0.4"
 tempfile = "3"
 
 [[test]]
-name = "parity"
-path = "compat/parity.rs"
-harness = false
-
-[[test]]
 name = "runtime_contract"
-path = "compat/runtime.rs"
+path = "tests/runtime.rs"
 harness = false
 
 [[test]]
 name = "workspace_contract"
-path = "compat/workspace.rs"
+path = "tests/workspace.rs"
 harness = false
 
 [[example]]

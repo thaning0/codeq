@@ -93,7 +93,7 @@ codeq --help
 Version 2 reports:
 
 ```text
-codeq 2.0.2
+codeq 2.0.3
 ```
 
 ## The workflow
@@ -400,6 +400,10 @@ boundary, its rust-analyzer session disables check-on-save, build-script executi
 and procedural-macro execution; declarations that exist only after those programs
 run may therefore be absent from semantic results.
 
+Rust test filtering recognizes explicit test attributes and `#[cfg(test)]`
+modules. Other conditional expressions are kept as candidates rather than
+inferred to be tests from their spelling.
+
 Concurrent non-text `find` requests for the same worktree are queued so one cold
 request initializes the required language server or FTS index. Document-symbol and
 prewarm fills are single-flight; followers reuse the first request's result instead
@@ -510,6 +514,7 @@ additional conditions.
 ## Documentation
 
 - [Dependency audit](docs/dependency-audit.md)
+- [Development and validation](docs/codeq-2.0-rust.md)
 - [Benchmarks](benchmarks/)
 
 For usage details, prefer the CLI help because it is tested together with the implementation:

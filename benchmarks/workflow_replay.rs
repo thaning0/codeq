@@ -10,7 +10,6 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[path = "../compat/support.rs"]
 mod support;
 
 use support::{resolve_executable, version};

@@ -20,7 +20,7 @@ Strong verification may justify zero permanent tests. Do not commit a temporary 
 ## Decide from the Contract
 
 1. Identify the behavior the issue or request preserves, adds, changes, or removes.
-2. Resolve authority from acceptance criteria, [codeq 1.0 readiness](../../../docs/codeq-1.0-readiness.md), public CLI/JSON contracts, maintained documentation, and explicit runtime invariants.
+2. Resolve authority from acceptance criteria, [2.x development and validation](../../../docs/codeq-2.0-rust.md), public CLI/JSON contracts, maintained documentation, and explicit runtime invariants. The completed migration's 1.x output snapshots are not a current behavioral authority.
 3. Treat existing tests as executable projections, not the source of truth.
 4. Identify the realistic failure and the narrowest stable place that exposes it.
 

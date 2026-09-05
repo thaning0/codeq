@@ -2021,26 +2021,23 @@ fn source_window(root: &Path, path: &Path, start: u64, requested: u64) -> Value 
     let available_end = (start + requested - 1).min(lines.len() as u64);
     let mut rendered = Vec::new();
     let mut line_truncated = false;
+    let mut payload_truncated = false;
+    let mut characters = 0;
     for number in start..=available_end {
         let raw = lines[(number - 1) as usize];
-        let mut content: String = raw.chars().take(500).collect();
-        if raw.chars().count() > 500 {
-            content.truncate(content.len().saturating_sub(3));
-            content.push_str("...");
-            line_truncated = true;
+        let (content, truncated) = bounded_text(raw, 500);
+        let line = format!("{number:>5}  {content}");
+        let added = line.chars().count() + usize::from(!rendered.is_empty());
+        if characters + added > 100_000 {
+            payload_truncated = true;
+            break;
         }
-        rendered.push(format!("{number:>5}  {content}"));
+        characters += added;
+        line_truncated |= truncated;
+        rendered.push(line);
     }
-    let mut text = rendered.join("\n");
-    let mut payload_truncated = false;
-    let mut returned = rendered.len() as u64;
-    if text.chars().count() > 100_000 {
-        payload_truncated = true;
-        while text.chars().count() > 100_000 && returned > 0 {
-            returned -= 1;
-            text = rendered[..returned as usize].join("\n");
-        }
-    }
+    let text = rendered.join("\n");
+    let returned = rendered.len() as u64;
     let next = if start + returned <= available_end {
         Some(start + returned)
     } else {

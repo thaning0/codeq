@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs;
@@ -19,7 +19,6 @@ use nix::unistd::{Pid, Uid};
 use serde_json::{Value, json};
 
 const MAX_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
-const STDERR_LINES: usize = 50;
 
 #[derive(Debug, Clone)]
 pub struct LspError(String);
@@ -62,10 +61,7 @@ pub struct LspProcess {
     semantic_navigation_warmed: AtomicBool,
     closed: Arc<AtomicBool>,
     reader: Mutex<Option<JoinHandle<()>>>,
-    stderr_reader: Mutex<Option<JoinHandle<()>>>,
-    stderr_tail: Arc<Mutex<VecDeque<String>>>,
     server_status: ServerStatus,
-    server_capabilities: Value,
 }
 
 impl LspProcess {
@@ -91,7 +87,7 @@ impl LspProcess {
             .envs(environment.iter().cloned())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::null())
             .process_group(0);
         let mut child = command
             .spawn()
@@ -104,15 +100,10 @@ impl LspProcess {
             .stdout
             .take()
             .ok_or_else(|| LspError(format!("{name} has no stdout pipe")))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| LspError(format!("{name} has no stderr pipe")))?;
 
         let writer = Arc::new(Mutex::new(stdin));
         let pending = Arc::new(Mutex::new(HashMap::new()));
         let closed = Arc::new(AtomicBool::new(false));
-        let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
         let server_status = Arc::new((Mutex::new(None), Condvar::new()));
         let reader_state = ReaderState {
             closed: Arc::clone(&closed),
@@ -128,9 +119,7 @@ impl LspProcess {
             name.to_owned(),
             reader_state,
         );
-        let stderr_reader = spawn_stderr_reader(stderr, Arc::clone(&stderr_tail));
-
-        let mut process = Self {
+        let process = Self {
             name: name.to_owned(),
             root,
             timeout,
@@ -145,20 +134,13 @@ impl LspProcess {
             semantic_navigation_warmed: AtomicBool::new(false),
             closed,
             reader: Mutex::new(Some(reader)),
-            stderr_reader: Mutex::new(Some(stderr_reader)),
-            stderr_tail,
             server_status,
-            server_capabilities: Value::Null,
         };
-        let initialized = process.request_with_timeout(
+        process.request_with_timeout(
             "initialize",
             initialize_params(&process.root, &settings),
             timeout.max(Duration::from_secs(20)),
         )?;
-        process.server_capabilities = initialized
-            .get("capabilities")
-            .cloned()
-            .unwrap_or(Value::Null);
         process.notify("initialized", json!({}))?;
         if settings != json!({}) {
             process.notify(
@@ -273,14 +255,6 @@ impl LspProcess {
             .try_wait()
             .map(|status| status.is_none())
             .unwrap_or(false)
-    }
-
-    pub fn capabilities(&self) -> &Value {
-        &self.server_capabilities
-    }
-
-    pub fn stderr_tail(&self) -> Vec<String> {
-        lock(&self.stderr_tail).iter().cloned().collect()
     }
 
     pub fn request_count(&self) -> u64 {
@@ -438,7 +412,6 @@ impl LspProcess {
             LspError(format!("{} language server closed", self.name)),
         );
         join_thread(&self.reader);
-        join_thread(&self.stderr_reader);
     }
 }
 
@@ -492,24 +465,6 @@ fn spawn_reader<R: Read + Send + 'static>(
         state.closed.store(true, Ordering::Release);
         state.server_status.1.notify_all();
         drain_pending(&pending, LspError(format!("{name} language server exited")));
-    })
-}
-
-fn spawn_stderr_reader<R: Read + Send + 'static>(
-    reader: R,
-    tail: Arc<Mutex<VecDeque<String>>>,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        for line in BufReader::new(reader).lines().map_while(Result::ok) {
-            if line.is_empty() {
-                continue;
-            }
-            let mut tail = lock(&tail);
-            tail.push_back(line);
-            while tail.len() > STDERR_LINES {
-                tail.pop_front();
-            }
-        }
     })
 }
 
@@ -821,8 +776,6 @@ mod tests {
         .expect("start fake language server");
         assert!(process.is_alive());
         assert!(process.pid() > 1);
-        assert_eq!(process.capabilities()["hoverProvider"], Value::Bool(true));
-        assert!(process.stderr_tail().is_empty());
         let echoed = process
             .request("test/echo", json!({"text": "你好, LSP"}))
             .expect("echo response");

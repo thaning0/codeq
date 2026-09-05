@@ -1,4 +1,4 @@
-RUST_PARITY_MARKER = "codeq-rust-parity"
+PUBLIC_MARKER = "codeq-navigation"
 
 
 def normalize_name(name: str) -> str:

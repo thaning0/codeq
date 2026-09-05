@@ -17,18 +17,12 @@ pub enum Response<'a> {
     Target(TargetFailureResponse<'a>),
 }
 
-pub struct Failure<'a> {
-    pub response: Response<'a>,
-    pub status: Status,
-    pub plain: String,
-}
-
 pub fn evaluate<'a>(
     cli: &'a Cli,
     root: &Path,
     duration_ms: f64,
     transport: &'static str,
-) -> Option<Failure<'a>> {
+) -> Option<Response<'a>> {
     if let Command::Context(arguments) = &cli.command
         && let Some(failure) = context_validation(arguments, root, duration_ms, transport)
     {
@@ -76,19 +70,14 @@ pub fn evaluate<'a>(
     } else {
         return None;
     };
-    let plain = display_message(&reason, root);
-    Some(Failure {
-        response: Response::Target(TargetFailureResponse {
-            status,
-            target: query,
-            path: intent.path,
-            reason,
-            meta: QueryMeta::empty(root, duration_ms, transport),
-            schema_version: SCHEMA_VERSION,
-        }),
+    Some(Response::Target(TargetFailureResponse {
         status,
-        plain,
-    })
+        target: query,
+        path: intent.path,
+        reason,
+        meta: QueryMeta::empty(root, duration_ms, transport),
+        schema_version: SCHEMA_VERSION,
+    }))
 }
 
 fn context_validation<'a>(
@@ -96,7 +85,7 @@ fn context_validation<'a>(
     root: &Path,
     duration_ms: f64,
     transport: &'static str,
-) -> Option<Failure<'a>> {
+) -> Option<Response<'a>> {
     let mut requested = Vec::new();
     for section in &arguments.sections {
         let section = section.trim();
@@ -129,20 +118,15 @@ fn context_validation<'a>(
     } else {
         return None;
     };
-    let plain = format!("{reason}\n  try: {recovery_command}");
-    Some(Failure {
-        response: Response::ContextValidation(ContextValidationResponse {
-            status: Status::InvalidQuery,
-            target: &arguments.target,
-            reason,
-            allowed_sections: CONTEXT_SECTIONS,
-            recovery_command,
-            meta: QueryMeta::empty(root, duration_ms, transport),
-            schema_version: SCHEMA_VERSION,
-        }),
+    Some(Response::ContextValidation(ContextValidationResponse {
         status: Status::InvalidQuery,
-        plain,
-    })
+        target: &arguments.target,
+        reason,
+        allowed_sections: CONTEXT_SECTIONS,
+        recovery_command,
+        meta: QueryMeta::empty(root, duration_ms, transport),
+        schema_version: SCHEMA_VERSION,
+    }))
 }
 
 fn find_path_failure<'a>(
@@ -151,7 +135,7 @@ fn find_path_failure<'a>(
     root: &Path,
     duration_ms: f64,
     transport: &'static str,
-) -> Failure<'a> {
+) -> Response<'a> {
     let (status, reason) = if !intent.inside_repository {
         (
             Status::NotFound,
@@ -181,31 +165,19 @@ fn find_path_failure<'a>(
             ),
         )
     };
-    let plain = display_message(&reason, root);
-    Failure {
-        response: Response::Find(FindFailureResponse {
-            query,
-            path: intent.path,
-            results: Vec::new(),
-            result_count: 0,
-            total_candidates: 0,
-            truncated: false,
-            errors: Vec::new(),
-            status,
-            reason,
-            meta: QueryMeta::empty(root, duration_ms, transport),
-            schema_version: SCHEMA_VERSION,
-        }),
+    Response::Find(FindFailureResponse {
+        query,
+        path: intent.path,
+        results: Vec::new(),
+        result_count: 0,
+        total_candidates: 0,
+        truncated: false,
+        errors: Vec::new(),
         status,
-        plain,
-    }
-}
-
-fn display_message(message: &str, root: &Path) -> String {
-    message.replace(
-        &format!("{}{}", root.display(), std::path::MAIN_SEPARATOR),
-        "",
-    )
+        reason,
+        meta: QueryMeta::empty(root, duration_ms, transport),
+        schema_version: SCHEMA_VERSION,
+    })
 }
 
 fn shell_quote(value: &str) -> String {

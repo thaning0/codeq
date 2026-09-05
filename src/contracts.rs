@@ -28,33 +28,6 @@ pub enum Status {
     Unavailable,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[expect(
-    dead_code,
-    reason = "the complete frozen evidence vocabulary precedes its semantic producers"
-)]
-pub enum Evidence {
-    Semantic,
-    Lexical,
-    PossibleDynamic,
-    BaseSideLexical,
-    CurrentSemantic,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[expect(
-    dead_code,
-    reason = "the complete frozen test-evidence vocabulary precedes its semantic producers"
-)]
-pub enum TestEvidence {
-    DirectSemanticReference,
-    SemanticCaller,
-    ModuleImport,
-    ExactLexicalReference,
-}
-
 #[derive(Debug, Serialize)]
 pub struct CacheDiagnostics {
     pub document_symbols_hit: u64,

@@ -10,12 +10,6 @@ use clap::Parser;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-#[path = "support.rs"]
-#[allow(dead_code)]
-mod support;
-
-use support::resolve_executable;
-
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Parser)]
@@ -38,12 +32,9 @@ fn main() -> ExitCode {
 }
 
 fn run(options: Options) -> Result<()> {
-    let executable = resolve_executable(
-        options
-            .codeq
-            .as_deref()
-            .unwrap_or_else(|| Path::new(env!("CARGO_BIN_EXE_codeq"))),
-    )?;
+    let executable = options
+        .codeq
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_codeq")));
     let temporary = TempDir::new().map_err(|error| error.to_string())?;
     let runtime = temporary.path().join("runtime");
     let first = temporary.path().join("first");

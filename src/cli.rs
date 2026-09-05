@@ -1,7 +1,6 @@
-use std::ffi::OsString;
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgMatches, Args, Parser, Subcommand, ValueEnum, parser::ValueSource};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Parser, Serialize)]
@@ -13,15 +12,27 @@ use serde::{Deserialize, Serialize};
     subcommand_required = true,
     arg_required_else_help = true,
     disable_help_subcommand = true,
-    disable_version_flag = true
+    propagate_version = true,
+    after_help = r#"Workflow:
+  codeq find 'request retry policy' --limit 8
+  codeq context RetryPolicy.should_retry
+  codeq trace RetryPolicy.should_retry --in --depth 2
+  codeq review --base HEAD~1
+
+Use qualified symbols or exact PATH:LINE[:COLUMN] targets. Explicit paths and
+qualified symbols fail closed. Use rg for known runtime/configuration strings.
+Run codeq COMMAND --help for focused options and examples."#
 )]
 pub struct Cli {
+    /// Repository/worktree path; resolves its Git root
     #[arg(long, global = true, value_name = "PATH", default_value = ".")]
     pub root: PathBuf,
 
+    /// Emit a structured JSON response instead of plain text
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// Bound returned matches and evidence; trace defaults to 100 nodes per direction
     #[arg(
         long,
         global = true,
@@ -31,6 +42,7 @@ pub struct Cli {
     )]
     pub limit: i64,
 
+    /// Language-server request timeout in seconds
     #[arg(
         long,
         global = true,
@@ -40,6 +52,7 @@ pub struct Cli {
     )]
     pub timeout: f64,
 
+    /// Run in-process without reusing daemon language servers
     #[arg(long, global = true)]
     pub no_daemon: bool,
 
@@ -52,17 +65,68 @@ pub struct Cli {
 pub enum Command {
     #[command(
         visible_alias = "search",
-        about = "Find symbols or related source from a name or short description."
+        about = "Find symbols or related source from a name or short description.",
+        after_help = r#"Auto mode uses symbol search for an identifier and lexical concept discovery for
+multiple terms. Concept results include representative source lines and a context
+command; lexical evidence is kept separate from semantic symbols. Filters apply
+before the result limit.
+
+Examples:
+  codeq find RetryPolicy --kind class
+  codeq find 'request retry policy' --path src --exclude-tests
+  codeq find retry --mode concept --files-only
+  codeq find --text 'DATABASE_URL' --glob '*.yaml'
+
+Next: codeq context TARGET"#
     )]
     Find(FindArgs),
 
-    #[command(about = "Get one target's definition, callers, callees, references, and tests.")]
+    #[command(
+        about = "Get one target's definition, callers, callees, references, and tests.",
+        after_help = r#"Targets: qualified/bare symbol, source file, unique source basename, dotted Python
+module, or PATH:LINE[:COLUMN]. PATH:LINE selects its enclosing declaration; adding
+a column prefers the repository definition under the cursor.
+
+Symbol context includes bounded source, hover, callers, callees, implementations,
+references, tests, and possible dynamic evidence. Repeat --section to focus it.
+File context starts with an outline; expand with --container, --kind, or --topology.
+--topology on a symbol adds imports/importers of its containing file.
+
+Examples:
+  codeq context RetryPolicy.should_retry --section callers
+  codeq context src/retry.py:20 --lines 80
+  codeq context src/retry.py --container RetryPolicy
+  codeq context RetryPolicy.should_retry --topology
+  codeq context RetryPolicy --lexical-references RETRY_KEY --path config
+
+Use trace for relationships beyond the direct neighborhood."#
+    )]
     Context(ContextArgs),
 
-    #[command(about = "Trace a bounded incoming or outgoing call hierarchy.")]
+    #[command(
+        about = "Trace a bounded incoming or outgoing call hierarchy.",
+        after_help = r#"With no direction flag, trace returns both trees. Use --in for impact radius and
+--out for execution flow. Depth counts call edges; depth 0 returns only the root.
+Traversal is cycle-protected and restricted to repository source. The node budget
+applies separately to each direction.
+
+Examples:
+  codeq trace RetryPolicy.should_retry --in --depth 2
+  codeq trace fetchBars --out --depth 3 --limit 30
+  codeq trace fetchBars --json"#
+    )]
     Trace(TraceArgs),
 
-    #[command(about = "Summarize semantic impact of changes relative to a Git base ref.")]
+    #[command(
+        about = "Summarize semantic impact of changes relative to a Git base ref.",
+        after_help = r#"Includes staged, unstaged, and non-ignored untracked changes; reports changed
+symbols, callers, references, likely tests, and affected files. Deleted-file
+evidence is base-side lexical; rename evidence uses the current path.
+
+Examples:
+  codeq review --base HEAD~1
+  codeq review --base origin/main --merge-base --limit 15 --json"#
+    )]
     Review(ReviewArgs),
 }
 
@@ -77,8 +141,8 @@ impl Command {
 }
 
 impl Cli {
-    pub fn validate(&self, arguments: &[OsString]) -> Result<(), &'static str> {
-        match &self.command {
+    pub fn validate(&mut self, matches: &ArgMatches) -> Result<(), &'static str> {
+        match &mut self.command {
             Command::Find(find) => {
                 if find.text && !matches!(find.mode, FindMode::Auto | FindMode::Text) {
                     return Err("--text cannot be combined with --mode symbol or --mode concept");
@@ -105,27 +169,23 @@ impl Cli {
                 }
             }
             Command::Trace(trace) => {
-                if argument_was_supplied(arguments, "--limit")
-                    && argument_was_supplied(arguments, "--node-limit")
-                    && self.limit != trace.node_limit
-                {
-                    return Err(
-                        "conflicting trace limits: --limit and --node-limit must have the same value when both are supplied",
-                    );
+                let trace_matches = matches
+                    .subcommand_matches("trace")
+                    .expect("parsed trace command");
+                if trace_matches.value_source("limit") == Some(ValueSource::CommandLine) {
+                    if trace_matches.value_source("node_limit") == Some(ValueSource::CommandLine)
+                        && self.limit != trace.node_limit
+                    {
+                        return Err(
+                            "conflicting trace limits: --limit and --node-limit must have the same value when both are supplied",
+                        );
+                    }
+                    trace.node_limit = self.limit;
                 }
             }
             Command::Review(_) => {}
         }
         Ok(())
-    }
-
-    pub fn apply_compatibility_aliases(&mut self, arguments: &[OsString]) {
-        if let Command::Trace(trace) = &mut self.command
-            && argument_was_supplied(arguments, "--limit")
-            && !argument_was_supplied(arguments, "--node-limit")
-        {
-            trace.node_limit = self.limit;
-        }
     }
 }
 
@@ -141,36 +201,46 @@ pub enum FindMode {
 
 #[derive(Debug, Deserialize, Serialize, Args)]
 pub struct FindArgs {
+    /// Symbol name, short source-code description, or exact text
     #[arg(value_name = "QUERY")]
     pub query: String,
 
+    /// Select symbol, lexical concept, or exact-text search explicitly
     #[arg(long, value_enum, default_value_t = FindMode::Auto)]
     pub mode: FindMode,
 
+    /// Symbol kind, e.g. function, method, class, interface, test
     #[arg(long, value_name = "KIND", conflicts_with = "text")]
     pub kind: Option<String>,
 
+    /// Shortcut for --mode text: search Git-visible text literally
     #[arg(long)]
     pub text: bool,
 
+    /// Concept plain output: list ranked files without representative lines
     #[arg(long)]
     pub files_only: bool,
 
+    /// Repository-relative path prefix; repeat for OR matching
     #[arg(long = "path", value_name = "PREFIX")]
     pub paths: Vec<String>,
 
+    /// Shell-style path glob; repeat for OR matching
     #[arg(long = "glob", value_name = "PATTERN")]
     pub globs: Vec<String>,
 
+    /// Exclude test candidates from results and counts
     #[arg(long)]
     pub exclude_tests: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Args)]
 pub struct ContextArgs {
+    /// Qualified/bare symbol, source file, or PATH:LINE[:COLUMN]
     #[arg(value_name = "TARGET")]
     pub target: String,
 
+    /// Add a source window at the target (1-1000 lines; 500 characters per line, 100000 total)
     #[arg(
         long,
         value_name = "N",
@@ -179,6 +249,7 @@ pub struct ContextArgs {
     )]
     pub lines: Option<u16>,
 
+    /// File outline nesting depth; 1 shows top-level declarations
     #[arg(
         long,
         value_name = "N",
@@ -187,45 +258,58 @@ pub struct ContextArgs {
     )]
     pub outline_depth: i64,
 
+    /// File context: show symbols of one kind across the file
     #[arg(long, value_name = "KIND")]
     pub kind: Option<String>,
 
+    /// File context: show one class/container and its children
     #[arg(long, value_name = "NAME")]
     pub container: Option<String>,
 
+    /// Add bounded imports/importers for the target's file
     #[arg(long)]
     pub topology: bool,
 
+    /// Focus symbol context; repeat to combine source, callers, callees, implementations, tests, references, possible-dynamic-references, lexical-references
     #[arg(long = "section", value_name = "SECTION")]
     pub sections: Vec<String>,
 
+    /// Attach exact-text evidence; omit TEXT to search the resolved symbol/file name
     #[arg(long, num_args = 0..=1, value_name = "TEXT", default_missing_value = "")]
     pub lexical_references: Option<String>,
 
+    /// Scope symbols, or text evidence when --lexical-references is used; repeat for OR
     #[arg(long = "path", value_name = "PREFIX")]
     pub paths: Vec<String>,
 
+    /// Always scope symbolic target resolution; repeat for OR matching
     #[arg(long = "symbol-path", value_name = "PREFIX")]
     pub symbol_paths: Vec<String>,
 
+    /// Scope lexical-reference paths by glob; repeat for OR matching
     #[arg(long = "glob", value_name = "PATTERN")]
     pub globs: Vec<String>,
 
+    /// Exclude test paths from lexical references
     #[arg(long)]
     pub exclude_tests: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Args)]
 pub struct TraceArgs {
+    /// Qualified/bare symbol or PATH:LINE[:COLUMN]
     #[arg(value_name = "TARGET")]
     pub target: String,
 
+    /// Trace incoming calls toward callers and entry points
     #[arg(long = "in", conflicts_with = "outgoing")]
     pub incoming: bool,
 
+    /// Trace outgoing calls toward implementations
     #[arg(long = "out", conflicts_with = "incoming")]
     pub outgoing: bool,
 
+    /// Maximum call-edge depth; 0 returns only the root
     #[arg(
         long,
         value_name = "N",
@@ -234,6 +318,7 @@ pub struct TraceArgs {
     )]
     pub depth: usize,
 
+    /// Trace-specific alias for --limit; explicit values must agree
     #[arg(
         long,
         value_name = "N",
@@ -245,62 +330,13 @@ pub struct TraceArgs {
 
 #[derive(Debug, Deserialize, Serialize, Args)]
 pub struct ReviewArgs {
+    /// Git base commit/ref for the current worktree diff
     #[arg(long, value_name = "REF", default_value = "HEAD~1")]
     pub base: String,
 
+    /// Compare with the merge base of REF and HEAD
     #[arg(long)]
     pub merge_base: bool,
-}
-
-pub enum EarlyOutput {
-    Help(&'static str),
-    Version,
-}
-
-pub fn early_output(arguments: &[OsString]) -> Option<EarlyOutput> {
-    let mut command = None;
-    let mut index = 0;
-    while index < arguments.len() {
-        let argument = arguments[index].to_str()?;
-        if argument == "--" {
-            return None;
-        }
-        if argument == "-h" || argument == "--help" {
-            let help = match command {
-                Some("find" | "search") => include_str!("help/find.txt"),
-                Some("context") => include_str!("help/context.txt"),
-                Some("trace") => include_str!("help/trace.txt"),
-                Some("review") => include_str!("help/review.txt"),
-                _ => include_str!("help/top.txt"),
-            };
-            return Some(EarlyOutput::Help(help));
-        }
-        if argument == "--version" {
-            return Some(EarlyOutput::Version);
-        }
-        if command.is_none() {
-            match argument {
-                "find" | "search" | "context" | "trace" | "review" => {
-                    command = Some(argument);
-                }
-                "--root" | "--limit" | "--timeout" => {
-                    index += 1;
-                }
-                _ => {}
-            }
-        }
-        index += 1;
-    }
-    None
-}
-
-fn argument_was_supplied(arguments: &[OsString], option: &str) -> bool {
-    arguments.iter().any(|argument| {
-        argument == option
-            || argument
-                .to_string_lossy()
-                .starts_with(&format!("{option}="))
-    })
 }
 
 #[cfg(test)]

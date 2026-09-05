@@ -114,7 +114,7 @@ fn rust_test_line(source: &str, line: u64) -> bool {
             .filter(|character| !character.is_whitespace())
             .collect();
         if compact.starts_with("#[") {
-            pending_cfg_test |= compact.starts_with("#[cfg(") && compact.contains("test");
+            pending_cfg_test |= compact == "#[cfg(test)]";
             pending_test |= rust_test_attribute(&compact);
             if index == target {
                 return inside_test || pending_cfg_test || pending_test;
@@ -276,5 +276,13 @@ mod tests {
         assert!(is_test_location(&path, 5));
         assert!(is_test_location(&path, 10));
         assert!(is_test_location(&path, 11));
+
+        fs::write(
+            &path,
+            "#[cfg(not(test))]\nmod production_only {\n    fn keep_me() {}\n}\n\n#[cfg(feature = \"test_support\")]\nmod feature {\n    fn keep_too() {}\n}\n",
+        )
+        .unwrap();
+        assert!(!is_test_location(&path, 3));
+        assert!(!is_test_location(&path, 8));
     }
 }

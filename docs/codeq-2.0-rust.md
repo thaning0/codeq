@@ -1,15 +1,14 @@
-# CodeQ 2.0 Rust cutover
+# CodeQ 2.x development and validation
 
 CodeQ 2.0 is one Rust package and one self-contained native executable. The
 active implementation, tests, benchmarks, build, and release workflows are
 Cargo-owned. The only tracked Python files are inert language-analysis inputs
-under `compat/corpus/`; CodeQ never executes them as project tooling.
+under `tests/fixtures/`; CodeQ never executes them as project tooling.
 
-The immutable 1.x compatibility oracle is `v1.0.0-rc13` at commit
-`56fadc0a3485531da83851fbde69f2dc1126463b`. Its normalized black-box outcomes
-are committed in `compat/expected.json`, so ordinary 2.0 validation does not
-need a Python environment. Git history and the tag retain the former Python
-implementation.
+The Python-to-Rust migration is complete. Git history and `v1.0.0-rc13`
+retain the former implementation and migration evidence. Current validation
+checks supported behavior directly; it does not compare complete responses
+with an older executable or preserve historical help formatting.
 
 ## Toolchain and boundaries
 
@@ -53,23 +52,21 @@ The normal release matrix is entirely Rust/Cargo based:
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features
+cargo test --locked --bin codeq supported_real_language_servers_complete_document_symbol_round_trips -- --ignored
 cargo build --locked --release
 ```
 
-The parity harness accepts arbitrary executables. Without `--oracle`, it checks
-the just-built candidate against the committed normalized RC13 snapshot:
+`tests/cli.rs` exercises the public executable: help and validation, fail-closed
+targets, rendering across transports, semantic navigation and bounded evidence,
+Unicode source windows, and Git change ownership. Assertions protect selected
+outcomes rather than full-output snapshots. Language-server tests require the
+servers listed in the README; CI installs them before running the suite.
 
-```bash
-cargo test --test parity
-cargo test --test parity -- \
-  --oracle /path/to/frozen/rc13/codeq \
-  --candidate /path/to/rust/codeq \
-  --report /path/to/parity-report.json
-```
-
-The exact oracle commit and executable identity are recorded; only timing,
-PIDs, temporary roots, and runtime paths are normalized. Ordering and semantic
-content remain contractual.
+`tests/runtime.rs` retains daemon trust, version restart, lifecycle and cleanup
+checks. `tests/workspace.rs` retains in-memory FTS isolation and refresh checks.
+Unit tests cover focused parsing, evidence classification, LSP communication,
+single-flight behavior, and process reaping. New tests should protect a distinct
+current behavior, not reproduce the retired migration corpus case by case.
 
 Lifecycle and workspace contracts can target an installed artifact:
 
@@ -101,12 +98,8 @@ runtime. Reports separate the Rust query process, daemon, and child language
 server RSS, enforce hard timeouts, and fail if a process carrying the private
 runtime survives cleanup.
 
-`docs/test-migration-ledger.md` records the durable replacement or explicit
-retirement decision for every removed Python test and benchmark program.
-
 ## Release
 
 CI builds and tests from the lockfile. A `v*` tag builds the supported
 `x86_64-unknown-linux-gnu` artifact used on Linux and WSL, packages the native
-binary with its SHA-256 checksum, and attaches both to the GitHub release. The
-`2.0.0` tag is created only after the `2.0-rust -> main` cutover is accepted.
+binary with its SHA-256 checksum, and attaches both to the GitHub release.

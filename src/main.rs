@@ -6,9 +6,8 @@ mod contracts;
 mod daemon;
 mod dynamic;
 mod gitreview;
-// Phase 3 lands transport and ownership before every semantic handler consumes it.
-#[allow(dead_code)]
 mod lsp;
+mod render;
 mod repository;
 mod runtime;
 mod semantic;
@@ -16,30 +15,40 @@ mod service;
 mod symbol;
 mod target;
 mod textsearch;
-#[allow(dead_code)]
 mod workspace;
 
 use std::env;
+use std::path::Path;
 use std::process::ExitCode;
 
-use clap::{CommandFactory, Parser, error::ErrorKind};
+use clap::{CommandFactory, FromArgMatches, error::ErrorKind};
+use serde_json::Value;
 
-use crate::cli::{Cli, EarlyOutput};
+use crate::cli::Cli;
 use crate::contracts::query_exit_code;
 
-fn emit_result(result: service::QueryResult, json: bool) -> ExitCode {
-    if json {
+fn emit_result(data: Value, cli: &Cli, root: &Path) -> ExitCode {
+    let status = match serde_json::from_value(data["status"].clone()) {
+        Ok(status) => status,
+        Err(error) => {
+            eprintln!("codeq: invalid query response status: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    if cli.json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&result.data)
-                .expect("response serialization must succeed")
+            serde_json::to_string_pretty(&data).expect("response serialization must succeed")
         );
-    } else if result.status == contracts::Status::Ok {
-        println!("{}", result.plain);
     } else {
-        eprintln!("{}", result.plain);
+        let plain = render::plain(&data, &cli.command, root);
+        if status == contracts::Status::Ok {
+            println!("{plain}");
+        } else {
+            eprintln!("{plain}");
+        }
     }
-    ExitCode::from(query_exit_code(result.status))
+    ExitCode::from(query_exit_code(status))
 }
 
 fn main() -> ExitCode {
@@ -57,21 +66,13 @@ fn main() -> ExitCode {
             }
         };
     }
-    if let Some(output) = cli::early_output(raw_arguments) {
-        match output {
-            EarlyOutput::Help(help) => print!("{help}"),
-            EarlyOutput::Version => println!("codeq {}", env!("CARGO_PKG_VERSION")),
-        }
-        return ExitCode::SUCCESS;
-    }
-
-    let mut cli = Cli::parse_from(&arguments);
-    if let Err(message) = cli.validate(raw_arguments) {
+    let matches = Cli::command().get_matches_from(&arguments);
+    let mut cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    if let Err(message) = cli.validate(&matches) {
         Cli::command()
             .error(ErrorKind::ArgumentConflict, message)
             .exit();
     }
-    cli.apply_compatibility_aliases(raw_arguments);
     let root = match repository::resolve_root(&cli.root) {
         Ok(root) => root,
         Err(error) => {
@@ -83,13 +84,7 @@ fn main() -> ExitCode {
         service::execute(&cli, &root, "in_process")
     } else {
         match client::request(&cli, &root) {
-            Ok(Some(data)) => match service::received(data, &cli, &root) {
-                Ok(result) => result,
-                Err(error) => {
-                    eprintln!("codeq: {error}");
-                    return ExitCode::from(2);
-                }
-            },
+            Ok(Some(data)) => data,
             Ok(None) => service::execute(&cli, &root, "in_process"),
             Err(error) => {
                 eprintln!("codeq: {error}");
@@ -97,5 +92,5 @@ fn main() -> ExitCode {
             }
         }
     };
-    emit_result(result, cli.json)
+    emit_result(result, &cli, &root)
 }
